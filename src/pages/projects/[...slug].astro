@@ -1,0 +1,93 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+import ArticleLayout from '../../layouts/ArticleLayout.astro';
+import Badge from '../../components/Badge.astro';
+import { isPublished } from '../../lib/utils';
+
+interface Props {
+  project: CollectionEntry<'projects'>;
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const projects = await getCollection('projects', isPublished);
+  return projects.map((project) => ({
+    params: { slug: project.id },
+    props: { project },
+  }));
+};
+
+const { project } = Astro.props;
+const { Content, headings } = await render(project);
+const { title, summary, status, tech, github, demo, paper, date, tags } = project.data;
+
+const statusLabel = { active: 'In progress', completed: 'Complete', planned: 'Planned' }[status];
+const statusTone = { active: 'active', completed: 'done', planned: 'planned' }[status] as
+  | 'active'
+  | 'done'
+  | 'planned';
+
+const links = [
+  github && { label: 'View on GitHub', href: github, primary: true },
+  demo && { label: 'Live demo', href: demo, primary: false },
+  paper && { label: 'Read the paper', href: paper, primary: false },
+].filter(Boolean) as { label: string; href: string; primary: boolean }[];
+---
+
+<ArticleLayout
+  title={title}
+  description={summary}
+  eyebrow="Project"
+  date={date}
+  tags={tags}
+  headings={headings}
+  body={project.body ?? ''}
+  showReadingTime={false}
+>
+  <Fragment slot="meta">
+    <div class="mt-6 flex flex-wrap items-center gap-2">
+      <Badge tone={statusTone}>
+        {status === 'active' && <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />}
+        {statusLabel}
+      </Badge>
+      {tech.map((item) => <Badge>{item}</Badge>)}
+    </div>
+
+    {
+      links.length > 0 && (
+        <div class="mt-6 flex flex-wrap gap-3">
+          {links.map((link) => (
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              class:list={[
+                'inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-medium transition-colors',
+                link.primary
+                  ? 'bg-accent text-accent-contrast hover:bg-accent-hover'
+                  : 'border border-line bg-surface text-fg hover:border-line-strong hover:bg-surface-hover',
+              ]}
+            >
+              {link.label}
+              <span aria-hidden="true">↗</span>
+            </a>
+          ))}
+        </div>
+      )
+    }
+  </Fragment>
+
+  <Content />
+
+  <Fragment slot="footer">
+    <div class="mx-auto mt-20 max-w-(--container-prose) border-t border-line pt-10">
+      <a
+        href="/projects"
+        class="inline-flex h-10 items-center rounded-lg border border-line bg-surface px-4 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover"
+      >
+        ← All projects
+      </a>
+    </div>
+  </Fragment>
+</ArticleLayout>

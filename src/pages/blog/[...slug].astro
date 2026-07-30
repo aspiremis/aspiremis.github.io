@@ -1,0 +1,75 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+import ArticleLayout from '../../layouts/ArticleLayout.astro';
+import PostCard from '../../components/PostCard.astro';
+import { isPublished, byDateDesc, relatedPosts } from '../../lib/utils';
+
+// getStaticPaths props don't flow into Astro.props automatically — declaring
+// Props keeps the template type-checked rather than silently `unknown`.
+interface Props {
+  post: CollectionEntry<'blog'>;
+  all: CollectionEntry<'blog'>[];
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const posts = await getCollection('blog', isPublished);
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post, all: posts },
+  }));
+};
+
+const { post, all } = Astro.props;
+const { Content, headings } = await render(post);
+
+const related = relatedPosts(post, all.sort(byDateDesc));
+---
+
+<ArticleLayout
+  title={post.data.title}
+  description={post.data.description}
+  eyebrow="Blog"
+  date={post.data.date}
+  updated={post.data.updated}
+  tags={post.data.tags}
+  headings={headings}
+  body={post.body ?? ''}
+>
+  <Content />
+
+  <Fragment slot="footer">
+    <div class="mx-auto mt-20 max-w-(--container-prose)">
+      {
+        related.length > 0 && (
+          <section class="border-t border-line pt-10" aria-labelledby="related-heading">
+            <h2 id="related-heading" class="text-h3 font-semibold text-fg">
+              Related reading
+            </h2>
+            <div class="mt-2">
+              {related.map((item) => (
+                <PostCard post={item} compact />
+              ))}
+            </div>
+          </section>
+        )
+      }
+
+      <div class="mt-12 flex flex-wrap gap-3 border-t border-line pt-10">
+        <a
+          href="/blog"
+          class="inline-flex h-10 items-center rounded-lg border border-line bg-surface px-4 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover"
+        >
+          ← All posts
+        </a>
+        <a
+          href="/notes"
+          class="inline-flex h-10 items-center rounded-lg border border-line bg-surface px-4 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover"
+        >
+          Browse notes
+        </a>
+      </div>
+    </div>
+  </Fragment>
+</ArticleLayout>

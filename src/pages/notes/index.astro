@@ -1,0 +1,63 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import NoteCard from '../../components/NoteCard.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import { TOPICS, TOPIC_LABELS } from '../../consts';
+import { isPublished, byDateDesc } from '../../lib/utils';
+
+const notes = (await getCollection('notes', isPublished)).sort(byDateDesc);
+
+/** Group by topic, preserving the deliberate ordering in TOPICS. */
+const grouped = TOPICS.map((topic) => ({
+  ...topic,
+  notes: notes.filter((note) => note.data.topic === topic.slug),
+})).filter((group) => group.notes.length > 0);
+---
+
+<BaseLayout
+  title="Notes"
+  description="Atomic engineering notes on power systems, power quality and simulation — a working notebook rather than finished articles."
+  fullTextSearch={false}
+>
+  <PageHeader
+    eyebrow="Writing"
+    title="Notes"
+    lead="Short, atomic notes on things I want to be able to look up later. These are working notes, not articles — some are settled, some are half-formed, and each says which."
+  >
+    <div class="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-xs text-subtle">
+      <span class="flex items-center gap-1.5"><span aria-hidden="true">🌱</span> Seedling — early, may be incomplete</span>
+      <span class="flex items-center gap-1.5"><span aria-hidden="true">🌿</span> Growing — actively developed</span>
+      <span class="flex items-center gap-1.5"><span aria-hidden="true">🌳</span> Evergreen — settled and reviewed</span>
+    </div>
+  </PageHeader>
+
+  <div class="mx-auto max-w-(--container-page) space-y-14 px-5 pb-16 sm:px-8">
+    {
+      grouped.length > 0 ? (
+        grouped.map((group) => (
+          <section aria-labelledby={`topic-${group.slug}`}>
+            <h2 id={`topic-${group.slug}`} class="text-xs font-semibold uppercase tracking-[0.16em] text-subtle">
+              {TOPIC_LABELS[group.slug]}
+              <span class="ml-2 font-mono normal-case tracking-normal">{group.notes.length}</span>
+            </h2>
+
+            <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {group.notes.map((note) => (
+                <div class="reveal flex">
+                  <NoteCard note={note} />
+                </div>
+              ))}
+            </div>
+          </section>
+        ))
+      ) : (
+        <EmptyState
+          title="No notes published yet"
+          description="The notebook is still being filled in."
+        />
+      )
+    }
+  </div>
+</BaseLayout>

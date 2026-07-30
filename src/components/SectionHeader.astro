@@ -1,0 +1,37 @@
+---
+interface Props {
+  title: string;
+  description?: string;
+  /** Optional "see all" affordance on the right. */
+  href?: string;
+  linkLabel?: string;
+  id?: string;
+}
+
+const { title, description, href, linkLabel = 'View all', id } = Astro.props;
+---
+
+<div class="flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <h2 id={id} class="text-h2 font-semibold tracking-tight text-fg">{title}</h2>
+    {description && <p class="mt-2 max-w-xl text-sm leading-relaxed text-muted">{description}</p>}
+  </div>
+
+  {
+    href && (
+      <a
+        href={href}
+        class="group inline-flex shrink-0 items-center gap-1 text-sm font-medium text-accent"
+      >
+        {linkLabel}
+        <svg
+          class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+        >
+          <path d="M5 12h14M13 6l6 6-6 6" />
+        </svg>
+      </a>
+    )
+  }
+</div>

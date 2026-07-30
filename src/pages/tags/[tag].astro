@@ -1,0 +1,121 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import PostCard from '../../components/PostCard.astro';
+import NoteCard from '../../components/NoteCard.astro';
+import ProjectCard from '../../components/ProjectCard.astro';
+import { isPublished, byDateDesc, slugifyTag } from '../../lib/utils';
+
+/**
+ * One page per tag, spanning posts, notes and projects — a tag means the same
+ * thing wherever it appears, so splitting the results by collection would be
+ * arbitrary.
+ */
+interface Props {
+  label: string;
+  posts: CollectionEntry<'blog'>[];
+  notes: CollectionEntry<'notes'>[];
+  projects: CollectionEntry<'projects'>[];
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const [posts, notes, projects] = await Promise.all([
+    getCollection('blog', isPublished),
+    getCollection('notes', isPublished),
+    getCollection('projects', isPublished),
+  ]);
+
+  const tags = new Map<string, string>();
+  for (const entry of [...posts, ...notes, ...projects]) {
+    for (const tag of entry.data.tags) tags.set(slugifyTag(tag), tag);
+  }
+
+  return [...tags].map(([slug, label]) => ({
+    params: { tag: slug },
+    props: {
+      label,
+      posts: posts.filter((p) => p.data.tags.some((t) => slugifyTag(t) === slug)).sort(byDateDesc),
+      notes: notes.filter((n) => n.data.tags.some((t) => slugifyTag(t) === slug)).sort(byDateDesc),
+      projects: projects.filter((p) => p.data.tags.some((t) => slugifyTag(t) === slug)),
+    },
+  }));
+};
+
+const { label, posts, notes, projects } = Astro.props;
+const total = posts.length + notes.length + projects.length;
+---
+
+<BaseLayout
+  title={`#${label}`}
+  description={`Everything tagged ${label} — posts, notes and projects by Shalini Mishra.`}
+  fullTextSearch={false}
+>
+  <PageHeader
+    eyebrow="Tag"
+    title={`#${label}`}
+    lead={`${total} ${total === 1 ? 'entry' : 'entries'} tagged ${label}.`}
+  />
+
+  <div class="mx-auto max-w-(--container-page) space-y-14 px-5 pb-16 sm:px-8">
+    {
+      projects.length > 0 && (
+        <section aria-labelledby="tag-projects">
+          <h2 id="tag-projects" class="text-xs font-semibold uppercase tracking-[0.16em] text-subtle">
+            Projects
+          </h2>
+          <div class="mt-5 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {projects.map((project) => (
+              <div class="flex">
+                <ProjectCard project={project} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    {
+      posts.length > 0 && (
+        <section aria-labelledby="tag-posts">
+          <h2 id="tag-posts" class="text-xs font-semibold uppercase tracking-[0.16em] text-subtle">
+            Blog posts
+          </h2>
+          <div class="mt-2">
+            {posts.map((post) => (
+              <PostCard post={post} />
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    {
+      notes.length > 0 && (
+        <section aria-labelledby="tag-notes">
+          <h2 id="tag-notes" class="text-xs font-semibold uppercase tracking-[0.16em] text-subtle">
+            Notes
+          </h2>
+          <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {notes.map((note) => (
+              <div class="flex">
+                <NoteCard note={note} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    <div class="border-t border-line pt-10">
+      <a
+        href="/blog"
+        class="inline-flex h-10 items-center rounded-lg border border-line bg-surface px-4 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover"
+      >
+        ← Back to the blog
+      </a>
+    </div>
+  </div>
+</BaseLayout>

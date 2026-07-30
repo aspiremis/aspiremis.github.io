@@ -1,0 +1,88 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+import ArticleLayout from '../../layouts/ArticleLayout.astro';
+import Badge from '../../components/Badge.astro';
+import NoteCard from '../../components/NoteCard.astro';
+import { TOPIC_LABELS } from '../../consts';
+import { isPublished, byDateDesc } from '../../lib/utils';
+
+interface Props {
+  note: CollectionEntry<'notes'>;
+  all: CollectionEntry<'notes'>[];
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const notes = await getCollection('notes', isPublished);
+  return notes.map((note) => ({
+    params: { slug: note.id },
+    props: { note, all: notes },
+  }));
+};
+
+const { note, all } = Astro.props;
+const { Content, headings } = await render(note);
+
+const STATUS = {
+  seedling: { label: 'Seedling', hint: 'Early notes — may be incomplete or change' },
+  growing: { label: 'Growing', hint: 'Actively being developed' },
+  evergreen: { label: 'Evergreen', hint: 'Settled and reviewed' },
+} as const;
+
+const maturity = STATUS[note.data.status];
+
+// Same-topic notes, most recent first — the closest thing to a backlink graph
+// without maintaining one by hand.
+const siblings = all
+  .filter((n) => n.id !== note.id && n.data.topic === note.data.topic)
+  .sort(byDateDesc)
+  .slice(0, 3);
+---
+
+<ArticleLayout
+  title={note.data.title}
+  description={note.data.description}
+  eyebrow={`Note · ${TOPIC_LABELS[note.data.topic]}`}
+  date={note.data.date}
+  updated={note.data.updated}
+  tags={note.data.tags}
+  headings={headings}
+  body={note.body ?? ''}
+>
+  <Fragment slot="meta">
+    <div class="mt-5">
+      <Badge tone="accent">{maturity.label} — {maturity.hint}</Badge>
+    </div>
+  </Fragment>
+
+  <Content />
+
+  <Fragment slot="footer">
+    <div class="mx-auto mt-20 max-w-(--container-prose)">
+      {
+        siblings.length > 0 && (
+          <section class="border-t border-line pt-10" aria-labelledby="siblings-heading">
+            <h2 id="siblings-heading" class="text-h3 font-semibold text-fg">
+              More on {TOPIC_LABELS[note.data.topic]}
+            </h2>
+            <div class="mt-5 grid gap-4 sm:grid-cols-2">
+              {siblings.map((sibling) => (
+                <NoteCard note={sibling} />
+              ))}
+            </div>
+          </section>
+        )
+      }
+
+      <div class="mt-12 border-t border-line pt-10">
+        <a
+          href="/notes"
+          class="inline-flex h-10 items-center rounded-lg border border-line bg-surface px-4 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover"
+        >
+          ← All notes
+        </a>
+      </div>
+    </div>
+  </Fragment>
+</ArticleLayout>

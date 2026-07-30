@@ -1,0 +1,209 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import SocialIcon from '../components/SocialIcon.astro';
+import GitHubCalendar from '../components/GitHubCalendar.astro';
+import RepoList from '../components/RepoList.astro';
+import { SITE, SOCIALS } from '../consts';
+
+const TOOLING = [
+  {
+    group: 'Languages',
+    items: ['Python', 'MATLAB', 'C (basics)', 'LaTeX'],
+  },
+  {
+    group: 'Scientific Python',
+    items: ['NumPy', 'SciPy', 'pandas', 'Matplotlib', 'scikit-learn', 'PyTorch'],
+  },
+  {
+    group: 'Power systems',
+    items: ['OpenDSS', 'pandapower', 'MATPOWER', 'Simulink', 'PSCAD (learning)'],
+  },
+  {
+    group: 'Everything else',
+    items: ['Git', 'Linux', 'Jupyter', 'VS Code'],
+  },
+];
+
+const TIMELINE = [
+  {
+    period: 'July 2026 — present',
+    title: 'M.Tech, Power Systems Engineering',
+    org: 'IIT Bhubaneswar',
+    body: 'Coursework in power system analysis, distribution systems, power quality and renewable integration, alongside simulation projects in Python and OpenDSS.',
+  },
+  {
+    period: 'Before 2026',
+    title: 'B.Tech, Electrical Engineering',
+    org: 'Undergraduate studies',
+    body: 'Where the interest in power systems started — and where I learned to apply the formulas I am now learning to derive.',
+  },
+];
+---
+
+<BaseLayout
+  title="About"
+  description="Shalini Mishra — M.Tech Power Systems Engineering at IIT Bhubaneswar, working on renewable grid integration, distribution analysis and power system software."
+  showProgress
+>
+  <PageHeader eyebrow="About" title="Hello, I'm Shalini" />
+
+  <div class="mx-auto max-w-(--container-page) px-5 pb-16 sm:px-8">
+    <div class="grid gap-16 lg:grid-cols-[1.5fr_1fr]">
+      <div>
+        <div class="prose-notebook prose max-w-none dark:prose-invert">
+          <p class="lead">
+            I'm a power systems engineer in the making, currently doing my M.Tech in
+            Power Systems Engineering at IIT Bhubaneswar. My interest sits with the
+            modern grid — where renewable integration, simulation and data-driven
+            analysis meet.
+          </p>
+
+          <p>
+            What pulled me into this field is that the power system is the largest
+            machine humans have ever built, and it has to balance itself every
+            second, everywhere, without anyone noticing. That constraint makes it a
+            genuinely hard engineering problem, and the fact that it's currently
+            being rebuilt around inverters and renewables makes it an unusually
+            interesting time to be learning it.
+          </p>
+
+          <h2>How I work</h2>
+
+          <p>
+            I'd rather implement something than import it. When a method shows up in
+            a course, I write a small version of it before using a library — it's
+            slower, and it's the only approach that has actually made things stick.
+            The clearest example is the load flow solver on this site: reading the
+            Newton-Raphson derivation left me able to reproduce it, but implementing
+            it left me able to <em>debug</em> it, which turned out to be a completely
+            different skill.
+          </p>
+
+          <p>
+            The corollary is that I validate against something known before I trust
+            anything. Every solver I write gets checked against published IEEE test
+            system results first. It's unglamorous and it has caught real errors.
+          </p>
+
+          <h2>Why this site exists</h2>
+
+          <p>
+            This is a notebook, not a résumé. The interesting parts of learning
+            something are the confusions, the wrong turns and the moment a thing
+            finally clicks — and none of those survive being compressed into a CV
+            bullet point.
+          </p>
+
+          <p>
+            So I write them down here instead. Some of it is polished, most of it
+            isn't, and the notes say which. If it's useful to another student
+            somewhere, that's a good outcome. If it's only useful to me in six
+            months when I've forgotten why the Jacobian is structured the way it is,
+            that's fine too.
+          </p>
+
+          <h2>Outside the coursework</h2>
+
+          <p>
+            I'm building a reading habit around papers rather than only textbooks,
+            which is slower going than I expected and more rewarding than I expected.
+            I'd like to have something submitted to a conference by the end of thesis
+            Phase I, and a tool released that someone other than me actually runs.
+          </p>
+        </div>
+
+        <section class="mt-16" aria-labelledby="timeline-heading">
+          <SectionHeader id="timeline-heading" title="Timeline" />
+
+          <ol class="mt-8 space-y-8">
+            {
+              TIMELINE.map((item) => (
+                <li class="relative border-l border-line pb-2 pl-6">
+                  <span class="absolute -left-[4.5px] top-1.5 h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+                  <p class="font-mono text-xs text-subtle">{item.period}</p>
+                  <h3 class="mt-1.5 text-base font-semibold text-fg">{item.title}</h3>
+                  <p class="text-sm text-accent">{item.org}</p>
+                  <p class="mt-2 text-sm leading-relaxed text-muted">{item.body}</p>
+                </li>
+              ))
+            }
+          </ol>
+        </section>
+      </div>
+
+      {/* --------------------------------------------------------- Sidebar */}
+      <aside class="space-y-10 lg:sticky lg:top-24 lg:self-start">
+        <div class="rounded-card border border-line bg-surface p-6">
+          <h2 class="text-xs font-semibold uppercase tracking-[0.16em] text-subtle">
+            Tools I work with
+          </h2>
+
+          <dl class="mt-5 space-y-4">
+            {
+              TOOLING.map((group) => (
+                <div>
+                  <dt class="text-xs font-medium text-muted">{group.group}</dt>
+                  <dd class="mt-1.5 flex flex-wrap gap-1.5">
+                    {group.items.map((item) => (
+                      <span class="rounded-md border border-line bg-bg-subtle px-2 py-0.5 font-mono text-[11px] text-muted">
+                        {item}
+                      </span>
+                    ))}
+                  </dd>
+                </div>
+              ))
+            }
+          </dl>
+        </div>
+
+        <div class="rounded-card border border-line bg-surface p-6">
+          <GitHubCalendar />
+        </div>
+
+        <div>
+          <h2 class="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-subtle">
+            Recent repositories
+          </h2>
+          <RepoList limit={4} />
+        </div>
+
+        <div class="rounded-card border border-line bg-surface p-6">
+          <h2 class="text-xs font-semibold uppercase tracking-[0.16em] text-subtle">Find me</h2>
+          <ul class="mt-4 space-y-2">
+            {
+              SOCIALS.map((social) => (
+                <li>
+                  <a
+                    href={social.href}
+                    class="group flex items-center gap-3 rounded-lg px-2 py-2 text-sm text-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                    {...(social.icon !== 'mail'
+                      ? { target: '_blank', rel: 'me noopener noreferrer' }
+                      : {})}
+                  >
+                    <span class="text-subtle transition-colors group-hover:text-accent">
+                      <SocialIcon name={social.icon} class="h-4 w-4" />
+                    </span>
+                    {social.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+
+          <a
+            href="/contact"
+            class="mt-5 flex h-10 w-full items-center justify-center rounded-lg bg-accent text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
+          >
+            Get in touch
+          </a>
+        </div>
+
+        <p class="px-2 font-serif text-sm italic leading-relaxed text-subtle">
+          “{SITE.tagline}”
+        </p>
+      </aside>
+    </div>
+  </div>
+</BaseLayout>

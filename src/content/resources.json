@@ -1,0 +1,127 @@
+[
+  {
+    "id": "grainger-stevenson",
+    "title": "Power System Analysis",
+    "kind": "book",
+    "author": "John J. Grainger & William D. Stevenson Jr.",
+    "description": "The standard reference for steady-state analysis. The load flow and symmetrical components chapters are where I go first when something isn't making sense.",
+    "topics": ["power-systems"],
+    "recommended": true
+  },
+  {
+    "id": "kersting",
+    "title": "Distribution System Modeling and Analysis",
+    "kind": "book",
+    "author": "William H. Kersting",
+    "description": "The distribution book. Takes unbalanced multi-phase modelling seriously instead of treating it as a footnote to transmission analysis, which is why it's indispensable once you leave the positive-sequence world.",
+    "topics": ["distribution-systems"],
+    "recommended": true
+  },
+  {
+    "id": "kundur",
+    "title": "Power System Stability and Control",
+    "kind": "book",
+    "author": "Prabha Kundur",
+    "description": "Dense, and worth the effort. I'm working through it ahead of Semester 2 rather than alongside it.",
+    "topics": ["power-systems", "control-systems"],
+    "recommended": true
+  },
+  {
+    "id": "dugan-pq",
+    "title": "Electrical Power Systems Quality",
+    "kind": "book",
+    "author": "Dugan, McGranaghan, Santoso & Beaty",
+    "description": "Practical rather than theoretical, with real measurement case studies. Pairs well with a standards document that tells you the limits but not what the waveform actually looks like.",
+    "topics": ["power-quality"],
+    "recommended": true
+  },
+  {
+    "id": "wood-wollenberg",
+    "title": "Power Generation, Operation and Control",
+    "kind": "book",
+    "author": "Allen J. Wood, Bruce F. Wollenberg & Gerald B. Sheblé",
+    "description": "Economic dispatch, unit commitment and OPF, explained with the operational context that makes the optimisation problems feel motivated rather than arbitrary.",
+    "topics": ["optimization", "power-systems"],
+    "recommended": false
+  },
+  {
+    "id": "opendss",
+    "title": "OpenDSS",
+    "kind": "tool",
+    "url": "https://www.epri.com/pages/sa/opendss",
+    "author": "EPRI",
+    "description": "Free distribution system simulator. Genuinely good at unbalanced multi-phase modelling, and scriptable from Python for batch studies. The documentation rewards persistence.",
+    "topics": ["simulation", "distribution-systems"],
+    "recommended": true
+  },
+  {
+    "id": "pandapower",
+    "title": "pandapower",
+    "kind": "tool",
+    "url": "https://www.pandapower.org/",
+    "description": "Python power system analysis built on pandas. My reference implementation for checking my own solver — if my numbers disagree with pandapower, my numbers are wrong.",
+    "topics": ["python", "power-systems"],
+    "recommended": true
+  },
+  {
+    "id": "matpower",
+    "title": "MATPOWER",
+    "kind": "tool",
+    "url": "https://matpower.org/",
+    "description": "MATLAB package for load flow and OPF. Also the most convenient source of clean IEEE test case data, even when you're working in Python.",
+    "topics": ["matlab", "power-systems"],
+    "recommended": false
+  },
+  {
+    "id": "ieee-test-cases",
+    "title": "IEEE PES Test Feeder Cases",
+    "kind": "dataset",
+    "url": "https://cmte.ieee.org/pes-testfeeders/resources/",
+    "description": "The standard test feeders — 13-bus, 34-bus, 123-bus and more — with published results. If a method can't reproduce these, it isn't ready for anything else.",
+    "topics": ["distribution-systems", "simulation"],
+    "recommended": true
+  },
+  {
+    "id": "ieee-519",
+    "title": "IEEE Std 519 — Harmonic Control in Electric Power Systems",
+    "kind": "reference",
+    "description": "The harmonic limits standard. Read it directly rather than trusting a summary — the TDD-versus-THD distinction is routinely misquoted in specifications.",
+    "topics": ["power-quality"],
+    "recommended": true
+  },
+  {
+    "id": "ieee-1547",
+    "title": "IEEE Std 1547 — Interconnection of Distributed Energy Resources",
+    "kind": "reference",
+    "description": "Governs how distributed generation connects to the grid. The 2018 revision's volt-var and volt-watt requirements matter directly to hosting capacity results.",
+    "topics": ["renewable-integration", "distribution-systems"],
+    "recommended": true
+  },
+  {
+    "id": "nrel-nsrdb",
+    "title": "NREL National Solar Radiation Database",
+    "kind": "dataset",
+    "url": "https://nsrdb.nrel.gov/",
+    "description": "Free irradiance and meteorological time series. What I use to build clear-sky index features for PV forecasting.",
+    "topics": ["renewable-integration", "machine-learning"],
+    "recommended": false
+  },
+  {
+    "id": "hong-forecasting",
+    "title": "Energy Forecasting — Tao Hong's blog and GEFCom archives",
+    "kind": "reference",
+    "url": "http://blog.drhongtao.com/",
+    "description": "The competition datasets and the methodology writing around them are a better education in forecasting practice than most textbooks.",
+    "topics": ["machine-learning"],
+    "recommended": false
+  },
+  {
+    "id": "pes-resource-center",
+    "title": "IEEE Power & Energy Society",
+    "kind": "community",
+    "url": "https://www.ieee-pes.org/",
+    "description": "Student membership pays for itself in conference access alone, and the technical committee reports are a fast way to see what the field currently cares about.",
+    "topics": ["power-systems"],
+    "recommended": false
+  }
+]

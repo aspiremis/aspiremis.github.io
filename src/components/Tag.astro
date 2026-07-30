@@ -1,0 +1,29 @@
+---
+import { slugifyTag } from '../lib/utils';
+
+interface Props {
+  tag: string;
+  /** Plain text when false — used inside cards that are themselves links. */
+  link?: boolean;
+  count?: number;
+}
+
+const { tag, link = true, count } = Astro.props;
+
+const classes =
+  'inline-flex items-center gap-1 rounded-md border border-line bg-bg-subtle px-2 py-0.5 font-mono text-[11px] text-muted transition-colors';
+---
+
+{
+  link ? (
+    <a href={`/tags/${slugifyTag(tag)}`} class={`${classes} relative z-10 hover:border-accent-border hover:bg-accent-tint hover:text-accent`}>
+      {tag}
+      {count !== undefined && <span class="text-subtle">{count}</span>}
+    </a>
+  ) : (
+    <span class={classes}>
+      {tag}
+      {count !== undefined && <span class="text-subtle">{count}</span>}
+    </span>
+  )
+}

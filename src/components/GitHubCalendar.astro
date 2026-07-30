@@ -1,0 +1,110 @@
+---
+import { getContributions } from '../lib/github';
+import { PROFILE } from '../consts';
+
+const calendar = await getContributions();
+
+// The full year doesn't fit comfortably on a phone; the last ~30 weeks does,
+// and the container scrolls horizontally for the rest.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Month labels are only drawn on the week where the month actually changes. */
+const monthLabels = calendar
+  ? calendar.weeks.map((week, index) => {
+      const first = week[0];
+      if (!first) return null;
+      const date = new Date(`${first.date}T00:00:00Z`);
+      const prev = calendar.weeks[index - 1]?.[0];
+      const prevMonth = prev ? new Date(`${prev.date}T00:00:00Z`).getUTCMonth() : -1;
+      return date.getUTCMonth() !== prevMonth ? { index, label: MONTHS[date.getUTCMonth()]! } : null;
+    })
+  : [];
+
+const LEVEL_CLASS = [
+  'bg-line',
+  'bg-accent/25',
+  'bg-accent/45',
+  'bg-accent/70',
+  'bg-accent',
+];
+---
+
+<section aria-labelledby="contributions-heading">
+  <div class="flex flex-wrap items-baseline justify-between gap-2">
+    <h3 id="contributions-heading" class="text-sm font-semibold text-fg">
+      {calendar ? `${calendar.total.toLocaleString('en-IN')} contributions this year` : 'GitHub activity'}
+    </h3>
+    <a
+      href={`https://github.com/${PROFILE.github}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="text-xs text-subtle transition-colors hover:text-accent"
+    >
+      @{PROFILE.github} ↗
+    </a>
+  </div>
+
+  {
+    calendar ? (
+      <>
+        <div class="mt-4 overflow-x-auto pb-2">
+          <div class="inline-block min-w-full">
+            <div class="flex gap-[3px] pl-1 text-[10px] text-subtle" aria-hidden="true">
+              {calendar.weeks.map((_, index) => {
+                const label = monthLabels[index];
+                return (
+                  <span class="w-[11px] shrink-0 whitespace-nowrap">
+                    {label && index < calendar.weeks.length - 2 ? label.label : ''}
+                  </span>
+                );
+              })}
+            </div>
+
+            {/*
+              A table would imply tabular meaning this doesn't have. It's an
+              image of activity, so it's exposed as one img role with a summary
+              label and the day cells hidden from AT.
+            */}
+            <div
+              class="mt-1 flex gap-[3px] pl-1"
+              role="img"
+              aria-label={`GitHub contribution calendar: ${calendar.total} contributions between ${calendar.from} and ${calendar.to}`}
+            >
+              {calendar.weeks.map((week) => (
+                <div class="flex flex-col gap-[3px]">
+                  {week.map((day) => (
+                    <span
+                      class:list={['h-[11px] w-[11px] rounded-[2px]', LEVEL_CLASS[day.level]]}
+                      title={`${day.count} contribution${day.count === 1 ? '' : 's'} on ${day.date}`}
+                      aria-hidden="true"
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-2 flex items-center gap-1.5 text-[10px] text-subtle">
+          <span>Less</span>
+          {LEVEL_CLASS.map((cls) => (
+            <span class:list={['h-[11px] w-[11px] rounded-[2px]', cls]} aria-hidden="true" />
+          ))}
+          <span>More</span>
+        </div>
+      </>
+    ) : (
+      <p class="mt-4 rounded-card border border-dashed border-line-strong bg-bg-subtle/50 px-4 py-6 text-center text-sm text-subtle">
+        The contribution graph is generated at build time and needs a GitHub token.
+        <a
+          href={`https://github.com/${PROFILE.github}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="ml-1 text-accent link-underline"
+        >
+          View it on GitHub
+        </a>
+      </p>
+    )
+  }
+</section>

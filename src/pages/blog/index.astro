@@ -1,0 +1,53 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import PostCard from '../../components/PostCard.astro';
+import Tag from '../../components/Tag.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import { isPublished, byDateDesc, collectTags } from '../../lib/utils';
+
+const posts = (await getCollection('blog', isPublished)).sort(byDateDesc);
+const tags = collectTags(posts);
+---
+
+<BaseLayout
+  title="Blog"
+  description="Long-form writing on power systems, simulation and the things that took me longest to understand — by Shalini Mishra."
+  fullTextSearch={false}
+>
+  <PageHeader
+    eyebrow="Writing"
+    title="Blog"
+    lead="Longer pieces, usually written the week something finally made sense — or the week I discovered I'd been wrong about it."
+  />
+
+  <div class="mx-auto max-w-(--container-page) px-5 pb-8 sm:px-8">
+    {
+      tags.length > 0 && (
+        <ul class="flex flex-wrap gap-1.5">
+          {tags.map(({ tag, count }) => (
+            <li>
+              <Tag tag={tag} count={count} />
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </div>
+
+  <div class="mx-auto max-w-(--container-page) px-5 pb-16 sm:px-8">
+    {
+      posts.length > 0 ? (
+        <div>
+          {posts.map((post) => <PostCard post={post} headingLevel="h2" />)}
+        </div>
+      ) : (
+        <EmptyState
+          title="No posts published yet"
+          description="Writing takes a while to be worth reading. Check back, or follow the RSS feed."
+        />
+      )
+    }
+  </div>
+</BaseLayout>

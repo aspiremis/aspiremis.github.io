@@ -1,0 +1,41 @@
+---
+/**
+ * The one card primitive everything else composes from.
+ *
+ * When `href` is set the whole card becomes a click target via a stretched
+ * overlay link, so nested links (a GitHub icon, a tag) still work — which a
+ * plain <a> wrapper would break. Nested interactive elements must carry
+ * `relative z-10` to sit above that overlay.
+ */
+interface Props {
+  href?: string;
+  external?: boolean;
+  class?: string;
+}
+
+const { href, external = false, class: className = '' }: Props = Astro.props;
+
+const interactive = Boolean(href);
+---
+
+<article
+  class:list={[
+    'group relative flex flex-col rounded-card border border-line bg-surface p-6 transition-[border-color,box-shadow,transform] duration-300',
+    interactive &&
+      'hover:-translate-y-0.5 hover:border-line-strong hover:shadow-(--shadow-card) focus-within:border-accent-border',
+    className,
+  ]}
+>
+  {
+    href && (
+      <a
+        href={href}
+        class="absolute inset-0 rounded-card"
+        {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      >
+        <span class="sr-only">Open</span>
+      </a>
+    )
+  }
+  <slot />
+</article>

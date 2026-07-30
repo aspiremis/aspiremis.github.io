@@ -1,0 +1,58 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { ALL_PAGES } from '../consts';
+---
+
+<BaseLayout
+  title="Page not found"
+  description="This page doesn't exist — but the rest of the notebook does."
+  noindex
+  fullTextSearch={false}
+>
+  <section class="mx-auto flex min-h-[60vh] max-w-(--container-page) flex-col justify-center px-5 py-24 sm:px-8">
+    <p class="font-mono text-sm text-accent">404</p>
+
+    <h1 class="mt-4 max-w-2xl text-h1 font-semibold tracking-tight text-fg">
+      This page doesn't exist.
+    </h1>
+
+    <p class="mt-5 max-w-xl text-lead text-muted">
+      Either the link is wrong or I've moved something. An open circuit, essentially —
+      the path is there, the connection isn't.
+    </p>
+
+    <div class="mt-9 flex flex-wrap gap-3">
+      <a
+        href="/"
+        class="inline-flex h-11 items-center rounded-lg bg-accent px-5 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
+      >
+        Back home
+      </a>
+      <button
+        type="button"
+        data-command-palette-open
+        class="inline-flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-5 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover"
+      >
+        Search the site
+        <kbd class="font-sans text-[11px] text-subtle">⌘K</kbd>
+      </button>
+    </div>
+
+    <nav class="mt-16 border-t border-line pt-8" aria-label="All pages">
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-subtle">
+        Or try one of these
+      </p>
+      <ul class="mt-4 flex flex-wrap gap-x-6 gap-y-2">
+        {
+          ALL_PAGES.map((page) => (
+            <li>
+              <a href={page.href} class="text-sm text-muted transition-colors hover:text-accent">
+                {page.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </section>
+</BaseLayout>

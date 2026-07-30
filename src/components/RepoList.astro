@@ -1,0 +1,84 @@
+---
+import { getRepos } from '../lib/github';
+import { PROFILE } from '../consts';
+import { formatMonth } from '../lib/utils';
+
+interface Props {
+  limit?: number;
+}
+
+const repos = await getRepos(Astro.props.limit ?? 4);
+
+/** GitHub's own language colours, for the ones likely to appear here. */
+const LANGUAGE_COLOUR: Record<string, string> = {
+  Python: '#3572A5',
+  MATLAB: '#e16737',
+  Jupyter: '#DA5B0B',
+  'Jupyter Notebook': '#DA5B0B',
+  TypeScript: '#3178c6',
+  JavaScript: '#f1e05a',
+  Astro: '#ff5a03',
+  TeX: '#3D6117',
+  C: '#555555',
+  Shell: '#89e051',
+};
+---
+
+{
+  repos.length > 0 && (
+    <ul class="space-y-2">
+      {repos.map((repo) => (
+        <li>
+          <a
+            href={repo.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="group flex items-start gap-3 rounded-lg border border-line bg-surface px-4 py-3 transition-colors hover:border-line-strong hover:bg-surface-hover"
+          >
+            <div class="min-w-0 flex-1">
+              <p class="truncate font-mono text-sm font-medium text-fg transition-colors group-hover:text-accent">
+                {repo.name}
+              </p>
+              {repo.description && (
+                <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-subtle">
+                  {repo.description}
+                </p>
+              )}
+              <div class="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-subtle">
+                {repo.language && (
+                  <span class="flex items-center gap-1.5">
+                    <span
+                      class="h-2 w-2 rounded-full"
+                      style={`background:${LANGUAGE_COLOUR[repo.language] ?? 'var(--fg-subtle)'}`}
+                      aria-hidden="true"
+                    />
+                    {repo.language}
+                  </span>
+                )}
+                {repo.stars > 0 && <span>★ {repo.stars}</span>}
+                <span>Updated {formatMonth(new Date(repo.updatedAt))}</span>
+              </div>
+            </div>
+            <span class="shrink-0 text-subtle transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true">↗</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+{
+  repos.length === 0 && (
+    <p class="rounded-card border border-dashed border-line-strong bg-bg-subtle/50 px-4 py-6 text-center text-sm text-subtle">
+      Repositories load at build time.
+      <a
+        href={`https://github.com/${PROFILE.github}?tab=repositories`}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="ml-1 text-accent link-underline"
+      >
+        Browse them on GitHub
+      </a>
+    </p>
+  )
+}

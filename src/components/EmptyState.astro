@@ -1,0 +1,46 @@
+---
+/**
+ * Sections like Publications will be empty for a while. An honest, designed
+ * empty state reads as "this is coming" rather than "this site is unfinished",
+ * which matters when professors and recruiters are the audience.
+ */
+interface Props {
+  title: string;
+  description: string;
+  icon?: 'document' | 'flask' | 'calendar';
+}
+
+const { title, description, icon = 'document' } = Astro.props;
+---
+
+<div
+  class="flex flex-col items-center rounded-card border border-dashed border-line-strong bg-bg-subtle/50 px-6 py-14 text-center"
+>
+  <span class="grid h-11 w-11 place-items-center rounded-full border border-line bg-surface text-subtle">
+    {
+      icon === 'document' && (
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" />
+        </svg>
+      )
+    }
+    {
+      icon === 'flask' && (
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 3h6M10 3v6.5L4.6 18A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.7-3L14 9.5V3" /><path d="M7.5 15h9" />
+        </svg>
+      )
+    }
+    {
+      icon === 'calendar' && (
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" />
+        </svg>
+      )
+    }
+  </span>
+
+  <p class="mt-4 text-sm font-medium text-fg">{title}</p>
+  <p class="mt-1.5 max-w-sm text-sm leading-relaxed text-subtle">{description}</p>
+  <slot />
+</div>

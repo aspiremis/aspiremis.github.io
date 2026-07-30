@@ -1,0 +1,109 @@
+---
+import type { MarkdownHeading } from 'astro';
+import BaseLayout from './BaseLayout.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import MathStyles from '../components/MathStyles.astro';
+import Tag from '../components/Tag.astro';
+import { formatDate, readingTime } from '../lib/utils';
+
+interface Props {
+  title: string;
+  description: string;
+  eyebrow?: string;
+  date: Date;
+  updated?: Date;
+  tags?: string[];
+  headings: MarkdownHeading[];
+  body: string;
+  /** Rendered above the article body — status badges, links, metadata rows. */
+  showReadingTime?: boolean;
+}
+
+const {
+  title,
+  description,
+  eyebrow,
+  date,
+  updated,
+  tags = [],
+  headings,
+  body,
+  showReadingTime = true,
+} = Astro.props;
+
+const minutes = readingTime(body);
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  type="article"
+  publishedAt={date}
+  updatedAt={updated}
+  tags={tags}
+  showProgress
+>
+  <MathStyles />
+  <article class="mx-auto max-w-(--container-wide) px-5 pt-16 sm:px-8 sm:pt-24">
+    <header class="mx-auto max-w-(--container-prose)">
+      {
+        eyebrow && (
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-accent">{eyebrow}</p>
+        )
+      }
+
+      <h1 class="mt-3 text-h1 font-semibold tracking-tight text-fg">{title}</h1>
+      <p class="mt-5 text-lead text-muted">{description}</p>
+
+      <div class="mt-7 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-subtle">
+        <time datetime={date.toISOString()} class="font-mono">{formatDate(date)}</time>
+        {showReadingTime && <><span aria-hidden="true">·</span><span>{minutes} min read</span></>}
+        {
+          updated && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>
+                Updated <time datetime={updated.toISOString()}>{formatDate(updated)}</time>
+              </span>
+            </>
+          )
+        }
+      </div>
+
+      <slot name="meta" />
+
+      {
+        tags.length > 0 && (
+          <ul class="mt-6 flex flex-wrap gap-1.5">
+            {tags.map((tag) => (
+              <li>
+                <Tag tag={tag} />
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </header>
+
+    {/*
+      Three-column grid on wide screens so the ToC sits in the margin rather
+      than pushing the prose off-centre. Below lg it collapses and the ToC is
+      hidden — on a phone the in-page scroll is short enough not to need it.
+    */}
+    <div class="mt-14 lg:grid lg:grid-cols-[1fr_minmax(0,var(--container-prose))_1fr] lg:gap-10">
+      <div class="hidden lg:block" aria-hidden="true"></div>
+
+      <div class="prose-notebook prose max-w-none dark:prose-invert">
+        <slot />
+      </div>
+
+      <aside class="hidden lg:block">
+        <div class="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto pb-8">
+          <TableOfContents headings={headings} />
+        </div>
+      </aside>
+    </div>
+
+    <slot name="footer" />
+  </article>
+</BaseLayout>

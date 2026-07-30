@@ -1,0 +1,46 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import Card from './Card.astro';
+import { TOPIC_LABELS } from '../consts';
+import { formatMonth } from '../lib/utils';
+
+interface Props {
+  note: CollectionEntry<'notes'>;
+}
+
+const { note } = Astro.props;
+const { title, description, topic, status, date, updated } = note.data;
+
+/**
+ * Digital-garden maturity. Saying a note is a seedling is more useful to a
+ * reader than pretending every note is finished.
+ */
+const STATUS = {
+  seedling: { label: 'Seedling', glyph: '🌱', hint: 'Early notes, may be incomplete' },
+  growing: { label: 'Growing', glyph: '🌿', hint: 'Being actively developed' },
+  evergreen: { label: 'Evergreen', glyph: '🌳', hint: 'Settled and reviewed' },
+} as const;
+
+const maturity = STATUS[status];
+---
+
+<Card href={`/notes/${note.id}`} class="p-5">
+  <div class="flex items-center gap-2">
+    <span class="text-xs" title={maturity.hint} aria-hidden="true">{maturity.glyph}</span>
+    <span class="font-mono text-[11px] uppercase tracking-wider text-subtle">
+      {TOPIC_LABELS[topic] ?? topic}
+    </span>
+    <span class="sr-only">Maturity: {maturity.label}. {maturity.hint}.</span>
+    <time
+      class="ml-auto shrink-0 font-mono text-[11px] text-subtle"
+      datetime={(updated ?? date).toISOString()}
+    >
+      {formatMonth(updated ?? date)}
+    </time>
+  </div>
+
+  <h3 class="mt-3 text-base font-semibold tracking-tight text-fg transition-colors group-hover:text-accent">
+    {title}
+  </h3>
+  <p class="mt-1.5 text-sm leading-relaxed text-muted">{description}</p>
+</Card>

@@ -1,0 +1,13 @@
+---
+/**
+ * KaTeX stylesheet, scoped to the pages that actually render markdown.
+ *
+ * It is ~29 kB of the CSS bundle — roughly a third — and the home page, tag
+ * archives and listing pages contain no math at all. Astro emits the CSS of a
+ * component only on the pages that include it, so importing here rather than in
+ * global.css keeps that weight off the critical path everywhere it isn't used.
+ *
+ * Include this anywhere a `<Content />` from a collection is rendered.
+ */
+import 'katex/dist/katex.min.css';
+---

@@ -1,0 +1,185 @@
+---
+import { NAV, PROFILE } from '../consts';
+import ThemeToggle from './ThemeToggle.astro';
+
+const path = Astro.url.pathname.replace(/\/$/, '') || '/';
+
+/** A section is active for its own page and everything nested under it. */
+function isActive(href: string, children?: readonly { href: string }[]): boolean {
+  const hrefs = children?.length ? children.map((c) => c.href) : [href];
+  return hrefs.some((h) => path === h || path.startsWith(`${h}/`));
+}
+---
+
+<a
+  href="#main"
+  class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-accent-contrast"
+>
+  Skip to content
+</a>
+
+<header
+  class="sticky top-0 z-50 border-b border-line bg-bg/80 backdrop-blur-xl backdrop-saturate-150"
+>
+  <nav class="mx-auto flex h-16 max-w-(--container-wide) items-center gap-2 px-5 sm:px-8" aria-label="Primary">
+    {/*
+      No aria-label here on purpose. An aria-label that doesn't contain the
+      link's visible text breaks voice control — a user saying "click Shalini
+      Mishra" would hit nothing. Instead the monogram is marked decorative and
+      the name stays in the accessibility tree at every width, so the accessible
+      name and the visible text always agree.
+    */}
+    <a
+      href="/"
+      class="group mr-auto flex items-center gap-2.5 rounded-lg py-1 text-[15px] font-semibold tracking-tight"
+    >
+      <span
+        class="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-accent-border bg-accent-tint font-mono text-[11px] font-bold tracking-tighter text-accent transition-transform group-hover:scale-105"
+        aria-hidden="true"
+      >SM</span>
+      <span class="sr-only sm:not-sr-only sm:inline">{PROFILE.name}</span>
+    </a>
+
+    <ul class="hidden items-center gap-0.5 lg:flex">
+      {
+        NAV.map((item) => {
+          const active = isActive(item.href, 'children' in item ? item.children : undefined);
+          const children = 'children' in item ? item.children : undefined;
+
+          return (
+            <li class="group relative">
+              <a
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                class:list={[
+                  'flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  active ? 'text-fg' : 'text-muted hover:text-fg',
+                ]}
+              >
+                {item.label}
+                {children && (
+                  <svg class="h-3 w-3 text-subtle transition-transform group-hover:rotate-180" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M3 4.5 6 7.5 9 4.5" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                )}
+              </a>
+
+              {/*
+                CSS-only dropdown. Hover *and* focus-within, so it is reachable
+                by keyboard without a line of JavaScript.
+              */}
+              {children && (
+                <div class="invisible absolute left-0 top-full w-56 pt-1.5 opacity-0 transition-[opacity,visibility] duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                  <ul class="overflow-hidden rounded-xl border border-line bg-surface p-1.5 shadow-(--shadow-float)">
+                    {children.map((child) => (
+                      <li>
+                        <a
+                          href={child.href}
+                          class="block rounded-lg px-3 py-2 transition-colors hover:bg-surface-hover"
+                        >
+                          <span class="block text-sm font-medium text-fg">{child.label}</span>
+                          <span class="block text-xs text-subtle">{child.hint}</span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </li>
+          );
+        })
+      }
+    </ul>
+
+    <div class="ml-auto flex items-center gap-1.5 lg:ml-3">
+      <button
+        type="button"
+        data-command-palette-open
+        class="flex h-9 items-center gap-2 rounded-lg border border-line px-2.5 text-sm text-subtle transition-colors hover:bg-surface-hover hover:text-fg"
+        aria-label="Search and navigate (Command K)"
+      >
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path>
+        </svg>
+        <kbd class="hidden font-sans text-[11px] font-medium tracking-wide sm:inline">⌘K</kbd>
+      </button>
+
+      <ThemeToggle />
+
+      <button
+        type="button"
+        id="mobile-menu-button"
+        class="grid h-9 w-9 place-items-center rounded-lg border border-line text-muted transition-colors hover:bg-surface-hover hover:text-fg lg:hidden"
+        aria-label="Open menu"
+        aria-expanded="false"
+        aria-controls="mobile-menu"
+      >
+        <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16"></path>
+        </svg>
+      </button>
+    </div>
+  </nav>
+
+  <div id="mobile-menu" class="hidden border-t border-line bg-bg lg:hidden">
+    <ul class="mx-auto max-w-(--container-wide) px-5 py-3 sm:px-8">
+      {
+        NAV.map((item) => {
+          const children = 'children' in item ? item.children : undefined;
+          return (
+            <li class="border-b border-line/60 last:border-0">
+              <a
+                href={item.href}
+                class:list={[
+                  'block py-3 text-[15px] font-medium transition-colors',
+                  isActive(item.href, children) ? 'text-accent' : 'text-fg',
+                ]}
+              >
+                {item.label}
+              </a>
+              {children && (
+                <ul class="-mt-1 pb-2 pl-4">
+                  {children.map((child) => (
+                    <li>
+                      <a href={child.href} class="block py-1.5 text-sm text-muted">
+                        {child.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })
+      }
+    </ul>
+  </div>
+</header>
+
+<script>
+  function wireMobileMenu() {
+    const button = document.getElementById('mobile-menu-button');
+    const menu = document.getElementById('mobile-menu');
+    if (!button || !menu || button.dataset.wired) return;
+    button.dataset.wired = 'true';
+
+    const setOpen = (open: boolean) => {
+      menu.classList.toggle('hidden', !open);
+      button.setAttribute('aria-expanded', String(open));
+      button.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    };
+
+    button.addEventListener('click', () =>
+      setOpen(button.getAttribute('aria-expanded') !== 'true'),
+    );
+    // Escape should always get you out, and resizing past the breakpoint
+    // shouldn't leave an orphaned open panel behind.
+    document.addEventListener('keydown', (e) => e.key === 'Escape' && setOpen(false));
+    window.matchMedia('(min-width: 1024px)').addEventListener('change', (e) => {
+      if (e.matches) setOpen(false);
+    });
+  }
+
+  wireMobileMenu();
+  document.addEventListener('astro:after-swap', wireMobileMenu);
+</script>

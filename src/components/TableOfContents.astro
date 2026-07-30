@@ -1,0 +1,100 @@
+---
+import type { MarkdownHeading } from 'astro';
+
+interface Props {
+  headings: MarkdownHeading[];
+}
+
+// h2 and h3 only. h4+ in a ToC produces a list that's harder to scan than the
+// document it indexes.
+const headings = Astro.props.headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+
+{
+  headings.length > 1 && (
+    <nav class="toc" aria-labelledby="toc-heading">
+      <p id="toc-heading" class="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">
+        On this page
+      </p>
+
+      <ul class="mt-4 space-y-1 border-l border-line">
+        {headings.map((heading) => (
+          <li>
+            <a
+              href={`#${heading.slug}`}
+              data-toc-link={heading.slug}
+              class:list={[
+                '-ml-px block border-l border-transparent py-1 text-sm leading-snug text-subtle transition-colors hover:border-line-strong hover:text-fg',
+                heading.depth === 2 ? 'pl-4' : 'pl-8',
+              ]}
+            >
+              {heading.text}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+<style>
+  .toc a[aria-current='true'] {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    font-weight: 500;
+  }
+</style>
+
+<script>
+  /**
+   * Highlights the heading currently being read.
+   *
+   * A naive IntersectionObserver marks a heading active the moment it enters
+   * the viewport, which makes the ToC flicker between two entries while
+   * scrolling. Tracking the *last heading above the reading line* instead gives
+   * a stable, single active item.
+   */
+  function wireToc() {
+    const links = document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]');
+    if (!links.length) return;
+
+    const headings = [...links]
+      .map((link) => document.getElementById(link.dataset.tocLink!))
+      .filter((el): el is HTMLElement => el !== null);
+
+    let ticking = false;
+
+    const update = () => {
+      ticking = false;
+      const line = window.scrollY + window.innerHeight * 0.25;
+
+      let activeIndex = 0;
+      for (let i = 0; i < headings.length; i++) {
+        if (headings[i]!.offsetTop <= line) activeIndex = i;
+        else break;
+      }
+
+      // Pin the last entry once the page is scrolled to the bottom, otherwise
+      // short trailing sections can never become active.
+      const atBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+      if (atBottom) activeIndex = headings.length - 1;
+
+      links.forEach((link, i) => link.setAttribute('aria-current', String(i === activeIndex)));
+    };
+
+    const onScroll = () => {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(update);
+      }
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    update();
+  }
+
+  wireToc();
+  document.addEventListener('astro:page-load', wireToc);
+</script>

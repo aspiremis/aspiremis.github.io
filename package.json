@@ -1,0 +1,41 @@
+{
+  "name": "shalini-ee.github.io",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Engineering notebook of Shalini Mishra — M.Tech Power Systems Engineering, IIT Bhubaneswar.",
+  "author": "Shalini Mishra <shalinimishra7068@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npm run assets && astro dev",
+    "assets": "node scripts/generate-assets.mjs",
+    "prebuild": "npm run assets",
+    "build": "astro build && pagefind --site dist",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "^7.2.2",
+    "@astrojs/mdx": "^7.0.5",
+    "@astrojs/rss": "^4.0.19",
+    "@astrojs/sitemap": "^3.7.3",
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.3",
+    "astro": "^7.1.6",
+    "katex": "^0.18.1",
+    "rehype-autolink-headings": "^7.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0",
+    "tailwindcss": "^4.3.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "pagefind": "^1.5.2",
+    "sharp": "^0.35.3",
+    "typescript": "^6.0.3"
+  }
+}

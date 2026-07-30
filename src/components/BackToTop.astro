@@ -1,0 +1,43 @@
+---
+/** Appears once the reader is a screenful down; hidden entirely from AT until then. */
+---
+
+<button
+  id="back-to-top"
+  type="button"
+  class="invisible fixed bottom-6 right-6 z-40 grid h-11 w-11 translate-y-2 place-items-center rounded-full border border-line bg-surface/90 text-muted opacity-0 shadow-(--shadow-float) backdrop-blur-md transition-[opacity,transform,visibility] duration-300 hover:text-accent"
+  aria-label="Back to top"
+>
+  <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 19V5M5 12l7-7 7 7"></path>
+  </svg>
+</button>
+
+<script>
+  function wireBackToTop() {
+    const button = document.getElementById('back-to-top');
+    if (!button) return;
+
+    const toggle = () => {
+      const show = window.scrollY > window.innerHeight * 0.8;
+      button.classList.toggle('invisible', !show);
+      button.classList.toggle('opacity-0', !show);
+      button.classList.toggle('translate-y-2', !show);
+      button.inert = !show;
+    };
+
+    if (!button.dataset.wired) {
+      button.dataset.wired = 'true';
+      button.addEventListener('click', () => {
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+      });
+      window.addEventListener('scroll', toggle, { passive: true });
+    }
+
+    toggle();
+  }
+
+  wireBackToTop();
+  document.addEventListener('astro:after-swap', wireBackToTop);
+</script>

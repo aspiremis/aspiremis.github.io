@@ -1,0 +1,149 @@
+---
+import '../styles/global.css';
+import { ClientRouter } from 'astro:transitions';
+
+import SEO from '../components/SEO.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import CommandPalette from '../components/CommandPalette.astro';
+import ScrollProgress from '../components/ScrollProgress.astro';
+import BackToTop from '../components/BackToTop.astro';
+import { SITE } from '../consts';
+
+interface Props {
+  title: string;
+  description?: string;
+  type?: 'website' | 'article';
+  publishedAt?: Date;
+  updatedAt?: Date;
+  tags?: string[];
+  image?: string;
+  noindex?: boolean;
+  /** Long-form pages show the reading-progress bar; index pages don't need it. */
+  showProgress?: boolean;
+  /**
+   * Listing pages (tag archives, collection indexes) only restate content that
+   * lives on real pages. Indexing them full-text pushes four tag archives above
+   * the post the reader was actually looking for, so they opt out. They stay
+   * reachable through the palette's navigation section either way.
+   */
+  fullTextSearch?: boolean;
+}
+
+const { showProgress = false, fullTextSearch = true, ...seo } = Astro.props;
+---
+
+<!doctype html>
+<html lang={SITE.lang} class="no-js" data-theme-pref="system">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+
+    {/*
+      Only Inter is preloaded, and deliberately so. It renders the nav, every
+      heading and the lead paragraph — which is the LCP element on article pages
+      — so discovering it before the stylesheet parses saves a round trip.
+
+      Newsreader and JetBrains Mono are *not* preloaded. Both are below the fold
+      (prose body, code blocks), and preloading them would put 96 kB on the same
+      contended connection as the font LCP actually waits for. `font-display:
+      swap` lets them arrive late without blocking anything.
+    */}
+    <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a0a0b" media="(prefers-color-scheme: dark)" />
+
+    <SEO {...seo} />
+
+    {/*
+      Theme must be resolved before the first paint or the page flashes white
+      on a dark-mode reload. This is the one script that has to be render
+      blocking and inline — it is a handful of bytes and runs in microseconds.
+    */}
+    <script is:inline>
+      (() => {
+        const root = document.documentElement;
+        root.classList.remove('no-js');
+        try {
+          const stored = localStorage.getItem('theme');
+          const pref = ['light', 'dark', 'system'].includes(stored) ? stored : 'system';
+          const dark =
+            pref === 'dark' ||
+            (pref === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          root.classList.toggle('dark', dark);
+          root.dataset.themePref = pref;
+          root.style.colorScheme = dark ? 'dark' : 'light';
+        } catch {
+          /* Private mode blocks localStorage — fall through to the light default. */
+        }
+      })();
+    </script>
+
+    <ClientRouter />
+  </head>
+
+  <body class="min-h-dvh">
+    {showProgress && <ScrollProgress />}
+    <Nav />
+
+    {/*
+      data-pagefind-body scopes the full-text index to real page content.
+      Nav, footer, palette and back-to-top all sit outside <main>, so they are
+      excluded automatically rather than needing individual ignore markers.
+    */}
+    <main
+      id="main"
+      tabindex="-1"
+      class="outline-none"
+      data-pagefind-body={fullTextSearch ? true : undefined}
+      data-pagefind-ignore={fullTextSearch ? undefined : true}
+    >
+      <slot />
+    </main>
+
+    <Footer />
+    <BackToTop />
+    <CommandPalette />
+
+    {/*
+      Scroll reveal. Progressive enhancement only: `no-js` is removed above, and
+      the .reveal fallback in global.css keeps content visible if this never runs.
+    */}
+    <script>
+      function wireReveal() {
+        const targets = document.querySelectorAll('.reveal:not(.is-visible)');
+        if (!targets.length) return;
+
+        if (
+          !('IntersectionObserver' in window) ||
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ) {
+          targets.forEach((el) => el.classList.add('is-visible'));
+          return;
+        }
+
+        const observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add('is-visible');
+                observer.unobserve(entry.target);
+              }
+            }
+          },
+          { rootMargin: '0px 0px -8% 0px', threshold: 0.05 },
+        );
+
+        targets.forEach((el) => observer.observe(el));
+      }
+
+      wireReveal();
+      document.addEventListener('astro:page-load', wireReveal);
+    </script>
+  </body>
+</html>

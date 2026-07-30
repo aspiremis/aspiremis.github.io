@@ -1,0 +1,30 @@
+---
+/**
+ * Status pills. `tone` is semantic rather than a colour name so that the
+ * meaning survives a palette change.
+ */
+interface Props {
+  tone?: 'neutral' | 'accent' | 'active' | 'done' | 'planned';
+  class?: string;
+}
+
+const { tone = 'neutral', class: className = '' } = Astro.props;
+
+const tones: Record<string, string> = {
+  neutral: 'border-line bg-bg-subtle text-muted',
+  accent: 'border-accent-border bg-accent-tint text-accent',
+  active: 'border-emerald-600/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  done: 'border-line bg-bg-subtle text-muted',
+  planned: 'border-dashed border-line-strong bg-transparent text-subtle',
+};
+---
+
+<span
+  class:list={[
+    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium leading-5 whitespace-nowrap',
+    tones[tone],
+    className,
+  ]}
+>
+  <slot />
+</span>

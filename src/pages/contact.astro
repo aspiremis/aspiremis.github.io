@@ -1,0 +1,114 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import SocialIcon from '../components/SocialIcon.astro';
+import { SITE, PROFILE, SOCIALS } from '../consts';
+
+/**
+ * No contact form. A form on a static site needs a third-party endpoint, which
+ * means an external dependency and someone else holding the messages — for the
+ * volume this site will see, a mailto link is simply better.
+ */
+const REASONS = [
+  {
+    title: 'Research and collaboration',
+    body: 'If you work on distribution-level renewable integration, power quality or energy analytics, I would genuinely like to hear about it.',
+  },
+  {
+    title: 'Something I got wrong',
+    body: 'If a derivation, a number or a claim on this site is incorrect, please tell me. Corrections are the most useful mail I can receive.',
+  },
+  {
+    title: 'Students and juniors',
+    body: 'Questions about M.Tech admissions, power systems as a specialisation, or getting started with OpenDSS and Python — happy to help where I can.',
+  },
+  {
+    title: 'Opportunities',
+    body: 'Internships and projects in grid integration, distribution planning or power system software, from summer 2027 onwards.',
+  },
+];
+---
+
+<BaseLayout
+  title="Contact"
+  description="Get in touch with Shalini Mishra — research collaboration, corrections, questions about power systems, or opportunities."
+>
+  <PageHeader
+    eyebrow="Contact"
+    title="Get in touch"
+    lead="Email is the most reliable way to reach me, and I read all of it. LinkedIn works too, though I'm slower there."
+  />
+
+  <div class="mx-auto max-w-(--container-page) px-5 pb-16 sm:px-8">
+    <div class="grid gap-12 lg:grid-cols-[1fr_1.1fr]">
+      <div>
+        <a
+          href={`mailto:${SITE.email}`}
+          class="group block rounded-card border border-line bg-surface p-6 transition-[border-color,box-shadow] hover:border-accent-border hover:shadow-(--shadow-card)"
+        >
+          <span class="text-xs font-semibold uppercase tracking-[0.16em] text-subtle">Email</span>
+          <span class="mt-2 block break-all font-mono text-base text-accent">
+            {SITE.email}
+          </span>
+          <span class="mt-3 block text-sm text-muted">
+            Usually a reply within a few days.
+          </span>
+        </a>
+
+        <ul class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+          {
+            SOCIALS.filter((s) => s.icon !== 'mail').map((social) => (
+              <li>
+                <a
+                  href={social.href}
+                  target="_blank"
+                  rel="me noopener noreferrer"
+                  class="group flex items-center gap-4 rounded-card border border-line bg-surface p-5 transition-colors hover:border-line-strong hover:bg-surface-hover"
+                >
+                  <span class="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-line text-muted transition-colors group-hover:border-accent-border group-hover:bg-accent-tint group-hover:text-accent">
+                    <SocialIcon name={social.icon} />
+                  </span>
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-fg">{social.label}</span>
+                    <span class="block truncate font-mono text-xs text-subtle">
+                      {social.icon === 'github' ? `@${PROFILE.github}` : `in/${PROFILE.linkedin}`}
+                    </span>
+                  </span>
+                  <span class="ml-auto shrink-0 text-subtle" aria-hidden="true">↗</span>
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+
+        <div class="mt-6 rounded-card border border-line bg-bg-subtle p-5">
+          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-subtle">Based in</p>
+          <p class="mt-2 text-sm text-muted">
+            Bhubaneswar, Odisha, India · IST (UTC+5:30)
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <h2 class="text-h3 font-semibold tracking-tight text-fg">Good reasons to write</h2>
+
+        <ul class="mt-8 space-y-7">
+          {
+            REASONS.map((reason) => (
+              <li class="border-l-2 border-accent-border pl-5">
+                <h3 class="text-base font-semibold text-fg">{reason.title}</h3>
+                <p class="mt-1.5 text-sm leading-relaxed text-muted">{reason.body}</p>
+              </li>
+            ))
+          }
+        </ul>
+
+        <p class="mt-10 rounded-card border border-line bg-surface p-5 text-sm leading-relaxed text-muted">
+          If you're writing about something specific on this site, a link to the page
+          helps me answer properly — I'd rather give you a considered reply than a
+          fast one.
+        </p>
+      </div>
+    </div>
+  </div>
+</BaseLayout>

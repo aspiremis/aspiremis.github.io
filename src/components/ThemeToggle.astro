@@ -1,0 +1,77 @@
+---
+/**
+ * Cycles light → dark → system. "System" is a real third state rather than an
+ * implicit default, so choosing to follow the OS survives a reload.
+ * The applied theme itself is set by the blocking script in BaseLayout; this
+ * component only writes the preference and re-runs the same resolution.
+ */
+---
+
+<button
+  id="theme-toggle"
+  type="button"
+  class="grid h-9 w-9 place-items-center rounded-lg border border-line text-muted transition-colors hover:bg-surface-hover hover:text-fg"
+  aria-label="Change colour theme"
+  title="Change colour theme"
+>
+  <!-- Exactly one icon is shown, selected by the data-theme-pref attribute on <html>. -->
+  <svg class="h-[18px] w-[18px] hidden [html[data-theme-pref='light']_&]:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="4"></circle>
+    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+  </svg>
+  <svg class="h-[18px] w-[18px] hidden [html[data-theme-pref='dark']_&]:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+  </svg>
+  <svg class="h-[18px] w-[18px] hidden [html[data-theme-pref='system']_&]:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+    <path d="M8 21h8M12 17v4"></path>
+  </svg>
+  <span class="sr-only" id="theme-status" aria-live="polite"></span>
+</button>
+
+<script>
+  const ORDER = ['light', 'dark', 'system'] as const;
+  type Pref = (typeof ORDER)[number];
+
+  function apply(pref: Pref) {
+    const root = document.documentElement;
+    const dark =
+      pref === 'dark' ||
+      (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    root.classList.toggle('dark', dark);
+    root.dataset.themePref = pref;
+    root.style.colorScheme = dark ? 'dark' : 'light';
+
+    const status = document.getElementById('theme-status');
+    if (status) status.textContent = `Theme: ${pref}`;
+  }
+
+  function current(): Pref {
+    const stored = localStorage.getItem('theme');
+    return ORDER.includes(stored as Pref) ? (stored as Pref) : 'system';
+  }
+
+  function wire() {
+    const button = document.getElementById('theme-toggle');
+    if (!button || button.dataset.wired) return;
+    button.dataset.wired = 'true';
+
+    button.addEventListener('click', () => {
+      const next = ORDER[(ORDER.indexOf(current()) + 1) % ORDER.length]!;
+      localStorage.setItem('theme', next);
+      apply(next);
+    });
+  }
+
+  // Following the OS means reacting when the OS changes mid-session.
+  window
+    .matchMedia('(prefers-color-scheme: dark)')
+    .addEventListener('change', () => current() === 'system' && apply('system'));
+
+  wire();
+  document.addEventListener('astro:after-swap', () => {
+    apply(current());
+    wire();
+  });
+</script>

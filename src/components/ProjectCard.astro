@@ -1,0 +1,75 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import Card from './Card.astro';
+import Badge from './Badge.astro';
+import { formatMonth } from '../lib/utils';
+
+interface Props {
+  project: CollectionEntry<'projects'>;
+  featured?: boolean;
+}
+
+const { project, featured = false } = Astro.props;
+const { title, summary, status, tech, github, date } = project.data;
+
+// The GitHub icon link below uses `-m-2 p-2`: padding expands its hit area to
+// 32px square while the glyph stays 16px. A bare 16px icon link fails the WCAG
+// 2.2 minimum target size, which bites hardest on phones, where the cards stack
+// to a single column and the icon is the only secondary action.
+const statusLabel = { active: 'In progress', completed: 'Complete', planned: 'Planned' }[status];
+const statusTone = { active: 'active', completed: 'done', planned: 'planned' }[status] as
+  | 'active'
+  | 'done'
+  | 'planned';
+---
+
+<Card href={`/projects/${project.id}`} class={featured ? 'sm:p-8' : ''}>
+  <div class="flex items-start justify-between gap-4">
+    <Badge tone={statusTone}>
+      {status === 'active' && <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />}
+      {statusLabel}
+    </Badge>
+    <time class="shrink-0 font-mono text-[11px] text-subtle" datetime={date.toISOString()}>
+      {formatMonth(date)}
+    </time>
+  </div>
+
+  <h3
+    class:list={[
+      'mt-4 font-semibold tracking-tight text-fg transition-colors group-hover:text-accent',
+      featured ? 'text-h3 sm:text-h2' : 'text-h3',
+    ]}
+  >
+    {title}
+  </h3>
+
+  <p class="mt-2.5 flex-1 text-sm leading-relaxed text-muted">{summary}</p>
+
+  <div class="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
+    <ul class="flex flex-wrap gap-1.5">
+      {
+        tech.slice(0, 4).map((item) => (
+          <li class="rounded-md bg-bg-subtle px-2 py-0.5 font-mono text-[11px] text-subtle">
+            {item}
+          </li>
+        ))
+      }
+    </ul>
+
+    {
+      github && (
+        <a
+          href={github}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="relative z-10 -m-2 ml-auto p-2 text-subtle transition-colors hover:text-accent"
+          aria-label={`${title} on GitHub`}
+        >
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 .5C5.73.5.66 5.57.66 11.84c0 5.01 3.25 9.26 7.76 10.76.57.1.78-.25.78-.55v-1.94c-3.16.69-3.83-1.52-3.83-1.52-.52-1.32-1.26-1.67-1.26-1.67-1.03-.7.08-.69.08-.69 1.14.08 1.74 1.17 1.74 1.17 1.01 1.74 2.66 1.24 3.31.95.1-.73.4-1.24.71-1.53-2.52-.29-5.17-1.26-5.17-5.62 0-1.24.44-2.26 1.17-3.06-.12-.28-.51-1.44.11-3.01 0 0 .95-.31 3.12 1.17a10.8 10.8 0 0 1 5.68 0c2.17-1.48 3.12-1.17 3.12-1.17.62 1.57.23 2.73.11 3.01.73.8 1.17 1.82 1.17 3.06 0 4.37-2.66 5.33-5.19 5.61.41.35.77 1.05.77 2.12v3.14c0 .3.2.66.79.55a11.35 11.35 0 0 0 7.75-10.76C23.34 5.57 18.27.5 12 .5z" />
+          </svg>
+        </a>
+      )
+    }
+  </div>
+</Card>

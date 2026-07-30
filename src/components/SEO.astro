@@ -1,0 +1,106 @@
+---
+import { SITE, PROFILE, SOCIALS } from '../consts';
+
+interface Props {
+  title: string;
+  description?: string;
+  /** Rendered as an article rather than a page — adds published/modified time. */
+  type?: 'website' | 'article';
+  publishedAt?: Date;
+  updatedAt?: Date;
+  tags?: string[];
+  image?: string;
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description = SITE.description,
+  type = 'website',
+  publishedAt,
+  updatedAt,
+  tags = [],
+  image = '/og-default.png',
+  noindex = false,
+} = Astro.props;
+
+// The home page shouldn't render "Shalini Mishra — Shalini Mishra".
+const fullTitle = title === SITE.title ? `${SITE.title} — ${SITE.tagline}` : `${title} — ${SITE.title}`;
+
+const canonical = new URL(Astro.url.pathname.replace(/\/$/, '') || '/', SITE.url).toString();
+const ogImage = new URL(image, SITE.url).toString();
+
+/**
+ * Structured data. Person on every page so search engines connect the site to
+ * Shalini; Article layered on top for posts and notes.
+ */
+const personSchema = {
+  '@type': 'Person',
+  '@id': `${SITE.url}/#person`,
+  name: PROFILE.name,
+  url: SITE.url,
+  email: `mailto:${SITE.email}`,
+  jobTitle: PROFILE.role,
+  description: SITE.description,
+  alumniOf: { '@type': 'CollegeOrUniversity', name: PROFILE.institute, url: PROFILE.instituteUrl },
+  affiliation: { '@type': 'CollegeOrUniversity', name: PROFILE.institute, url: PROFILE.instituteUrl },
+  knowsAbout: [
+    'Power Systems Engineering',
+    'Power System Simulation',
+    'Renewable Energy Integration',
+    'Power Quality',
+    'Distribution Systems',
+    'Machine Learning for Energy',
+  ],
+  sameAs: SOCIALS.filter((s) => s.icon !== 'mail').map((s) => s.href),
+};
+
+const articleSchema =
+  type === 'article'
+    ? {
+        '@type': 'Article',
+        headline: title,
+        description,
+        image: ogImage,
+        datePublished: publishedAt?.toISOString(),
+        dateModified: (updatedAt ?? publishedAt)?.toISOString(),
+        keywords: tags.join(', '),
+        author: { '@id': `${SITE.url}/#person` },
+        publisher: { '@id': `${SITE.url}/#person` },
+        mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+      }
+    : null;
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [personSchema, ...(articleSchema ? [articleSchema] : [])],
+};
+---
+
+<title>{fullTitle}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonical} />
+{noindex && <meta name="robots" content="noindex, nofollow" />}
+
+<meta property="og:type" content={type} />
+<meta property="og:title" content={fullTitle} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical} />
+<meta property="og:image" content={ogImage} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:site_name" content={SITE.title} />
+<meta property="og:locale" content={SITE.locale} />
+{publishedAt && <meta property="article:published_time" content={publishedAt.toISOString()} />}
+{updatedAt && <meta property="article:modified_time" content={updatedAt.toISOString()} />}
+{tags.map((tag) => <meta property="article:tag" content={tag} />)}
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={fullTitle} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImage} />
+
+<meta name="author" content={PROFILE.name} />
+<link rel="alternate" type="application/rss+xml" title={`${SITE.title} — Blog`} href={new URL('/rss.xml', SITE.url)} />
+
+<script type="application/ld+json" set:html={JSON.stringify(jsonLd)} is:inline />
