@@ -108,4 +108,4 @@ worse than gradient boosting.
 ---
 
 *Backtesting harness and notebooks:
-[load-solar-forecasting](https://github.com/shalini-ee/load-solar-forecasting).*
+[load-solar-forecasting](https://github.com/aspiremis/load-solar-forecasting).*

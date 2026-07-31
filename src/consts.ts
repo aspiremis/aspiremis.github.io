@@ -5,7 +5,7 @@
  */
 
 export const SITE = {
-  url: 'https://shalini-ee.github.io',
+  url: 'https://aspiremis.github.io',
   title: 'Shalini Mishra',
   tagline: 'Understanding the grid, one simulation at a time.',
   description:
@@ -21,7 +21,7 @@ export const PROFILE = {
   role: 'M.Tech, Power Systems Engineering',
   institute: 'IIT Bhubaneswar',
   instituteUrl: 'https://www.iitbbs.ac.in/',
-  github: 'shalini-ee',
+  github: 'aspiremis',
   linkedin: 'shalini-ee',
   startedAt: '2026-07',
   /** Rolling "what I'm on right now" line, surfaced on the home hero. */

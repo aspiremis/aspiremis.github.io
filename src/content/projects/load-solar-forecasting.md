@@ -7,7 +7,7 @@ date: 2026-07-26
 status: active
 tech: ['Python', 'scikit-learn', 'pandas', 'PyTorch']
 tags: ['forecasting', 'machine-learning', 'time-series', 'solar-pv']
-github: https://github.com/shalini-ee/load-solar-forecasting
+github: https://github.com/aspiremis/load-solar-forecasting
 featured: true
 order: 3
 ---

@@ -40,7 +40,7 @@ const TOKEN = import.meta.env.GITHUB_TOKEN ?? process.env.GITHUB_TOKEN;
 function headers(): Record<string, string> {
   const base: Record<string, string> = {
     Accept: 'application/vnd.github+json',
-    'User-Agent': 'shalini-ee.github.io-build',
+    'User-Agent': 'aspiremis.github.io-build',
     'X-GitHub-Api-Version': '2022-11-28',
   };
   if (TOKEN) base.Authorization = `Bearer ${TOKEN}`;

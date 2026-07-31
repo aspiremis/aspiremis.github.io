@@ -1,7 +1,7 @@
 # Deployment guide
 
 The site deploys itself. Push to `main`, and about ninety seconds later
-[shalini-ee.github.io](https://shalini-ee.github.io) is updated.
+[aspiremis.github.io](https://aspiremis.github.io) is updated.
 
 This document covers the one-time setup, then everything you might need later.
 
@@ -17,14 +17,14 @@ The `gh` CLI on this machine may be signed in as a different account. Check:
 gh auth status
 ```
 
-If it doesn't say `shalini-ee`, sign in:
+If it doesn't say `aspiremis`, sign in:
 
 ```bash
 gh auth login
 ```
 
 Choose **GitHub.com → HTTPS → Login with a web browser**, and sign in as
-`shalini-ee`. Both accounts can coexist; switch between them with:
+`aspiremis`. Both accounts can coexist; switch between them with:
 
 ```bash
 gh auth switch
@@ -52,20 +52,20 @@ git config user.email "shalinimishra7068@gmail.com"
 
 ### 3. Create the repository and push
 
-The repository **must** be named `shalini-ee.github.io` — GitHub only serves a
+The repository **must** be named `aspiremis.github.io` — GitHub only serves a
 user site from a repository matching `<username>.github.io`, and that is what
 puts the site at the domain root with no base-path configuration.
 
 ```bash
 git add .
 git commit -m "Initial commit: personal site and engineering notebook"
-gh repo create shalini-ee.github.io --public --source=. --remote=origin --push
+gh repo create aspiremis.github.io --public --source=. --remote=origin --push
 ```
 
 ### 4. Turn on Pages
 
 ```bash
-gh api -X POST repos/shalini-ee/shalini-ee.github.io/pages \
+gh api -X POST repos/aspiremis/aspiremis.github.io/pages \
   -f 'build_type=workflow'
 ```
 
@@ -81,7 +81,7 @@ and deploys nothing.
 gh run watch
 ```
 
-The site is live at **https://shalini-ee.github.io** once it finishes. The first
+The site is live at **https://aspiremis.github.io** once it finishes. The first
 deploy can take a few extra minutes while GitHub provisions the domain.
 
 ---
@@ -180,7 +180,7 @@ If you ever buy a domain:
 4. Point DNS at GitHub:
    - `A` records for the apex → `185.199.108.153`, `185.199.109.153`,
      `185.199.110.153`, `185.199.111.153`
-   - or a `CNAME` for `www` → `shalini-ee.github.io`
+   - or a `CNAME` for `www` → `aspiremis.github.io`
 5. Settings → Pages → Custom domain, and tick **Enforce HTTPS**
 
 ---

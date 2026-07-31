@@ -108,4 +108,4 @@ whether to approve an interconnection.
 ---
 
 *Code and scenario definitions:
-[pv-hosting-capacity](https://github.com/shalini-ee/pv-hosting-capacity).*
+[pv-hosting-capacity](https://github.com/aspiremis/pv-hosting-capacity).*

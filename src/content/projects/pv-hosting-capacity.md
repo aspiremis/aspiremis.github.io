@@ -7,7 +7,7 @@ date: 2026-07-20
 status: active
 tech: ['Python', 'OpenDSS', 'pandas', 'Matplotlib']
 tags: ['hosting-capacity', 'opendss', 'distribution', 'solar-pv', 'simulation']
-github: https://github.com/shalini-ee/pv-hosting-capacity
+github: https://github.com/aspiremis/pv-hosting-capacity
 featured: true
 order: 2
 ---

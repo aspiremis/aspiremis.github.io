@@ -1,9 +1,9 @@
-# shalini-ee.github.io
+# aspiremis.github.io
 
 My open engineering notebook — coursework, simulations, notes and projects from
 my M.Tech in Power Systems Engineering at IIT Bhubaneswar.
 
-**Live at [shalini-ee.github.io](https://shalini-ee.github.io)**
+**Live at [aspiremis.github.io](https://aspiremis.github.io)**
 
 Built to grow over two years. It is deliberately not a résumé: the useful part of
 learning something is the confusion and the wrong turns, and none of that
@@ -116,7 +116,7 @@ date: 2026-07-20
 status: active            # active | completed | planned
 tech: ['Python', 'OpenDSS']
 tags: ['hosting-capacity']
-github: https://github.com/shalini-ee/pv-hosting-capacity
+github: https://github.com/aspiremis/pv-hosting-capacity
 featured: true
 order: 2                  # lower sorts first
 ```

@@ -118,5 +118,5 @@ reminders now, on test systems, than later on something that matters.
 ---
 
 *The solver, the test cases and the failing feeder are all in
-[power-flow-solver](https://github.com/shalini-ee/power-flow-solver) if you want to
+[power-flow-solver](https://github.com/aspiremis/power-flow-solver) if you want to
 reproduce it.*

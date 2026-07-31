@@ -8,12 +8,12 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import rehypeAutolinkHeadings from 'rehype-autolink-headings';
 
-// Deployed as a GitHub *user* site (shalini-ee.github.io), so the site lives at
+// Deployed as a GitHub *user* site (aspiremis.github.io), so the site lives at
 // the domain root and needs no `base`. Keeping it that way avoids every class of
 // broken-asset bug that project pages (/repo-name/) introduce.
 // Mirrored in src/consts.ts as SITE.url — keep the two in sync.
 export default defineConfig({
-  site: 'https://shalini-ee.github.io',
+  site: 'https://aspiremis.github.io',
   trailingSlash: 'ignore',
   build: { format: 'directory' },
 

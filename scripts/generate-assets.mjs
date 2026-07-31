@@ -66,7 +66,7 @@ const ogCard = `
     Simulation<tspan fill="#3F3F46" dx="14">·</tspan><tspan dx="14">Research</tspan><tspan fill="#3F3F46" dx="14">·</tspan><tspan dx="14">Notes</tspan><tspan fill="#3F3F46" dx="14">·</tspan><tspan dx="14">Projects</tspan>
   </text>
 
-  <text x="1120" y="556" text-anchor="end" font-family="Helvetica, Arial, sans-serif" font-size="21" fill="#71717A">shalini-ee.github.io</text>
+  <text x="1120" y="556" text-anchor="end" font-family="Helvetica, Arial, sans-serif" font-size="21" fill="#71717A">aspiremis.github.io</text>
 </svg>`;
 
 async function main() {

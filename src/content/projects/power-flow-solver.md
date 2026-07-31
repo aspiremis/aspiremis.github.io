@@ -7,7 +7,7 @@ date: 2026-07-12
 status: active
 tech: ['Python', 'NumPy', 'SciPy', 'Matplotlib']
 tags: ['power-flow', 'newton-raphson', 'numerical-methods', 'ieee-test-systems']
-github: https://github.com/shalini-ee/power-flow-solver
+github: https://github.com/aspiremis/power-flow-solver
 featured: true
 order: 1
 ---
