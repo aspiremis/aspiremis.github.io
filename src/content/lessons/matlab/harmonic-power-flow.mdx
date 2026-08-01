@@ -1,0 +1,412 @@
+---
+title: Harmonic Analysis and Power Quality
+track: matlab
+module: power-systems
+order: 43
+description: Frequency scans, resonance, harmonic penetration and a compliance assessment against IEEE 519 — the network-level version of the FFT lesson.
+objectives:
+  - Build a frequency-dependent Y-bus and run an impedance scan
+  - Identify parallel resonance and explain why capacitor banks cause it
+  - Assess a measurement set against IEEE 519 limits, correctly
+prerequisites: [signal-processing, ybus-builder]
+estimatedMinutes: 40
+difficulty: advanced
+tags: ['matlab', 'harmonics', 'power-quality', 'resonance', 'ieee-519']
+---
+
+The Signal Processing lesson computed harmonics from a waveform at one point. This
+lesson asks the network question: **given harmonic injection somewhere, what voltage
+appears everywhere else?**
+
+That's harmonic penetration, and the thing that makes it interesting — and
+occasionally dangerous — is resonance.
+
+## The Y-bus at harmonic frequencies
+
+Network elements are frequency dependent. For harmonic order $h$:
+
+| Element | At harmonic $h$ | Why |
+|---|---|---|
+| Resistance | $R$ (or $R\sqrt{h}$) | Skin effect raises it; often neglected below the 13th |
+| Inductance | $jhX_L$ | Reactance scales **up** with frequency |
+| Capacitance | $-jX_C/h$ | Reactance scales **down** |
+
+The opposite scaling is the whole story. Inductive reactance rises with $h$ while
+capacitive reactance falls, so at some frequency they are equal — and that is
+resonance.
+
+<CodeFile name="harmonic_ybus.m">
+```matlab
+function Yh = harmonic_ybus(n_bus, branch, shunt, h, skin_effect)
+%HARMONIC_YBUS Admittance matrix at harmonic order h.
+%
+%   BRANCH columns: from, to, R, X, B, tap, shift_deg, status  (at fundamental)
+%   SHUNT is bus shunt admittance at the fundamental.
+
+    arguments
+        n_bus       (1,1) double
+        branch            double
+        shunt       (:,1) double
+        h           (1,1) double {mustBePositive}
+        skin_effect (1,1) logical = true
+    end
+
+    bh = branch;
+
+    % Series resistance: skin effect, commonly modelled as R*sqrt(h)
+    if skin_effect
+        bh(:,3) = branch(:,3) .* sqrt(h);
+    end
+
+    bh(:,4) = branch(:,4) * h;        % inductive reactance scales with h
+    bh(:,5) = branch(:,5) * h;        % line charging susceptance likewise
+
+    % Bus shunts: capacitive susceptance scales with h, so B_shunt * h
+    shunt_h = real(shunt)/sqrt(h) + 1i*imag(shunt)*h;
+
+    Yh = build_ybus(n_bus, bh, shunt_h);
+end
+```
+</CodeFile>
+
+<Callout type="warning" title="Loads are not just impedances at harmonic frequencies">
+  A 1 MW motor load is not a 1 MW resistor at the 11th harmonic. Standard models
+  (CIGRE, IEEE) represent load as a parallel or series R-L combination whose values
+  depend on the motor fraction, and different models give noticeably different
+  resonance frequencies.
+
+  Load modelling is the largest single uncertainty in a harmonic study. Report which
+  model you used, and run the study with more than one to see how much the answer
+  moves.
+</Callout>
+
+## Frequency scan
+
+The core diagnostic: driving impedance seen at a bus, swept across frequency.
+
+<CodeFile name="frequency_scan.m">
+```matlab
+function [Z_scan, h_vec] = frequency_scan(n_bus, branch, shunt, bus_k, h_max)
+%FREQUENCY_SCAN Driving-point impedance at BUS_K against harmonic order.
+
+    arguments
+        n_bus  (1,1) double
+        branch       double
+        shunt  (:,1) double
+        bus_k  (1,1) double
+        h_max  (1,1) double = 50
+    end
+
+    h_vec  = 0.5 : 0.05 : h_max;          % fine steps to resolve sharp peaks
+    Z_scan = zeros(size(h_vec));
+
+    e = zeros(n_bus,1);  e(bus_k) = 1;
+
+    for m = 1:numel(h_vec)
+        Yh = harmonic_ybus(n_bus, branch, shunt, h_vec(m));
+        z  = Yh \ e;                       % column bus_k of Z-bus, sparse solve
+        Z_scan(m) = abs(z(bus_k));
+    end
+end
+```
+</CodeFile>
+
+```matlab
+[Z, h] = frequency_scan(n, branch, shunt, 5, 30);
+
+figure;
+plot(h, Z, 'LineWidth', 1.4);
+xlabel('Harmonic order');
+ylabel('|Z_{driving}| (pu)');
+title('Frequency scan at bus 5');
+grid on;
+
+% Find resonances
+[peaks, locs] = findpeaks(Z, 'MinPeakProminence', max(Z)*0.1);
+for k = 1:numel(peaks)
+    fprintf('Parallel resonance near h = %.2f, |Z| = %.2f pu\n', h(locs(k)), peaks(k));
+    xline(h(locs(k)), '--', sprintf('h=%.1f', h(locs(k))));
+end
+```
+
+<Callout type="engineering">
+  **A tall narrow peak is a parallel resonance**, and it is the dangerous one. At that
+  frequency the network presents a very high impedance, so even a small harmonic
+  current injection produces a large harmonic voltage.
+
+  The classic cause: a **power factor correction capacitor** resonating with the source
+  inductance. The approximate resonant order is
+
+  $$h_r \approx \sqrt{\frac{S_{sc}}{Q_c}}$$
+
+  where $S_{sc}$ is the short-circuit MVA at the bus and $Q_c$ the capacitor MVAr.
+
+  A 5 MVAr bank on a 250 MVA bus resonates near $h = \sqrt{50} \approx 7$ — right on
+  the 7th harmonic, which any six-pulse converter produces. This is why installing
+  power factor correction sometimes *creates* a harmonic problem, and why a frequency
+  scan should be part of specifying one.
+</Callout>
+
+Series resonance appears as a **dip** — low impedance, which draws harmonic current
+into that path. Less immediately damaging, but it can overload a capacitor.
+
+## Harmonic penetration
+
+Given injection currents from known nonlinear loads, solve for voltages at each order:
+
+<CodeFile name="harmonic_penetration.m">
+```matlab
+function [V_h, THD_v] = harmonic_penetration(n_bus, branch, shunt, injections)
+%HARMONIC_PENETRATION Harmonic voltages from known current injections.
+%
+%   INJECTIONS is a struct array with fields:
+%       .bus     bus number
+%       .orders  harmonic orders present
+%       .current complex injection per order, per unit
+
+    orders = unique([injections.orders]);
+    V_h = zeros(n_bus, numel(orders));
+
+    for m = 1:numel(orders)
+        h = orders(m);
+        Yh = harmonic_ybus(n_bus, branch, shunt, h);
+
+        I = zeros(n_bus,1);
+        for k = 1:numel(injections)
+            idx = injections(k).orders == h;
+            if any(idx)
+                I(injections(k).bus) = I(injections(k).bus) + injections(k).current(idx);
+            end
+        end
+
+        % Linear superposition: each harmonic solved independently
+        V_h(:,m) = Yh \ I;
+    end
+
+    % THD referenced to the fundamental (order 1 must be present)
+    fund_col = orders == 1;
+    assert(any(fund_col), 'Fundamental must be included to compute THD');
+
+    V1 = abs(V_h(:, fund_col));
+    Vh_only = abs(V_h(:, ~fund_col));
+    THD_v = 100 * sqrt(sum(Vh_only.^2, 2)) ./ V1;
+end
+```
+</CodeFile>
+
+<Callout type="warning" title="Superposition assumes the sources are current sources">
+  Solving each harmonic independently and adding the results is valid only if the
+  nonlinear loads behave as **fixed current injections** independent of the voltage
+  they see.
+
+  That is the standard assumption and it is an approximation. A real converter's
+  harmonic current depends on the terminal voltage waveform, so at high distortion the
+  two interact. Iterative harmonic analysis handles that; it's beyond a first study,
+  but knowing the assumption exists is not.
+</Callout>
+
+## Compliance assessment
+
+<CodeFile name="check_ieee519.m">
+```matlab
+function report = check_ieee519(V_thd_pct, I_h_rms, I_L, I_sc, V_kV)
+%CHECK_IEEE519 Assess harmonic measurements against IEEE 519-2014.
+%
+%   V_THD_PCT is voltage THD at the PCC, in percent.
+%   I_H_RMS is a vector of harmonic current RMS values, index = order.
+%   I_L is maximum demand load current, I_SC the short-circuit current.
+
+    arguments
+        V_thd_pct (1,1) double
+        I_h_rms   (:,1) double
+        I_L       (1,1) double {mustBePositive}
+        I_sc      (1,1) double {mustBePositive}
+        V_kV      (1,1) double
+    end
+
+    % --- voltage limits, by system voltage ------------------------------
+    if     V_kV <= 1.0,   v_limit = 8.0;
+    elseif V_kV <= 69,    v_limit = 5.0;
+    elseif V_kV <= 161,   v_limit = 2.5;
+    else,                 v_limit = 1.5;
+    end
+
+    report.V_THD       = V_thd_pct;
+    report.V_limit     = v_limit;
+    report.V_compliant = V_thd_pct <= v_limit;
+
+    % --- current: TDD, not THD ------------------------------------------
+    harmonics = I_h_rms(2:end);
+    report.TDD = 100 * sqrt(sum(harmonics.^2)) / I_L;
+
+    ratio = I_sc / I_L;                      % short-circuit ratio
+    if     ratio < 20,   tdd_limit = 5.0;
+    elseif ratio < 50,   tdd_limit = 8.0;
+    elseif ratio < 100,  tdd_limit = 12.0;
+    elseif ratio < 1000, tdd_limit = 15.0;
+    else,                tdd_limit = 20.0;
+    end
+
+    report.Isc_IL      = ratio;
+    report.TDD_limit   = tdd_limit;
+    report.I_compliant = report.TDD <= tdd_limit;
+
+    fprintf('Voltage THD : %5.2f%%  (limit %4.1f%%)  %s\n', ...
+            V_thd_pct, v_limit, pass_fail(report.V_compliant));
+    fprintf('Current TDD : %5.2f%%  (limit %4.1f%%, Isc/IL = %.0f)  %s\n', ...
+            report.TDD, tdd_limit, ratio, pass_fail(report.I_compliant));
+end
+
+function s = pass_fail(tf)
+    s = "FAIL";  if tf, s = "PASS"; end
+end
+```
+</CodeFile>
+
+<Callout type="engineering">
+  Note how the current limit **depends on the short-circuit ratio** $I_{sc}/I_L$. A
+  stiff system — high short-circuit current relative to the load — is allowed more
+  harmonic current, because the same current produces less voltage distortion on a
+  low-impedance source.
+
+  That coupling is the logic of the whole standard: the current limits exist **in order
+  to** keep voltage distortion acceptable. They are not two independent requirements.
+  Your own [note on THD and IEEE 519](/notes/thd-and-ieee-519) makes the same point.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Reporting current THD against IEEE 519">
+  The standard limits TDD. Quoting THD is the most common misreading, and it makes
+  lightly loaded equipment look non-compliant when it isn't.
+</Callout>
+
+<Callout type="warning" title="Coarse frequency scan steps">
+  A resonance peak can be very narrow. Stepping in whole harmonic orders will step
+  straight over one. Use 0.05 or finer.
+</Callout>
+
+<Callout type="warning" title="Ignoring load damping">
+  Resistive load damps resonance substantially. A scan with no load model gives peaks
+  far sharper and taller than reality, which is conservative but can be alarmingly so.
+</Callout>
+
+<Callout type="warning" title="Forgetting capacitor banks switch">
+  A bank in service changes the resonance; out of service, it doesn't. Scan both
+  configurations — and every combination if there are several.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Where will it resonate?">
+  A 33 kV bus has 400 MVA short-circuit capacity. A 6 MVAr capacitor bank is proposed.
+  Near which harmonic will the system resonate, and why is that a problem?
+
+  <Solution>
+    $$h_r \approx \sqrt{S_{sc}/Q_c} = \sqrt{400/6} = \sqrt{66.7} \approx 8.2$$
+
+    That sits between the 7th and 9th harmonics — uncomfortably close to the **7th**,
+    which every six-pulse converter produces as a characteristic harmonic.
+
+    Options:
+
+    - **Detune the bank** with a series reactor, moving resonance below the 7th —
+      typically tuned to 4.2 or 4.7 to sit clear of the 5th.
+    - **Resize** the bank so the resonance falls between characteristic harmonics.
+    - **Split it** into stages, and check every switching combination.
+
+    ```matlab
+    Q = 1:0.5:15;
+    h_res = sqrt(400 ./ Q);
+
+    plot(Q, h_res, 'LineWidth', 1.5); hold on;
+    for hh = [5 7 11 13]
+        yline(hh, '--', sprintf('h=%d', hh), 'Color', [0.7 0.2 0.2]);
+    end
+    hold off;
+    xlabel('Capacitor bank (MVAr)'); ylabel('Resonant harmonic order');
+    grid on;
+    ```
+
+    The plot shows immediately which bank sizes to avoid — a genuinely useful figure
+    to put in front of whoever is specifying the bank.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Full compliance check">
+  A 33 kV PCC has 3.8% voltage THD. Measured harmonic currents give 42 A total
+  harmonic RMS, with $I_L = 380$ A and $I_{sc} = 14$ kA. Compliant?
+
+  <Solution>
+    ```matlab
+    I_h = [380; 15; 0; 8; 0; 5; 0; 3];      % fundamental first, then orders 2..8
+    report = check_ieee519(3.8, I_h, 380, 14000, 33);
+    ```
+
+    - **Voltage:** 3.8% against a 5% limit for 1–69 kV. **PASS.**
+    - **Isc/IL** = 14000/380 = 36.8, which falls in the 20–50 band → TDD limit 8%.
+    - **TDD** = 100 × 42/380 = 11.1%. **FAIL.**
+
+    Note the contrast with THD: 100 × 42/380... the fundamental here is also 380 A, so
+    THD and TDD coincide in this particular case. Reduce the load to 200 A while the
+    harmonic current stays similar and THD rises to 21% while TDD stays at 11% — the
+    system stress is unchanged, and only TDD reflects that.
+
+    The remedy for a TDD failure is usually a harmonic filter, or increasing the
+    short-circuit ratio, which relaxes the limit.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why does a power factor correction capacitor sometimes cause a harmonic problem?',
+      options: [
+        'It generates harmonics',
+        'It resonates with the source inductance, presenting high impedance at some harmonic order',
+        'It increases the load current',
+        'It reduces the short-circuit level',
+      ],
+      answer: 1,
+      explain:
+        'At h ≈ sqrt(Ssc/Qc) the capacitive and inductive reactances cancel, giving a very high driving-point impedance. A small harmonic injection then produces a large harmonic voltage.',
+    },
+    {
+      q: 'Why do IEEE 519 current limits depend on Isc/IL?',
+      options: [
+        'Larger systems can afford better equipment',
+        'A stiffer system converts the same harmonic current into less voltage distortion, so it can tolerate more',
+        'It accounts for measurement error',
+        'It is an arbitrary historical convention',
+      ],
+      answer: 1,
+      explain:
+        'The current limits exist to keep voltage distortion acceptable, and the voltage produced by a given current depends on the source impedance. The two tables are means and end, not independent requirements.',
+    },
+    {
+      q: 'What does a sharp peak in a frequency scan indicate?',
+      options: [
+        'Series resonance — low impedance',
+        'Parallel resonance — high impedance, amplifying harmonic voltage',
+        'A measurement error',
+        'The fundamental frequency',
+      ],
+      answer: 1,
+      explain:
+        'A tall narrow peak is parallel resonance. The network presents high impedance there, so modest harmonic current injection produces large harmonic voltage — the dangerous case.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Inductive reactance rises with frequency and capacitive falls, so somewhere they
+  cancel — that's **resonance**, and a capacitor bank near a characteristic harmonic is
+  how power factor correction creates a power quality problem. A frequency scan should
+  be part of specifying one.
+</KeyIdea>
+
+## Further reading
+
+- Dugan et al., *Electrical Power Systems Quality*, Chapters 5 and 6
+- IEEE Std 519-2014, and IEEE Std 399 (Brown Book) for study methodology
+- Next: **IEEE test systems** — where validated data comes from

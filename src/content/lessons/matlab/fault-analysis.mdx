@@ -1,0 +1,357 @@
+---
+title: Fault Analysis
+track: matlab
+module: power-systems
+order: 42
+description: Connecting the sequence networks for each fault type, building a Z-bus, and computing the fault levels a protection engineer actually needs.
+objectives:
+  - Derive the sequence network connection for each shunt fault type
+  - Build a Z-bus and use it to find fault current anywhere in a network
+  - Compute phase currents from sequence quantities and sanity-check them
+prerequisites: [symmetrical-components]
+estimatedMinutes: 40
+difficulty: advanced
+tags: ['matlab', 'fault-analysis', 'protection', 'zbus']
+---
+
+Fault analysis is symmetrical components put to work. Each fault type imposes a
+different constraint at the fault point, and each constraint translates into a
+different **connection of the three sequence networks**.
+
+Get the connection right and the arithmetic is easy.
+
+## The four shunt faults
+
+With $Z_1$, $Z_2$, $Z_0$ the Thevenin sequence impedances at the faulted bus, $V_f$ the
+pre-fault voltage, and $Z_f$ the fault impedance:
+
+<Compare
+  headings={['Fault', 'Sequence connection', 'Fault current']}
+  rows={[
+    { option: 'Three-phase', when: 'Positive sequence only', cost: 'I₁ = Vf/(Z₁+Zf); I₀=I₂=0', recommended: true },
+    { option: 'Line-to-ground', when: 'All three in SERIES', cost: 'I₀=I₁=I₂ = Vf/(Z₀+Z₁+Z₂+3Zf)' },
+    { option: 'Line-to-line', when: 'Positive and negative in PARALLEL', cost: 'I₁ = −I₂ = Vf/(Z₁+Z₂+Zf); I₀=0' },
+    { option: 'Double line-to-ground', when: 'All three in PARALLEL', cost: 'See below — the messiest' },
+  ]}
+/>
+
+<Callout type="engineering">
+  Two things worth committing to memory.
+
+  **The 3Z_f in the LG formula.** All three sequence currents are equal and flow through
+  the same fault impedance, and $I_a = 3I_1$, so the impedance appears tripled — the
+  same factor-of-three argument as the neutral grounding impedance.
+
+  **A three-phase fault is not always the worst case.** On a solidly earthed system with
+  low zero-sequence impedance, a **single line-to-ground fault can produce higher
+  current** than a three-phase fault. Since breakers are rated on the maximum, you must
+  compute both. Assuming three-phase is worst is a classic and expensive mistake.
+</Callout>
+
+## Implementation
+
+<CodeFile name="shunt_fault.m">
+```matlab
+function r = shunt_fault(Z0, Z1, Z2, Vf, type, Zf, Zg)
+%SHUNT_FAULT Sequence and phase currents for a shunt fault.
+%
+%   TYPE is "3ph", "LG", "LL" or "LLG".
+%   ZF is the fault impedance; ZG the ground impedance for LLG.
+%   All per unit. Phase A is the faulted phase for LG; B and C for LL/LLG.
+
+    arguments
+        Z0 (1,1) double
+        Z1 (1,1) double
+        Z2 (1,1) double
+        Vf (1,1) double = 1.0
+        type (1,:) char {mustBeMember(type, {'3ph','LG','LL','LLG'})} = '3ph'
+        Zf (1,1) double = 0
+        Zg (1,1) double = 0
+    end
+
+    switch type
+        case '3ph'
+            I1 = Vf / (Z1 + Zf);
+            I2 = 0;  I0 = 0;
+
+        case 'LG'                                   % phase A to ground
+            I1 = Vf / (Z0 + Z1 + Z2 + 3*Zf);
+            I2 = I1;  I0 = I1;
+
+        case 'LL'                                   % phases B-C
+            I1 = Vf / (Z1 + Z2 + Zf);
+            I2 = -I1;  I0 = 0;
+
+        case 'LLG'                                  % phases B-C to ground
+            Zpar = (Z2 + Zf) * (Z0 + Zf + 3*Zg) / (Z2 + Zf + Z0 + Zf + 3*Zg);
+            I1 = Vf / (Z1 + Zf + Zpar);
+            V1 = Vf - I1*(Z1 + Zf);
+            I2 = -V1 / (Z2 + Zf);
+            I0 = -V1 / (Z0 + Zf + 3*Zg);
+    end
+
+    r.I012 = [I0; I1; I2];
+    r.Iabc = fortescue_matrix() * r.I012;
+
+    % Sequence voltages at the fault point
+    r.V012 = [0 - I0*Z0;
+              Vf - I1*Z1;
+              0 - I2*Z2];
+    r.Vabc = fortescue_matrix() * r.V012;
+
+    r.type       = type;
+    r.I_fault_pu = max(abs(r.Iabc));
+
+    % Kirchhoff check: without a ground path, phase currents must sum to zero
+    if strcmp(type, '3ph') || strcmp(type, 'LL')
+        assert(abs(sum(r.Iabc)) < 1e-9, ...
+               'Phase currents sum to %.2e — should be zero with no ground path', ...
+               abs(sum(r.Iabc)));
+    end
+end
+```
+</CodeFile>
+
+That final assertion is a genuine correctness test. A three-phase or line-to-line fault
+has no path to earth, so $I_a + I_b + I_c = 0$ exactly. If it doesn't, a sequence sign
+is wrong.
+
+## Z-bus for network-wide studies
+
+For a fault at any bus, you need the Thevenin impedance *seen from that bus*. That's
+the diagonal of the Z-bus.
+
+$$
+Z_{bus} = Y_{bus}^{-1}, \qquad Z_{th,k} = Z_{bus}(k,k)
+$$
+
+<CodeFile name="fault_scan.m">
+```matlab
+function results = fault_scan(Y1, Y2, Y0, Vf, type)
+%FAULT_SCAN Fault level at every bus in the network.
+%
+%   Y1, Y2, Y0 are the sequence admittance matrices.
+
+    n = size(Y1, 1);
+
+    % One inverse, reused for every bus. On a large system prefer solving
+    % Y*z = e_k per bus, or a sparse factorisation — see the note below.
+    Z1 = inv(full(Y1));
+    Z2 = inv(full(Y2));
+    Z0 = inv(full(Y0));
+
+    I_fault = zeros(n,1);
+    MVA     = zeros(n,1);
+
+    for k = 1:n
+        r = shunt_fault(Z0(k,k), Z1(k,k), Z2(k,k), Vf, type);
+        I_fault(k) = r.I_fault_pu;
+        MVA(k)     = r.I_fault_pu * Vf;      % per unit on the system base
+    end
+
+    results = table((1:n)', abs(diag(Z1)), I_fault, MVA, ...
+                    'VariableNames', {'Bus','Z1_th_pu','I_fault_pu','Fault_MVA_pu'});
+    results = sortrows(results, 'Fault_MVA_pu', 'descend');
+end
+```
+</CodeFile>
+
+<Callout type="warning" title="inv() on a large sparse Y-bus">
+  The Z-bus is **dense** even when the Y-bus is sparse — the sparse-matrices lesson
+  warned about exactly this. For a 3000-bus system `inv(Y)` attempts a dense
+  3000×3000 complex matrix.
+
+  If you only need a few buses, solve for those columns instead:
+
+  ```matlab
+  e = zeros(n,1); e(k) = 1;
+  z_col = Y1 \ e;                    % column k of Z-bus, sparse solve
+  Z_th  = z_col(k);
+  ```
+
+  For a full scan on a large system, factor once with `decomposition(Y1)` and solve
+  n right-hand sides. That's the linear-systems lesson applied.
+</Callout>
+
+## Building the sequence networks
+
+The positive-sequence Y-bus is the load flow one. The other two differ:
+
+```matlab
+% Negative sequence: same topology, machine impedances differ
+Y2 = build_ybus(n, branch, shunt_neg);
+
+% Zero sequence: transformer connections change EVERYTHING
+% - delta winding blocks zero sequence -> branch is open
+% - star earthed provides a path
+% - grounding impedance Zn appears as 3*Zn
+branch0 = branch;
+branch0(is_delta_winding, 8) = 0;               % status = out of service
+branch0(:,4) = branch(:,4) .* zero_seq_ratio;   % typically 2-3x positive X
+
+Y0 = build_ybus(n, branch0, shunt_zero);
+```
+
+<Callout type="engineering">
+  Zero-sequence line reactance is typically **2 to 3.5 times** the positive-sequence
+  value, because the return path is through earth rather than a conductor and the flux
+  loop is much larger.
+
+  Using $X_0 = X_1$ — a tempting simplification — substantially underestimates LG fault
+  current on some systems and overestimates it on others. It is worth getting real data
+  rather than guessing.
+</Callout>
+
+## Reporting for protection
+
+```matlab
+function report_fault(r, S_base_MVA, V_base_kV)
+%REPORT_FAULT Fault currents in engineering units.
+
+    I_base = S_base_MVA*1e6 / (sqrt(3)*V_base_kV*1e3);      % amperes
+
+    fprintf('\n%s fault\n', r.type);
+    fprintf('%s\n', repmat('-', 1, 46));
+    fprintf('%-8s %14s %14s\n', 'Phase', 'Current (kA)', 'Angle (deg)');
+    for k = 1:3
+        fprintf('%-8s %14.3f %14.1f\n', char('A'+k-1), ...
+                abs(r.Iabc(k))*I_base/1000, rad2deg(angle(r.Iabc(k))));
+    end
+
+    fprintf('\nSequence currents (pu):\n');
+    fprintf('  I0 = %8.4f, I1 = %8.4f, I2 = %8.4f\n', ...
+            abs(r.I012(1)), abs(r.I012(2)), abs(r.I012(3)));
+
+    fprintf('\nFault level: %.1f MVA, %.3f kA\n', ...
+            r.I_fault_pu * S_base_MVA, r.I_fault_pu * I_base / 1000);
+end
+```
+
+## Common mistakes
+
+<Callout type="warning" title="Assuming three-phase is always worst">
+  On a solidly earthed system with low $Z_0$, an LG fault can exceed it. Compute both
+  before specifying a breaker.
+</Callout>
+
+<Callout type="warning" title="Forgetting the 3 in 3Zf and 3Zg">
+  Both come from $I_a = 3I_0$. Omitting either overestimates fault current, which is
+  non-conservative for protection settings.
+</Callout>
+
+<Callout type="warning" title="Using the positive-sequence network for zero sequence">
+  Transformer winding connections change the zero-sequence topology entirely. A delta
+  winding is an open circuit in that network.
+</Callout>
+
+<Callout type="warning" title="Ignoring pre-fault load flow">
+  Using a flat 1.0 pu pre-fault voltage everywhere is the standard simplification and
+  slightly wrong. For accurate studies, take $V_f$ from a converged load flow at each
+  bus.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Which fault is worst?">
+  A bus has $Z_1 = Z_2 = j0.15$ pu and $Z_0 = j0.08$ pu, with $V_f = 1.0$ and no fault
+  impedance. Which fault gives the largest current?
+
+  <Solution>
+    - **Three-phase:** $I = 1/0.15 = 6.67$ pu
+    - **LG:** $I_1 = 1/(0.08 + 0.15 + 0.15) = 2.63$ pu, and $I_a = 3I_1 = $ **7.89 pu**
+    - **LL:** $I_1 = 1/(0.15+0.15) = 3.33$ pu, and $|I_b| = \sqrt3 \times 3.33 = 5.77$ pu
+
+    The **line-to-ground fault is worst** at 7.89 pu, 18% above the three-phase value.
+
+    This happens whenever $Z_0 < Z_1$, which is common on solidly earthed systems close
+    to a delta-star earthed transformer. Sizing a breaker on the three-phase value alone
+    would under-rate it by nearly 20%.
+
+    Verify with the code:
+
+    ```matlab
+    for t = ["3ph","LG","LL"]
+        r = shunt_fault(0.08i, 0.15i, 0.15i, 1.0, char(t));
+        fprintf('%-4s: %.3f pu\n', t, r.I_fault_pu);
+    end
+    ```
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Verify the LL fault by hand">
+  For a line-to-line fault with $Z_1 = Z_2 = j0.2$, confirm that the code's phase
+  currents match the classical result $|I_b| = |I_c| = \sqrt{3}\,V_f/(Z_1+Z_2)$ and
+  that $I_a = 0$.
+
+  <Solution>
+    ```matlab
+    r = shunt_fault(0.05i, 0.2i, 0.2i, 1.0, 'LL');
+
+    expected = sqrt(3) * 1.0 / 0.4;
+
+    fprintf('Ia = %.4f (expect ~0)\n', abs(r.Iabc(1)));
+    fprintf('Ib = %.4f, Ic = %.4f (expect %.4f)\n', ...
+            abs(r.Iabc(2)), abs(r.Iabc(3)), expected);
+
+    assert(abs(r.Iabc(1)) < 1e-9, 'Ia should be zero for a B-C fault');
+    assert(abs(abs(r.Iabc(2)) - expected) < 1e-9, 'Ib magnitude wrong');
+    assert(abs(r.Iabc(2) + r.Iabc(3)) < 1e-9, 'Ib and Ic should be equal and opposite');
+    ```
+
+    Three assertions, each checking a different property: the healthy phase carries
+    nothing, the magnitude matches theory, and the two faulted phases are equal and
+    opposite. Note $Z_0$ is irrelevant here — an LL fault has no ground path, so the
+    zero-sequence network is not connected at all.
+
+    Changing $Z_0$ and confirming the answer doesn't move is itself a good test.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'How are the sequence networks connected for a single line-to-ground fault?',
+      options: ['In parallel', 'In series', 'Only positive sequence', 'Positive and negative in parallel'],
+      answer: 1,
+      explain:
+        'All three in series, giving I0 = I1 = I2 = Vf/(Z0+Z1+Z2+3Zf). It follows from decomposing a single energised phase, which splits equally into all three sequences.',
+    },
+    {
+      q: 'When can a line-to-ground fault exceed a three-phase fault in magnitude?',
+      options: [
+        'Never',
+        'When Z0 is less than Z1 — common on solidly earthed systems',
+        'Only on distribution networks',
+        'Only with fault impedance present',
+      ],
+      answer: 1,
+      explain:
+        'With low zero-sequence impedance the series combination Z0+Z1+Z2 can be less than 3·Z1, making 3·I1 exceed the three-phase current. Breakers must be rated on the maximum, so both cases must be computed.',
+    },
+    {
+      q: 'Why does a neutral grounding impedance Zn appear as 3Zn?',
+      options: [
+        'A safety factor',
+        'Because Ia + Ib + Ic = 3·I0 flows through it',
+        'Because there are three phases',
+        'To account for the transformer ratio',
+      ],
+      answer: 1,
+      explain:
+        'The zero-sequence network carries I0, but the physical neutral carries 3·I0. Matching the voltage drop requires an impedance of 3Zn in the sequence circuit.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Each fault type is a **different connection of the same three sequence networks** —
+  series for LG, parallel for LL, positive-only for three-phase. And never assume
+  three-phase is worst: on a solidly earthed system the LG fault often exceeds it.
+</KeyIdea>
+
+## Further reading
+
+- Grainger & Stevenson, Chapter 12
+- IEC 60909 — the standard calculation method, including the voltage factor $c$ that
+  real studies apply
+- Next: **harmonic analysis** — power quality assessment against IEEE 519

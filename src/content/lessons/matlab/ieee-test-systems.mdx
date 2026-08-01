@@ -1,0 +1,404 @@
+---
+title: Working with IEEE Test Systems
+track: matlab
+module: power-systems
+order: 44
+description: Where validated network data comes from, how to read the common formats, and the validation workflow that lets you trust your own code.
+objectives:
+  - Read the IEEE Common Data Format and the MATPOWER case format
+  - Choose the right test system for a given study
+  - Build a validation workflow comparing your results against a reference
+prerequisites: [load-flow]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'ieee-test-systems', 'validation', 'matpower']
+---
+
+You have a load flow. How do you know it's right?
+
+The answer the field settled on decades ago: **standard test systems with published
+results.** If your solver reproduces the IEEE 14-bus voltages to six decimal places, it
+works. If it doesn't, you have a bug — and you know that before you point it at
+anything real.
+
+## The systems worth knowing
+
+<Compare
+  headings={['System', 'Use it for', 'Note']}
+  rows={[
+    { option: 'IEEE 14-bus', when: 'First validation of a new solver', cost: 'Small enough to inspect by hand', recommended: true },
+    { option: 'IEEE 30-bus', when: 'Optimal power flow, economic dispatch', cost: 'Has generator cost data' },
+    { option: 'IEEE 57 / 118-bus', when: 'Testing scalability and sparsity', cost: '118 is the standard "medium" case' },
+    { option: 'IEEE 300-bus', when: 'Performance and conditioning', cost: 'Genuinely stresses a solver' },
+    { option: 'IEEE 13 / 34 / 123-bus feeders', when: 'UNBALANCED distribution', cost: 'Completely different data model' },
+    { option: 'IEEE 33-bus (Baran & Wu)', when: 'Distribution reconfiguration, hosting capacity', cost: 'Radial, balanced, widely used' },
+  ]}
+/>
+
+<Callout type="warning" title="Transmission and distribution test cases are different animals">
+  The IEEE 14/30/118 systems are **balanced, positive-sequence transmission** networks.
+  The IEEE 13/34/123 **feeders** are unbalanced multi-phase distribution networks with
+  regulators, single-phase laterals and detailed line configurations.
+
+  You cannot run a 123-bus feeder through a positive-sequence load flow and get a
+  meaningful answer. They test different things, and their published results come from
+  different tools — the feeders from OpenDSS or similar.
+</Callout>
+
+## The data formats
+
+**IEEE Common Data Format (CDF)** — the 1973 fixed-column text format. Still the
+canonical source for the classic systems.
+
+```text
+ BUS DATA FOLLOWS                            14 ITEMS
+   1 Bus 1     HV  1  1  3 1.060    0.0    0.00   0.00  232.4  -16.9 ...
+   2 Bus 2     HV  1  1  2 1.045   -4.98  21.70  12.70   40.0   42.4 ...
+```
+
+Fixed columns, so you must parse by position, not by delimiter:
+
+```matlab
+line = fgetl(fid);
+bus_num = str2double(line(1:4));
+name    = strtrim(line(6:17));
+V_mag   = str2double(line(28:33));
+V_ang   = str2double(line(34:40));
+P_load  = str2double(line(41:49));
+```
+
+**MATPOWER case format** — a MATLAB struct, and far easier to work with.
+
+```matlab
+mpc = loadcase('case14');
+
+mpc.baseMVA          % 100
+mpc.bus              % [bus_i type Pd Qd Gs Bs area Vm Va baseKV zone Vmax Vmin]
+mpc.branch           % [fbus tbus r x b rateA rateB rateC ratio angle status ...]
+mpc.gen              % [bus Pg Qg Qmax Qmin Vg mBase status Pmax Pmin ...]
+mpc.gencost          % cost curve coefficients
+```
+
+Even without MATPOWER installed, the case files are plain `.m` files defining that
+struct — readable and usable directly.
+
+<CodeFile name="load_matpower_case.m">
+```matlab
+function [Y, bus, base_MVA] = load_matpower_case(mpc)
+%LOAD_MATPOWER_CASE Convert a MATPOWER case into Y-bus and a bus table.
+%
+%   Handles the two things that trip people up: bus renumbering, and the
+%   MATPOWER convention that loads are POSITIVE in the bus matrix while
+%   generation is positive in the gen matrix.
+
+    base_MVA = mpc.baseMVA;
+
+    % --- renumber to a contiguous 1..n index ----------------------------
+    ids = mpc.bus(:,1);
+    n   = numel(ids);
+    idx = containers.Map(num2cell(ids), num2cell(1:n));
+    to_i = @(v) cellfun(@(k) idx(k), num2cell(v));
+
+    % --- branch matrix in our column order ------------------------------
+    branch = [ to_i(mpc.branch(:,1)), ...      % from
+               to_i(mpc.branch(:,2)), ...      % to
+               mpc.branch(:,3), ...            % R
+               mpc.branch(:,4), ...            % X
+               mpc.branch(:,5), ...            % B
+               mpc.branch(:,9), ...            % tap ratio
+               mpc.branch(:,10), ...           % shift, degrees
+               mpc.branch(:,11) ];             % status
+
+    % Bus shunts: Gs + jBs, given in MW/MVAr at nominal voltage
+    shunt = (mpc.bus(:,5) + 1i*mpc.bus(:,6)) / base_MVA;
+
+    Y = build_ybus(n, branch, shunt);
+
+    % --- bus table -------------------------------------------------------
+    Pd = mpc.bus(:,3) / base_MVA;              % loads, per unit
+    Qd = mpc.bus(:,4) / base_MVA;
+
+    Pg = zeros(n,1);  Qg = zeros(n,1);
+    Vset = mpc.bus(:,8);
+    Qmin = -inf(n,1); Qmax = inf(n,1);
+
+    on = mpc.gen(:,8) > 0;
+    g  = to_i(mpc.gen(on,1));
+    Pg(g)   = mpc.gen(on,2) / base_MVA;
+    Qg(g)   = mpc.gen(on,3) / base_MVA;
+    Vset(g) = mpc.gen(on,6);
+    Qmax(g) = mpc.gen(on,4) / base_MVA;
+    Qmin(g) = mpc.gen(on,5) / base_MVA;
+
+    bus = table(mpc.bus(:,2), Pd, Qd, Pg, Qg, Vset, Qmin, Qmax, ids, ...
+                'VariableNames', {'type','Pd','Qd','Pg','Qg','Vset', ...
+                                  'Qmin','Qmax','original_id'});
+
+    assert(sum(bus.type == 3) == 1 || sum(bus.type == 3) == 0, ...
+           'MATPOWER uses type 3 for the slack bus');
+end
+```
+</CodeFile>
+
+<Callout type="warning" title="MATPOWER bus types are numbered differently">
+  MATPOWER uses **1 = PQ, 2 = PV, 3 = slack (reference), 4 = isolated**. Many textbooks
+  and the CDF use 1 = slack.
+
+  Getting this backwards produces a solver that treats a load bus as the reference. It
+  will converge — to something entirely wrong. Check the convention every time you
+  adopt a new data source, and assert on it.
+</Callout>
+
+## The validation workflow
+
+This is the part that matters more than any single lesson in the module.
+
+<CodeFile name="validate_solver.m">
+```matlab
+function validate_solver(case_name, tol)
+%VALIDATE_SOLVER Compare our load flow against a published reference.
+
+    arguments
+        case_name (1,:) char
+        tol       (1,1) double = 1e-6
+    end
+
+    mpc = loadcase(case_name);
+    [Y, bus, base] = load_matpower_case(mpc);
+
+    % --- our solver -------------------------------------------------------
+    [V, delta, info] = load_flow(Y, bus, verbose=false);
+    assert(info.converged, 'Our solver did not converge on %s', case_name);
+
+    % --- the reference ----------------------------------------------------
+    ref = runpf(mpc, mpoption('verbose', 0, 'out.all', 0));
+    assert(ref.success == 1, 'Reference solver failed on %s', case_name);
+
+    V_ref     = ref.bus(:,8);
+    delta_ref = deg2rad(ref.bus(:,9));
+
+    % --- compare ----------------------------------------------------------
+    dV     = abs(V - V_ref);
+    ddelta = abs(angle(exp(1i*(delta - delta_ref))));   % wrap-safe difference
+
+    fprintf('%-10s  %2d iterations, cond %.2e\n', case_name, info.iterations, info.cond);
+    fprintf('  max |dV|     = %.3e pu   %s\n', max(dV),     verdict(max(dV) < tol));
+    fprintf('  max |ddelta| = %.3e rad  %s\n', max(ddelta), verdict(max(ddelta) < tol));
+
+    if max(dV) >= tol
+        [~, worst] = max(dV);
+        fprintf('  worst bus: %d (ours %.6f, reference %.6f)\n', ...
+                bus.original_id(worst), V(worst), V_ref(worst));
+    end
+end
+
+function s = verdict(tf)
+    s = "FAIL";  if tf, s = "PASS"; end
+end
+```
+</CodeFile>
+
+```matlab
+for c = ["case14", "case30", "case57", "case118", "case300"]
+    validate_solver(char(c));
+end
+```
+
+<Callout type="engineering">
+  The angle comparison uses `angle(exp(1i*d))` rather than a plain subtraction. Angles
+  wrap: −179° and +181° are the same angle but differ by 360 in raw arithmetic.
+
+  It also handles a real ambiguity — if the reference uses a different slack angle
+  convention, every angle differs by a constant. Comparing *angle differences* between
+  buses rather than absolute angles is the robust version, and worth adding if your
+  results are consistently offset.
+</Callout>
+
+## Growing the test suite
+
+Once it passes on the standard cases, add your own:
+
+```matlab
+% A case with a known analytic answer
+function test_two_bus()
+    % Two buses, one line, one load — solvable by hand
+    % ... build, solve, compare against the closed-form result
+end
+
+% Edge cases that should FAIL cleanly
+function test_islanded_bus()
+    % A bus with no connection: expect a singularity warning, not garbage
+end
+
+function test_no_slack()
+    % Expect a clear error, not a wrong answer
+end
+```
+
+Testing that your code **fails correctly** is as important as testing that it succeeds.
+A solver that silently returns nonsense on a bad input is more dangerous than one that
+refuses.
+
+## Where to get the data
+
+- **MATPOWER** — `matpower.org`. The most convenient source, and the cases are plain
+  `.m` files usable without installing anything.
+- **IEEE PES Test Feeder working group** — `cmte.ieee.org/pes-testfeeders`. The
+  authoritative source for the distribution feeders, with published results.
+- **University of Washington archive** — the original CDF files for the classic
+  transmission systems.
+- **pandapower and PYPOWER** ship the same cases in Python, useful for cross-checking
+  with an independent implementation.
+
+<Callout type="tip" title="Cross-check against a second tool, not just a second run">
+  Two implementations agreeing is much stronger evidence than one implementation
+  agreeing with itself. If your MATLAB solver and pandapower agree to 10⁻⁸ on the same
+  case, both are almost certainly right.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Bus type convention">
+  MATPOWER: 3 = slack. Textbooks often: 1 = slack. Assert on it.
+</Callout>
+
+<Callout type="warning" title="Load sign convention">
+  MATPOWER stores loads as positive in the bus matrix and generation as positive in the
+  gen matrix. Scheduled injection is `Pg - Pd`. Getting the sign wrong gives a
+  converged, mirrored solution.
+</Callout>
+
+<Callout type="warning" title="Non-contiguous bus numbering">
+  Real cases skip numbers. Build an index map and report results against the original
+  IDs.
+</Callout>
+
+<Callout type="warning" title="Units">
+  MATPOWER stores MW and MVAr; the solver wants per unit. Divide by `baseMVA` once, at
+  the boundary, and never again.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="Converged, but every voltage is wrong">
+  Your solver converges on case14 in 4 iterations, but voltages are consistently off in
+  the third decimal. Where do you look?
+
+  <Solution>
+    Converging in the normal number of iterations means the Jacobian is almost certainly
+    right — a wrong Jacobian gives linear convergence. So the *equations* are right and
+    the **data** is wrong.
+
+    Candidates, in order:
+
+    1. **Bus type mapping.** If a PV bus was read as PQ, its voltage is free to move
+       instead of being held at its setpoint.
+    2. **Shunt admittance.** `Gs`/`Bs` in MATPOWER are in MW/MVAr at nominal voltage.
+       Forgetting to divide by `baseMVA` scales them by 100.
+    3. **Transformer taps.** Column 9 of the branch matrix is 0 for a line and the
+       ratio for a transformer. Treating 0 as a ratio of zero breaks everything;
+       treating it as 1 is correct.
+    4. **Line charging.** Column 5 is the *total* B, halved at each end.
+
+    Diagnose by comparing intermediates rather than the final answer:
+
+    ```matlab
+    Y_ref = makeYbus(mpc);              % MATPOWER's own
+    fprintf('Y-bus max difference: %.3e\n', max(max(abs(Y - Y_ref))));
+    ```
+
+    If the Y-bus matches, the network model is fine and the problem is in the bus data.
+    If it doesn't, you have narrowed it to one function.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Build a regression test">
+  Write a test that runs your solver on several cases and fails loudly if any regresses.
+
+  <Solution>
+    ```matlab
+    function results = regression_suite(tol)
+        arguments
+            tol (1,1) double = 1e-6
+        end
+
+        cases = {"case14", "case30", "case57", "case118"};
+        n = numel(cases);
+
+        name = strings(n,1);  passed = false(n,1);
+        iters = zeros(n,1);   maxdV = zeros(n,1);
+
+        for k = 1:n
+            name(k) = cases{k};
+            try
+                [p, it, dv] = run_one(char(cases{k}), tol);
+                passed(k) = p;  iters(k) = it;  maxdV(k) = dv;
+            catch err
+                fprintf('%s ERRORED: %s\n', cases{k}, err.message);
+            end
+        end
+
+        results = table(name, passed, iters, maxdV);
+        disp(results);
+
+        assert(all(passed), '%d of %d cases failed', sum(~passed), n);
+        fprintf('All %d cases passed at tolerance %.0e\n', n, tol);
+    end
+    ```
+
+    Run it before every commit. The value is not the first run — it's the day six
+    months from now when you "improve" the Jacobian assembly and this tells you
+    immediately that case118 broke.
+
+    Recording `iters` matters too. A change that keeps the answers right but doubles the
+    iteration count has broken the convergence rate, and only tracking it catches that.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'In MATPOWER, which bus type number is the slack bus?',
+      options: ['1', '2', '3', '4'],
+      answer: 2,
+      explain:
+        'MATPOWER uses 1 = PQ, 2 = PV, 3 = reference/slack, 4 = isolated. Many textbooks use 1 for slack, so the convention must be checked and asserted whenever you adopt a data source.',
+    },
+    {
+      q: 'Why can you not run the IEEE 123-bus feeder through a positive-sequence load flow?',
+      options: [
+        'It is too large',
+        'It is an unbalanced multi-phase distribution network with a different data model',
+        'The data is proprietary',
+        'It has no slack bus',
+      ],
+      answer: 1,
+      explain:
+        'The transmission cases are balanced positive-sequence; the feeders are unbalanced with single-phase laterals and regulators. They exist to test different things and their reference results come from different tools.',
+    },
+    {
+      q: 'Your solver converges normally but voltages are slightly wrong. What does that suggest?',
+      options: [
+        'The Jacobian is wrong',
+        'The equations are right and the input data is being misread',
+        'The tolerance is too loose',
+        'The system is ill-conditioned',
+      ],
+      answer: 1,
+      explain:
+        'A wrong Jacobian degrades convergence to linear. Normal quadratic convergence to a wrong answer points at the data — bus types, shunt scaling, taps or sign conventions.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **If it cannot reproduce a published result, it has no business producing a new one.**
+  Validate against standard cases, keep it as a regression suite, and cross-check
+  against an independent implementation when the stakes are real.
+</KeyIdea>
+
+## Further reading
+
+- MATPOWER User's Manual — the case format documented in full
+- IEEE PES Test Feeder working group, for distribution cases and their results
+- Next: the **capstone** — a complete, validated load-flow tool

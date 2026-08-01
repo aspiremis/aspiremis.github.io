@@ -1,0 +1,437 @@
+---
+title: Newton-Raphson Load Flow
+track: matlab
+module: power-systems
+order: 40
+description: The full algorithm — bus types, mismatch equations, all four Jacobian submatrices, and PV-to-PQ switching when reactive limits bind.
+objectives:
+  - Assemble the mismatch vector and the four Jacobian submatrices correctly
+  - Implement the complete Newton-Raphson iteration for a general network
+  - Handle generator reactive limits with PV-to-PQ bus-type switching
+prerequisites: [ybus-builder, project-newton-raphson]
+estimatedMinutes: 50
+difficulty: advanced
+tags: ['matlab', 'load-flow', 'newton-raphson', 'power-systems']
+---
+
+Everything in this track has been building to this. You have the Y-bus, you have
+Newton-Raphson, you have sparse solving and conditioning. This lesson connects them.
+
+## Bus types
+
+Three kinds of bus, distinguished by what is known and what must be found:
+
+| Type | Known | Unknown | Count |
+|---|---|---|---|
+| **Slack** | $\lvert V\rvert$, $\delta$ | $P$, $Q$ | Exactly one |
+| **PV** (generator) | $P$, $\lvert V\rvert$ | $Q$, $\delta$ | Any number |
+| **PQ** (load) | $P$, $Q$ | $\lvert V\rvert$, $\delta$ | The rest |
+
+The slack bus provides the angle reference and absorbs the mismatch between generation
+and load plus losses — which nobody knows until the flow is solved.
+
+Unknown count: $n_{pq}$ voltage magnitudes plus $(n_{pq} + n_{pv})$ angles. That's the
+size of the system you solve each iteration.
+
+## The mismatch equations
+
+At every bus, calculated injection must equal scheduled injection:
+
+$$
+P_i = |V_i| \sum_{k} |V_k| \left( G_{ik}\cos\delta_{ik} + B_{ik}\sin\delta_{ik} \right)
+$$
+
+$$
+Q_i = |V_i| \sum_{k} |V_k| \left( G_{ik}\sin\delta_{ik} - B_{ik}\cos\delta_{ik} \right)
+$$
+
+with $\delta_{ik} = \delta_i - \delta_k$. In MATLAB, computed for all buses at once:
+
+<CodeFile name="injected_power.m">
+```matlab
+function [P, Q] = injected_power(Y, V, delta)
+%INJECTED_POWER Complex power injected at every bus.
+%   V and DELTA are n-by-1; Y may be sparse.
+
+    Vc = V .* exp(1i*delta);          % complex voltage
+    S  = Vc .* conj(Y * Vc);          % S = V .* conj(I)
+
+    P = real(S);
+    Q = imag(S);
+end
+```
+</CodeFile>
+
+That is the whole power flow calculation, in three lines, using the matrix form from
+the Foundations module. `Y * Vc` is the injected current; multiplying by $V$ and
+conjugating gives complex power.
+
+## The Jacobian
+
+Four submatrices, relating power mismatches to voltage corrections:
+
+$$
+\begin{bmatrix} \Delta P \\ \Delta Q \end{bmatrix} =
+\begin{bmatrix} H & N \\ M & L \end{bmatrix}
+\begin{bmatrix} \Delta \delta \\ \Delta |V| / |V| \end{bmatrix}
+$$
+
+Off-diagonal entries ($i \ne k$):
+
+$$
+H_{ik} = |V_i||V_k|\left(G_{ik}\sin\delta_{ik} - B_{ik}\cos\delta_{ik}\right)
+$$
+
+$$
+N_{ik} = |V_i||V_k|\left(G_{ik}\cos\delta_{ik} + B_{ik}\sin\delta_{ik}\right)
+$$
+
+$$
+M_{ik} = -N_{ik}, \qquad L_{ik} = H_{ik}
+$$
+
+Diagonal entries, which have pleasingly compact forms in terms of the injections you
+already computed:
+
+$$
+H_{ii} = -Q_i - B_{ii}|V_i|^2, \qquad N_{ii} = P_i + G_{ii}|V_i|^2
+$$
+
+$$
+M_{ii} = P_i - G_{ii}|V_i|^2, \qquad L_{ii} = Q_i - B_{ii}|V_i|^2
+$$
+
+<Callout type="engineering">
+  Notice $M_{ik} = -N_{ik}$ and $L_{ik} = H_{ik}$ off the diagonal. Only two distinct
+  expressions are needed, not four — which halves the code and, more importantly,
+  halves the opportunities for a sign error.
+
+  The diagonals genuinely differ, and they're where mistakes concentrate. If your
+  convergence is linear rather than quadratic, check the diagonals first.
+</Callout>
+
+<CodeFile name="build_jacobian.m">
+```matlab
+function J = build_jacobian(Y, V, delta, pq, pv)
+%BUILD_JACOBIAN Polar-form power flow Jacobian.
+%   PQ and PV are index vectors of the load and generator buses.
+
+    n = numel(V);
+    G = real(Y);  B = imag(Y);
+
+    [P, Q] = injected_power(Y, V, delta);
+
+    % Off-diagonal blocks, vectorised over the whole matrix
+    dth  = delta - delta.';                       % n-by-n of delta_i - delta_k
+    VV   = V * V.';
+
+    H = VV .* (G.*sin(dth) - B.*cos(dth));
+    N = VV .* (G.*cos(dth) + B.*sin(dth));
+
+    % Overwrite the diagonals with their own expressions
+    d = 1:n+1:n*n;                                % linear indices of the diagonal
+    H(d) = -Q - imag(diag(Y)).*V.^2;
+    N(d) =  P + real(diag(Y)).*V.^2;
+
+    M = -N;  L = H;                               % start from the off-diagonal identity
+    M(d) =  P - real(diag(Y)).*V.^2;
+    L(d) =  Q - imag(diag(Y)).*V.^2;
+
+    % Assemble, keeping only the rows and columns that correspond to unknowns
+    pvpq = [pv; pq];
+    J = [ H(pvpq, pvpq)  N(pvpq, pq);
+          M(pq,   pvpq)  L(pq,   pq) ];
+end
+```
+</CodeFile>
+
+<Callout type="warning" title="Which rows and columns exist">
+  - **Slack** contributes nothing — both its unknowns are fixed.
+  - **PV** contributes a $P$ row and a $\delta$ column, but no $Q$ row and no
+    $\lvert V\rvert$ column, because $\lvert V\rvert$ is specified.
+  - **PQ** contributes all four.
+
+  Index bookkeeping here is the commonest source of bugs in a from-scratch load flow,
+  and the symptom is a Jacobian that is the wrong shape by exactly one.
+</Callout>
+
+For a large system, build the submatrices sparse — `G` and `B` are sparse, and the
+dense `V*V.'` above is fine for teaching but wasteful beyond a few hundred buses.
+
+## The iteration
+
+<CodeFile name="load_flow.m">
+```matlab
+function [V, delta, info] = load_flow(Y, bus, opts)
+%LOAD_FLOW Newton-Raphson power flow in polar coordinates.
+%
+%   BUS is a table with columns: type (1 slack, 2 PV, 3 PQ), Pd, Qd, Pg, Qg,
+%   Vset, Qmin, Qmax — all per unit.
+
+    arguments
+        Y                    double
+        bus                  table
+        opts.tol      (1,1) double  = 1e-8
+        opts.max_iter (1,1) double  = 30
+        opts.enforce_q_limits (1,1) logical = true
+        opts.verbose  (1,1) logical = true
+    end
+
+    n = height(bus);
+    slack = find(bus.type == 1);
+    assert(numel(slack) == 1, 'Exactly one slack bus required, found %d', numel(slack));
+
+    pv = find(bus.type == 2);
+    pq = find(bus.type == 3);
+
+    % Scheduled injections
+    Psch = bus.Pg - bus.Pd;
+    Qsch = bus.Qg - bus.Qd;
+
+    % Flat start, respecting specified generator voltages
+    V     = ones(n,1);   V(bus.type ~= 3) = bus.Vset(bus.type ~= 3);
+    delta = zeros(n,1);
+
+    history = zeros(opts.max_iter,1);
+    info.converged = false;
+    info.switched  = [];
+
+    for iter = 1:opts.max_iter
+        [P, Q] = injected_power(Y, V, delta);
+
+        % --- generator reactive limits -----------------------------------
+        if opts.enforce_q_limits && ~isempty(pv)
+            over  = pv(Q(pv) > bus.Qmax(pv));
+            under = pv(Q(pv) < bus.Qmin(pv));
+            hit   = [over; under];
+
+            if ~isempty(hit)
+                % Convert to PQ, holding Q at the violated limit
+                Qsch(over)  = bus.Qmax(over);
+                Qsch(under) = bus.Qmin(under);
+                pq = sort([pq; hit]);
+                pv = setdiff(pv, hit);
+                info.switched = [info.switched; hit];
+
+                if opts.verbose
+                    fprintf('  iter %2d: bus %s hit a Q limit -> PQ\n', ...
+                            iter, mat2str(hit'));
+                end
+                continue                       % rebuild with the new bus types
+            end
+        end
+
+        % --- mismatch ------------------------------------------------------
+        dP = Psch([pv;pq]) - P([pv;pq]);
+        dQ = Qsch(pq)      - Q(pq);
+        mismatch = [dP; dQ];
+
+        history(iter) = max(abs(mismatch));
+        if opts.verbose
+            fprintf('  iter %2d: max mismatch = %.4e\n', iter-1, history(iter));
+        end
+
+        if history(iter) < opts.tol
+            info.converged = true;
+            break
+        end
+
+        % --- solve and update ----------------------------------------------
+        J = build_jacobian(Y, V, delta, pq, pv);
+
+        c = condest(J);
+        if c > 1e12
+            warning('Jacobian condition %.2e — near voltage collapse?', c);
+        end
+
+        dx = J \ mismatch;
+
+        n_ang = numel(pv) + numel(pq);
+        delta([pv;pq]) = delta([pv;pq]) + dx(1:n_ang);
+        V(pq)          = V(pq) .* (1 + dx(n_ang+1:end));   % multiplicative
+    end
+
+    info.iterations = iter;
+    info.history    = history(1:iter);
+    info.cond       = condest(build_jacobian(Y, V, delta, pq, pv));
+
+    if ~info.converged
+        warning('Load flow did NOT converge in %d iterations (mismatch %.3e)', ...
+                opts.max_iter, history(iter));
+    end
+end
+```
+</CodeFile>
+
+## PV-to-PQ switching
+
+Real generators have reactive capability limits. When a PV bus needs more VArs than
+its machine can supply, the voltage setpoint cannot be held.
+
+The standard handling: convert that bus to PQ, fix $Q$ at the violated limit, and let
+$|V|$ float to whatever the network gives. That's the `continue` branch above.
+
+<Callout type="warning" title="Switching can oscillate">
+  A bus converted to PQ may, at the new solution, want less VArs than its limit — so it
+  should switch back. Naive implementations flip back and forth and never converge.
+
+  Production solvers add hysteresis, or only allow switching in the first few
+  iterations. The version above switches one way only, which is simple, terminates,
+  and is slightly conservative. Say so when you report results.
+</Callout>
+
+## Reporting
+
+```matlab
+[P, Q] = injected_power(Y, V, delta);
+
+results = table((1:n)', bus.type, V, rad2deg(delta), P, Q, ...
+                'VariableNames', {'Bus','Type','V_pu','Angle_deg','P_pu','Q_pu'});
+disp(results);
+
+% Slack bus picks up losses
+losses = sum(P);
+fprintf('Total real losses: %.5f pu (%.2f MW on a 100 MVA base)\n', ...
+        losses, losses*100);
+
+assert(losses > 0, 'Negative total losses — impossible');
+assert(all(V > 0.5 & V < 1.5), 'Voltages outside any plausible range');
+```
+
+Total injected real power across all buses equals the losses, because generation minus
+load must equal what the network dissipates. It's a free check on the whole solve.
+
+## Common mistakes
+
+<Callout type="warning" title="Jacobian index bookkeeping">
+  The ordering `[pv; pq]` for angles and `pq` for magnitudes must match between the
+  mismatch vector, the Jacobian assembly and the update. A mismatch here gives a
+  solver that converges to the wrong answer.
+</Callout>
+
+<Callout type="warning" title="Additive voltage update">
+  The Jacobian is formulated in $\Delta|V|/|V|$, so the update is
+  `V = V .* (1 + dx)`, not `V = V + dx`. The additive form still converges — slowly,
+  to a slightly wrong answer.
+</Callout>
+
+<Callout type="warning" title="Forgetting that the slack bus has no equations">
+  Including it makes the Jacobian singular, because its voltage and angle are fixed.
+</Callout>
+
+<Callout type="warning" title="Reporting angles in radians">
+  Everyone expects degrees. Convert before printing.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="How big is the Jacobian?">
+  A 30-bus system has 1 slack, 5 PV and 24 PQ buses. What are the Jacobian dimensions,
+  and how do they change if two PV buses hit their Q limits?
+
+  <Solution>
+    - Angle unknowns: PV + PQ = 5 + 24 = **29**
+    - Magnitude unknowns: PQ only = **24**
+    - Jacobian: **53 × 53**
+
+    After two PV buses switch to PQ: PV = 3, PQ = 26.
+    - Angles: 3 + 26 = 29 (unchanged — the buses still have unknown angles)
+    - Magnitudes: 26
+    - Jacobian: **55 × 55**
+
+    The angle count never changes, because switching a bus type doesn't fix its angle.
+    Only the magnitude block grows. That asymmetry is worth internalising — it's a
+    quick way to check your indexing after a switch.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="debug" title="Convergence is linear, not quadratic">
+  Your load flow converges in 22 iterations with the error falling by a constant
+  factor. Where do you look?
+
+  <Solution>
+    A wrong Jacobian, and the diagonals are the likeliest place — the off-diagonals
+    have only two distinct forms, while the four diagonals are all different.
+
+    Check numerically, one column at a time:
+
+    ```matlab
+    function check_jacobian(Y, V, delta, pq, pv)
+        h = 1e-6;
+        x0 = [delta([pv;pq]); V(pq)];
+        f  = @(x) mismatch_from_state(Y, x, pq, pv);   % your residual function
+
+        n = numel(x0);
+        J_num = zeros(n);
+        for k = 1:n
+            e = zeros(n,1); e(k) = h;
+            J_num(:,k) = (f(x0+e) - f(x0-e)) / (2*h);
+        end
+
+        J_ana = build_jacobian(Y, V, delta, pq, pv);
+        err = abs(J_ana - J_num) ./ max(abs(J_num), 1e-8);
+
+        [worst, idx] = max(err(:));
+        [r, c] = ind2sub(size(err), idx);
+        fprintf('worst relative error %.2e at (%d,%d)\n', worst, r, c);
+    end
+    ```
+
+    Locating the *worst entry* rather than a norm tells you which submatrix is wrong.
+    If it's on the diagonal of the H block, you have your answer.
+
+    Note the sign convention on the residual must match between `f` and the Jacobian —
+    if every entry is off by exactly −1, that's the bug, not the derivatives.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'A 14-bus system has 1 slack, 4 PV and 9 PQ buses. What size is the Jacobian?',
+      options: ['14x14', '22x22', '26x26', '13x13'],
+      answer: 1,
+      explain:
+        'Angles for PV+PQ = 13, magnitudes for PQ = 9, total 22. The slack bus contributes neither, since both its unknowns are fixed.',
+    },
+    {
+      q: 'What happens when a PV bus exceeds its reactive limit?',
+      options: [
+        'The solver fails',
+        'It converts to PQ with Q fixed at the limit, and its voltage floats',
+        'The voltage setpoint is raised',
+        'The bus is removed from the system',
+      ],
+      answer: 1,
+      explain:
+        'The machine cannot supply the VArs needed to hold its setpoint, so Q is pinned at the limit and |V| becomes an unknown. Naive implementations can oscillate switching back and forth.',
+    },
+    {
+      q: 'Why is the voltage update multiplicative rather than additive?',
+      options: [
+        'It converges faster',
+        'The Jacobian is formulated in terms of ΔV/V, so the correction is fractional',
+        'To keep voltages positive',
+        'It is a MATLAB requirement',
+      ],
+      answer: 1,
+      explain:
+        'The normalised formulation keeps the submatrix entries dimensionally consistent. Using an additive update still converges — slowly, to a slightly displaced answer, which is a nastier failure than a visible one.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Load flow is the Newton-Raphson skeleton from the previous module with **power system
+  equations plugged in**. The hard parts are not the mathematics — they are the bus-type
+  bookkeeping, the four Jacobian diagonals, and handling reactive limits without
+  oscillating.
+</KeyIdea>
+
+## Further reading
+
+- Grainger & Stevenson, Chapter 9
+- Your own [note on the load flow Jacobian](/notes/newton-raphson-jacobian)
+- MATPOWER's `newtonpf.m` — a production implementation, readable and well commented
+- Next: **symmetrical components** — the transformation that makes unbalanced analysis
+  tractable

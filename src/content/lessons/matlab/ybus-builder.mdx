@@ -1,0 +1,323 @@
+---
+title: Building a Y-bus Properly
+track: matlab
+module: power-systems
+order: 39
+description: Beyond the textbook stamping rule — line charging, off-nominal transformer taps, phase shifters and shunts, with the checks that catch a bad model.
+objectives:
+  - Assemble a Y-bus including line charging, taps, phase shifters and shunts
+  - Explain why a phase-shifting transformer makes the Y-bus asymmetric
+  - Validate a Y-bus with structural and physical checks before using it
+prerequisites: [sparse-matrices, project-newton-raphson]
+estimatedMinutes: 35
+difficulty: advanced
+tags: ['matlab', 'ybus', 'power-systems', 'network-modelling']
+---
+
+You built a Y-bus in the Foundations module: diagonal is the sum of connected
+admittances, off-diagonal is the negative of the connecting admittance. That rule is
+correct and it is not the whole model.
+
+Real networks have line charging, transformers off their nominal tap, phase shifters
+and shunt compensation. Each changes the stamping, and getting any of them wrong
+produces a load flow that converges to a wrong answer.
+
+## The complete branch model
+
+Every branch is a π-equivalent with an ideal transformer at the from-end:
+
+- **Series admittance** $y = 1/(R + jX)$
+- **Total line charging** $jB$, split half at each end
+- **Tap ratio** $a$ — complex, so $|a|$ is the tap and $\angle a$ the phase shift
+
+The stamps, for a branch from bus $f$ to bus $t$:
+
+$$
+Y_{ff} \mathrel{+}= \frac{y + jB/2}{|a|^2}, \qquad
+Y_{tt} \mathrel{+}= y + jB/2
+$$
+
+$$
+Y_{ft} \mathrel{-}= \frac{y}{a^*}, \qquad
+Y_{tf} \mathrel{-}= \frac{y}{a}
+$$
+
+<Callout type="engineering">
+  Note the asymmetry: $Y_{ft}$ divides by $a^*$ and $Y_{tf}$ by $a$.
+
+  For a plain line ($a = 1$) or an in-phase tap ($a$ real), those are identical and the
+  Y-bus is symmetric. For a **phase-shifting transformer**, $a$ is complex, the two
+  differ, and $Y \ne Y^T$.
+
+  This is not a modelling convenience — it's physics. A phase shifter is a
+  non-reciprocal element, and that asymmetry is precisely how it controls real power
+  flow. If your Y-bus symmetry check fires on a network containing a phase shifter,
+  the check is wrong, not the model.
+</Callout>
+
+## Implementation
+
+<CodeFile name="build_ybus.m">
+```matlab
+function [Y, info] = build_ybus(n_bus, branch, shunt)
+%BUILD_YBUS Assemble a sparse admittance matrix.
+%
+%   BRANCH is a table or matrix with columns:
+%       from, to, R, X, B, tap, shift_deg, status
+%   R, X, B in per unit; TAP is the off-nominal ratio (1 = nominal);
+%   SHIFT_DEG the phase shift in degrees; STATUS 1 = in service.
+%
+%   SHUNT (optional) is n_bus-by-1 of bus shunt admittance in per unit.
+
+    arguments
+        n_bus  (1,1) double {mustBePositive}
+        branch        double
+        shunt  (:,1) double = zeros(n_bus,1)
+    end
+
+    % --- validate before building anything ------------------------------
+    f = branch(:,1);  t = branch(:,2);
+    assert(all(f >= 1 & f <= n_bus), 'from-bus outside 1..%d', n_bus);
+    assert(all(t >= 1 & t <= n_bus), 'to-bus outside 1..%d',   n_bus);
+    assert(all(f ~= t), 'self-loop in branch data (rows %s)', ...
+           mat2str(find(f == t)'));
+
+    R = branch(:,3);  X = branch(:,4);  B = branch(:,5);
+    tap   = branch(:,6);
+    shift = branch(:,7);
+    status = branch(:,8);
+
+    assert(all(abs(R) + abs(X) > 0), 'branch with zero impedance');
+    tap(tap == 0) = 1;                       % 0 conventionally means nominal
+
+    % --- drop out-of-service branches -----------------------------------
+    live = status == 1;
+    f = f(live); t = t(live);
+    y = 1 ./ (R(live) + 1i*X(live));
+    b = 1i * B(live) / 2;
+    a = tap(live) .* exp(1i * deg2rad(shift(live)));
+
+    % --- stamp, in triplet form ------------------------------------------
+    rows = [ f;              t;       f;             t        ];
+    cols = [ f;              t;       t;             f        ];
+    vals = [ (y + b)./abs(a).^2;   y + b;  -y./conj(a);   -y./a ];
+
+    Y = sparse(rows, cols, vals, n_bus, n_bus);
+
+    % Bus shunts go straight onto the diagonal
+    Y = Y + sparse(1:n_bus, 1:n_bus, shunt, n_bus, n_bus);
+
+    % --- report -----------------------------------------------------------
+    info.n_bus       = n_bus;
+    info.n_branch    = sum(live);
+    info.n_out       = sum(~live);
+    info.density     = nnz(Y) / numel(Y);
+    info.has_shifter = any(abs(shift(live)) > 1e-9);
+    info.symmetric   = norm(Y - Y.', 'fro') < 1e-10;
+end
+```
+</CodeFile>
+
+Two details worth pausing on. `Y.'` is the **plain** transpose — using `Y'` would
+conjugate, and a correct complex Y-bus would then look asymmetric. And `conj(a)` in
+the $Y_{ft}$ stamp is what makes phase shifters work.
+
+## Validating
+
+A Y-bus is easy to build slightly wrong and hard to eyeball. Four checks, in order of
+usefulness:
+
+<CodeFile name="check_ybus.m">
+```matlab
+function check_ybus(Y, info, branch)
+%CHECK_YBUS Structural and physical validation of an admittance matrix.
+
+    n = size(Y,1);
+    assert(isequal(size(Y), [n n]), 'Y is not square — an index grew the matrix');
+
+    % 1. Symmetry, unless a phase shifter is present
+    if ~info.has_shifter
+        asym = norm(Y - Y.', 'fro');
+        assert(asym < 1e-10, 'Y is asymmetric (%.2e) with no phase shifter', asym);
+    end
+
+    % 2. Row sums vanish with no shunts and no charging
+    if all(branch(:,5) == 0)
+        rowsum = max(abs(sum(Y, 2)));
+        assert(rowsum < 1e-9, 'Row sums %.2e non-zero — stamping error', rowsum);
+    end
+
+    % 3. Sparsity should match the branch list
+    expected = n + 2*info.n_branch;              % diagonal + two per branch
+    assert(nnz(Y) <= expected, 'More nonzeros (%d) than branches justify (%d)', ...
+           nnz(Y), expected);
+
+    % 4. No isolated buses
+    isolated = find(sum(abs(Y) > 1e-12, 2) <= 1);
+    if ~isempty(isolated)
+        warning('Bus(es) %s connect to nothing — Y will be singular', ...
+                mat2str(isolated'));
+    end
+
+    fprintf('Y-bus OK: %d buses, %d branches, %.3f%% dense\n', ...
+            n, info.n_branch, 100*info.density);
+end
+```
+</CodeFile>
+
+<Callout type="tip" title="Check 2 is the one that catches stamping bugs">
+  With no shunts or charging, each row of a Y-bus sums to exactly zero — the diagonal
+  is the sum of the off-diagonals' negatives, by construction.
+
+  It costs one line and catches a whole class of sign and indexing errors immediately,
+  rather than three steps later when a load flow won't converge.
+</Callout>
+
+## Seeing the structure
+
+```matlab
+figure;
+spy(Y);
+title(sprintf('%d buses, %d nonzeros (%.2f%%)', ...
+      size(Y,1), nnz(Y), 100*nnz(Y)/numel(Y)));
+```
+
+`spy` is a genuine diagnostic. A radial feeder gives a near-tridiagonal band. A meshed
+transmission network gives scattered off-diagonal points. An unexpected pattern —
+a block that should be connected but isn't, or a stray point far off the diagonal —
+usually means the bus numbering or the branch data is wrong.
+
+## Bus renumbering
+
+Real data rarely numbers buses 1..n consecutively. Build an index map once.
+
+```matlab
+bus_ids  = unique([branch(:,1); branch(:,2)]);      % actual identifiers
+n        = numel(bus_ids);
+to_index = containers.Map(num2cell(bus_ids), num2cell(1:n));
+
+f_idx = cellfun(@(k) to_index(k), num2cell(branch(:,1)));
+t_idx = cellfun(@(k) to_index(k), num2cell(branch(:,2)));
+```
+
+<Callout type="warning" title="Keep the map, and report in original IDs">
+  Nothing confuses a reader faster than results reported against internal indices
+  rather than the bus numbers in their data file. Convert back before printing.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Line charging applied whole rather than halved">
+  The total charging $B$ splits between the two ends: $jB/2$ each. Applying the full
+  value doubles the network's reactive generation and shifts every voltage.
+</Callout>
+
+<Callout type="warning" title="Tap on the wrong side">
+  The tap divides the from-bus diagonal by $|a|^2$ and leaves the to-bus diagonal
+  alone. Swapping them gives a plausible matrix and a wrong power flow.
+</Callout>
+
+<Callout type="warning" title="Using Y' instead of Y.' in the symmetry check">
+  The conjugate transpose makes a correct complex Y-bus look asymmetric. Plain
+  transpose.
+</Callout>
+
+<Callout type="warning" title="Forgetting out-of-service branches">
+  A `status` column exists for contingency analysis. Ignoring it means every N-1 study
+  is run on the intact network.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What breaks the symmetry check?">
+  Which of these makes a Y-bus genuinely asymmetric?
+
+  1. A transformer with tap ratio 1.05
+  2. A phase-shifting transformer with 5° shift
+  3. Line charging on a long line
+  4. A shunt capacitor at one bus
+
+  <Solution>
+    Only **2**.
+
+    1. A real tap ratio divides both $Y_{ft}$ and $Y_{tf}$ by the same real number.
+       Still symmetric.
+    2. A complex $a$ makes $y/a^*$ and $y/a$ differ. **Genuinely asymmetric**, and
+       correctly so — a phase shifter is non-reciprocal.
+    3. Charging is added to the diagonals only. Symmetric.
+    4. Diagonal only. Symmetric.
+
+    So a symmetry check is valid on any network without phase shifters — which is most
+    distribution networks and many transmission ones. Gate it on the presence of a
+    shift, as `check_ybus` does.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Build and validate a small network">
+  Build the Y-bus for a 4-bus system with one transformer at 1.025 tap and line
+  charging, then run every check.
+
+  <Solution>
+    ```matlab
+    % from to  R      X      B      tap   shift  status
+    branch = [1 2  0.02  0.06  0.030  1.000   0    1;
+              1 3  0.08  0.24  0.025  1.000   0    1;
+              2 3  0.06  0.18  0.020  1.000   0    1;
+              2 4  0.00  0.10  0.000  1.025   0    1];   % transformer
+
+    shunt = [0; 0; 0.02i; 0];        % capacitor at bus 3
+
+    [Y, info] = build_ybus(4, branch, shunt);
+    check_ybus(Y, info, branch);
+
+    fprintf('\nY(1,1) = %.4f %+.4fi\n', real(Y(1,1)), imag(Y(1,1)));
+    fprintf('Y(2,4) = %.4f %+.4fi\n', real(Y(2,4)), imag(Y(2,4)));
+    fprintf('Y(4,4) = %.4f %+.4fi\n', real(Y(4,4)), imag(Y(4,4)));
+    fprintf('symmetric: %d\n', info.symmetric);
+    ```
+
+    Check 2 (row sums) will **not** apply here because the branches have charging —
+    the function skips it automatically. That's deliberate: a check that fires on a
+    correct model is worse than no check, because you learn to ignore it.
+
+    Verify the transformer by hand instead: $Y_{24}$ should be $-y/1.025$ and $Y_{22}$
+    should include $y/1.025^2$ from that branch, while $Y_{44}$ includes plain $y$.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why is Y(f,t) divided by conj(a) while Y(t,f) is divided by a?',
+      options: [
+        'A convention with no physical meaning',
+        'It makes phase-shifting transformers non-reciprocal, which is how they control real power flow',
+        'To keep the matrix real',
+        'To improve numerical conditioning',
+      ],
+      answer: 1,
+      explain:
+        'For a real tap the two are identical and Y stays symmetric. For a complex ratio they differ, and that asymmetry is the physics of a phase shifter.',
+    },
+    {
+      q: 'With no shunts and no line charging, what should each row of a Y-bus sum to?',
+      options: ['One', 'Zero', 'The diagonal entry', 'The number of connected branches'],
+      answer: 1,
+      explain:
+        'The diagonal is the sum of connected admittances and the off-diagonals are their negatives, so they cancel exactly. It is the cheapest test for a stamping error.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  The textbook stamping rule is the special case with no charging and nominal taps.
+  The **complete** model adds $B/2$ at each end, divides the from-diagonal by $|a|^2$,
+  and uses $a^*$ on one off-diagonal — which is what makes a phase shifter work.
+  Validate every Y-bus before it reaches a solver.
+</KeyIdea>
+
+## Further reading
+
+- Your own [note on Y-bus construction](/notes/ybus-construction)
+- MATPOWER's `makeYbus.m` — a production implementation worth reading
+- Next: **load flow** — the algorithm this matrix exists to feed

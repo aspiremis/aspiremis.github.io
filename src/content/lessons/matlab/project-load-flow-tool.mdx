@@ -1,0 +1,565 @@
+---
+title: 'Capstone: A Complete Load-Flow Tool'
+track: matlab
+module: power-systems
+order: 45
+description: Assemble everything into a validated, documented, tested tool with a working interface — the point at which the coursework stops being intimidating.
+objectives:
+  - Integrate the whole track into one working application
+  - Validate against published IEEE results and keep it as a regression suite
+  - Build a usable interface and produce report-ready output
+prerequisites: [ybus-builder, load-flow, ieee-test-systems, project-newton-raphson]
+estimatedMinutes: 90
+difficulty: advanced
+tags: ['matlab', 'capstone', 'load-flow', 'project']
+---
+
+Forty-four lessons have been building to this.
+
+You are going to assemble a load-flow tool that reads standard case data, solves it,
+validates itself against published results, reports properly, and has an interface
+someone else could use. Not a script — a **tool**.
+
+<Callout type="engineering">
+  This is the point at which your Power System Analysis coursework stops being
+  intimidating. Once you have written a load flow that reproduces IEEE 14-bus to six
+  decimal places, every load-flow question in an exam is something you have *built*
+  rather than something you have read about.
+</Callout>
+
+## Architecture
+
+Structure it as a package, not a folder of loose files.
+
+```
++powerflow/
+├── @Case/                    the network case object
+│   ├── Case.m                constructor, validation
+│   ├── fromMatpower.m
+│   └── summary.m
+├── buildYbus.m               from the Y-bus lesson
+├── injectedPower.m
+├── buildJacobian.m
+├── solve.m                   the Newton-Raphson driver
+├── report.m                  tables and figures
+└── validate.m                the regression suite
+tests/
+├── testYbus.m
+├── testSolver.m
+└── testRegression.m
+app/
+└── LoadFlowApp.mlapp         the interface
+```
+
+The `+powerflow` folder makes it a **package**: call it as `powerflow.solve(...)`, with
+no risk of shadowing a built-in. `@Case` makes `Case` a class.
+
+## Stage 1 — the case object
+
+Wrapping the data in a class means validation happens once, at construction, and every
+downstream function can assume the data is sane.
+
+<CodeFile name="Case.m">
+```matlab
+classdef Case
+%CASE A validated power flow case.
+%
+%   c = powerflow.Case(bus, branch, baseMVA) constructs and validates.
+%   c = powerflow.Case.fromMatpower(mpc) converts a MATPOWER case.
+
+    properties (SetAccess = immutable)
+        bus         table
+        branch      double
+        baseMVA     double
+        Y           % sparse admittance matrix
+        slack       double
+        pv          double
+        pq          double
+    end
+
+    methods
+        function obj = Case(bus, branch, baseMVA)
+            arguments
+                bus     table
+                branch  double
+                baseMVA (1,1) double {mustBePositive} = 100
+            end
+
+            obj.bus     = bus;
+            obj.branch  = branch;
+            obj.baseMVA = baseMVA;
+
+            % --- validation, once, here ------------------------------------
+            n = height(bus);
+            obj.slack = find(bus.type == 1);
+            obj.pv    = find(bus.type == 2);
+            obj.pq    = find(bus.type == 3);
+
+            assert(numel(obj.slack) == 1, ...
+                   'Need exactly one slack bus, found %d', numel(obj.slack));
+            assert(numel(obj.pv) + numel(obj.pq) + 1 == n, ...
+                   'Bus types do not account for all %d buses', n);
+            assert(all(branch(:,1) >= 1 & branch(:,1) <= n), 'from-bus out of range');
+            assert(all(branch(:,2) >= 1 & branch(:,2) <= n), 'to-bus out of range');
+            assert(all(bus.Qmin <= bus.Qmax), 'Qmin exceeds Qmax at some bus');
+
+            obj.Y = powerflow.buildYbus(n, branch, bus.shunt);
+
+            % Structural checks on the assembled matrix
+            assert(size(obj.Y,1) == n, 'Y-bus grew — an index was out of range');
+        end
+
+        function n = nbus(obj);    n = height(obj.bus);   end
+        function n = nbranch(obj); n = size(obj.branch,1); end
+    end
+
+    methods (Static)
+        function obj = fromMatpower(mpc)
+            % ... conversion from the IEEE test systems lesson ...
+        end
+    end
+end
+```
+</CodeFile>
+
+<Callout type="tip" title="Immutable properties">
+  `SetAccess = immutable` means the case cannot be modified after construction. So the
+  Y-bus can never drift out of sync with the branch data it was built from — a whole
+  class of bug removed by a keyword.
+</Callout>
+
+## Stage 2 — the solver
+
+Wrap the load flow with proper result reporting.
+
+<CodeFile name="solve.m">
+```matlab
+function result = solve(c, opts)
+%SOLVE Newton-Raphson power flow on a validated Case.
+
+    arguments
+        c powerflow.Case
+        opts.tol              (1,1) double  = 1e-8
+        opts.maxIter          (1,1) double  = 30
+        opts.enforceQLimits   (1,1) logical = true
+        opts.verbose          (1,1) logical = false
+    end
+
+    t0 = tic;
+    [V, delta, info] = powerflow.newtonRaphson(c, opts);
+    elapsed = toc(t0);
+
+    [P, Q] = powerflow.injectedPower(c.Y, V, delta);
+
+    result.V        = V;
+    result.delta    = delta;
+    result.P        = P;
+    result.Q        = Q;
+    result.info     = info;
+    result.elapsed  = elapsed;
+    result.case     = c;
+
+    % --- branch flows and losses -----------------------------------------
+    result.flows  = powerflow.branchFlows(c, V, delta);
+    result.losses = sum(P);
+
+    % --- physical sanity, always ------------------------------------------
+    if info.converged
+        assert(result.losses > -1e-9, ...
+               'Negative total losses (%.3e) — impossible', result.losses);
+        assert(all(V > 0.3 & V < 1.8), ...
+               'Voltages outside any plausible range: %.3f to %.3f', min(V), max(V));
+    end
+end
+```
+</CodeFile>
+
+## Stage 3 — validation
+
+The regression suite from the previous lesson, made permanent.
+
+<CodeFile name="validate.m">
+```matlab
+function results = validate(tol, verbose)
+%VALIDATE Regression suite against published IEEE results.
+
+    arguments
+        tol     (1,1) double  = 1e-6
+        verbose (1,1) logical = true
+    end
+
+    cases = ["case14","case30","case57","case118","case300"];
+    n = numel(cases);
+
+    name  = strings(n,1);  passed = false(n,1);
+    iters = zeros(n,1);    maxdV  = nan(n,1);
+    condJ = nan(n,1);      secs   = nan(n,1);
+
+    for k = 1:n
+        name(k) = cases(k);
+        try
+            mpc = loadcase(char(cases(k)));
+            c   = powerflow.Case.fromMatpower(mpc);
+            r   = powerflow.solve(c);
+
+            ref = runpf(mpc, mpoption('verbose',0,'out.all',0));
+            assert(ref.success == 1, 'reference solver failed');
+
+            maxdV(k)  = max(abs(r.V - ref.bus(:,8)));
+            iters(k)  = r.info.iterations;
+            condJ(k)  = r.info.cond;
+            secs(k)   = r.elapsed;
+            passed(k) = r.info.converged && maxdV(k) < tol;
+
+        catch err
+            if verbose
+                fprintf('%-8s ERROR: %s\n', cases(k), err.message);
+            end
+        end
+    end
+
+    results = table(name, passed, iters, maxdV, condJ, secs);
+    if verbose, disp(results); end
+
+    assert(all(passed), '%d of %d cases failed validation', sum(~passed), n);
+    fprintf('All %d cases pass at tolerance %.0e\n', n, tol);
+end
+```
+</CodeFile>
+
+<Callout type="warning" title="Track iterations and conditioning, not just correctness">
+  A change that keeps every voltage right but doubles the iteration count has broken
+  the convergence rate — probably a Jacobian regression. Only recording the answers
+  would miss it entirely.
+</Callout>
+
+## Stage 4 — reporting
+
+<CodeFile name="report.m">
+```matlab
+function report(r, opts)
+%REPORT Print a load flow solution and optionally write a figure.
+
+    arguments
+        r         struct
+        opts.file (1,:) char = ''
+        opts.vmin (1,1) double = 0.95
+        opts.vmax (1,1) double = 1.05
+    end
+
+    c = r.case;
+    typeName = ["Slack";"PV";"PQ"];
+
+    fprintf('\n%s\n', repmat('=', 1, 72));
+    fprintf('LOAD FLOW RESULTS   %d buses, %d branches, %.0f MVA base\n', ...
+            c.nbus, c.nbranch, c.baseMVA);
+    fprintf('%s\n', repmat('=', 1, 72));
+    fprintf('Converged: %s in %d iterations (%.3f s), cond(J) = %.2e\n\n', ...
+            string(r.info.converged), r.info.iterations, r.elapsed, r.info.cond);
+
+    T = table(c.bus.original_id, typeName(c.bus.type), r.V, rad2deg(r.delta), ...
+              r.P*c.baseMVA, r.Q*c.baseMVA, ...
+              'VariableNames', {'Bus','Type','V_pu','Angle_deg','P_MW','Q_MVAr'});
+    disp(T);
+
+    fprintf('\nTotal losses: %.4f MW\n', r.losses * c.baseMVA);
+
+    % --- limit violations ---------------------------------------------------
+    bad = r.V < opts.vmin | r.V > opts.vmax;
+    if any(bad)
+        fprintf('\n%d bus(es) outside [%.2f, %.2f] pu:\n', sum(bad), opts.vmin, opts.vmax);
+        disp(T(bad,:));
+    else
+        fprintf('All voltages within [%.2f, %.2f] pu\n', opts.vmin, opts.vmax);
+    end
+
+    % --- figure --------------------------------------------------------------
+    if ~isempty(opts.file)
+        fig = figure('Units','centimeters','Position',[2 2 16 11],'Color','w');
+        tl = tiledlayout(2,1,'TileSpacing','compact');
+
+        nexttile;
+        bar(r.V, 'FaceColor', [0.00 0.45 0.70], 'EdgeColor','none');
+        yline(opts.vmax,'--','Color',[0.5 0.5 0.5]);
+        yline(opts.vmin,'--','Color',[0.5 0.5 0.5]);
+        ylabel('|V| (pu)'); ylim([0.9 1.1]); grid on;
+        title('Bus voltage magnitude');
+
+        nexttile;
+        semilogy(0:numel(r.info.history)-1, r.info.history, '-o','LineWidth',1.4);
+        yline(1e-8,'--','tolerance');
+        xlabel('Iteration'); ylabel('Max mismatch (pu)'); grid on;
+        title(sprintf('Convergence (order %.2f)', r.info.order));
+
+        title(tl, sprintf('%d-bus load flow', c.nbus), 'FontWeight','bold');
+        exportgraphics(fig, opts.file, 'ContentType','vector');
+        fprintf('\nWrote %s\n', opts.file);
+    end
+end
+```
+</CodeFile>
+
+The convergence panel is deliberately included in the output figure. Anyone reading
+your report can see the order was quadratic — which is evidence the solver is right,
+not just that it produced numbers.
+
+## Stage 5 — the interface
+
+An App Designer app, or for a first version a simple menu-driven function.
+
+<CodeFile name="loadFlowCLI.m" caption="A usable interface without App Designer">
+```matlab
+function loadFlowCLI()
+%LOADFLOWCLI Minimal interactive front end for the load flow tool.
+
+    cases = ["case14","case30","case57","case118"];
+
+    fprintf('\nAvailable cases:\n');
+    for k = 1:numel(cases)
+        fprintf('  %d) %s\n', k, cases(k));
+    end
+
+    choice = input('\nSelect a case (number): ');
+    validateattributes(choice, {'numeric'}, ...
+                       {'scalar','integer','>=',1,'<=',numel(cases)});
+
+    tol = input('Tolerance [1e-8]: ');
+    if isempty(tol), tol = 1e-8; end
+
+    qlim = input('Enforce generator Q limits? (y/n) [y]: ', 's');
+    enforce = ~strcmpi(qlim, 'n');
+
+    mpc = loadcase(char(cases(choice)));
+    c   = powerflow.Case.fromMatpower(mpc);
+    r   = powerflow.solve(c, tol=tol, enforceQLimits=enforce, verbose=true);
+
+    powerflow.report(r, file=sprintf('%s_results.pdf', cases(choice)));
+end
+```
+</CodeFile>
+
+For a graphical version, App Designer gives you a drop-down for the case, numeric
+fields for tolerance, a table for results and axes for the plots — with callbacks that
+call exactly the same `powerflow.solve`. **The engine should not know or care whether a
+GUI or a script is driving it.**
+
+## Stage 6 — tests
+
+<CodeFile name="testSolver.m">
+```matlab
+classdef testSolver < matlab.unittest.TestCase
+%TESTSOLVER Unit tests for the load flow package.
+
+    methods (Test)
+
+        function ybusRowSumsVanish(tc)
+            % No shunts, no charging: rows must sum to zero
+            branch = [1 2 0.02 0.06 0 1 0 1;
+                      2 3 0.03 0.09 0 1 0 1];
+            Y = powerflow.buildYbus(3, branch, zeros(3,1));
+            tc.verifyLessThan(max(abs(sum(Y,2))), 1e-12);
+        end
+
+        function ybusSymmetricWithoutShifter(tc)
+            branch = [1 2 0.02 0.06 0.03 1.05 0 1];
+            Y = powerflow.buildYbus(2, branch, zeros(2,1));
+            tc.verifyLessThan(norm(Y - Y.', 'fro'), 1e-12);
+        end
+
+        function phaseShifterBreaksSymmetry(tc)
+            branch = [1 2 0.02 0.06 0 1 5 1];        % 5 degree shift
+            Y = powerflow.buildYbus(2, branch, zeros(2,1));
+            tc.verifyGreaterThan(norm(Y - Y.', 'fro'), 1e-6);
+        end
+
+        function rejectsMissingSlack(tc)
+            bus = makeBusTable([2;3;3]);              % no type 1
+            tc.verifyError(@() powerflow.Case(bus, someBranch(), 100), ...
+                           'MATLAB:assertion:failed');
+        end
+
+        function convergesQuadratically(tc)
+            c = powerflow.Case.fromMatpower(loadcase('case14'));
+            r = powerflow.solve(c);
+            tc.verifyTrue(r.info.converged);
+            tc.verifyGreaterThan(r.info.order, 1.7);   % ~2 means correct Jacobian
+            tc.verifyLessThan(r.info.iterations, 8);
+        end
+
+        function lossesArePositive(tc)
+            c = powerflow.Case.fromMatpower(loadcase('case30'));
+            r = powerflow.solve(c);
+            tc.verifyGreaterThan(r.losses, 0);
+        end
+    end
+end
+```
+</CodeFile>
+
+```matlab
+results = runtests('tests');
+table(results)
+```
+
+<Callout type="tip" title="convergesQuadratically is the best test here">
+  Asserting on the *observed convergence order* catches a wrong Jacobian, which no
+  amount of checking final voltages will — because a wrong Jacobian still converges to
+  the right answer, just linearly.
+
+  It's the most valuable single test in the suite, and it comes straight from the
+  Numerical Methods project.
+</Callout>
+
+## Where each lesson shows up
+
+| Lesson | Used for |
+|---|---|
+| Variables, complex numbers | `V .* conj(Y*V)` |
+| Matrices, indexing | Y-bus assembly and Jacobian slicing |
+| Element-wise operations | Every vectorised power calculation |
+| Functions, scope | The whole package structure |
+| Conditionals, loops | Bus typing, the iteration |
+| Logical indexing | Limit checks, PV/PQ selection |
+| Structs and tables | The Case object and result reporting |
+| Debugging | Assertions and the numerical Jacobian check |
+| File I/O | Reading case data |
+| Plotting, publication figures | The results figure |
+| Floating point | Choosing the tolerance |
+| Linear systems, sparse | `J \ mismatch`, `condest` |
+| Root finding, Newton-Raphson | The solver itself |
+| Symbolic Math | Deriving and verifying Jacobian entries |
+
+## Extend it
+
+<Exercise n={1} kind="practice" title="Add a fast decoupled solver">
+  Implement fast decoupled load flow alongside Newton-Raphson and compare on a
+  transmission case and on a distribution feeder with R/X near 1.
+
+  <Solution>
+    The B′ and B″ matrices are constant, so they factor once outside the loop:
+
+    ```matlab
+    Bp  = -imag(Y);  Bp(slack,:)  = []; Bp(:,slack)  = [];
+    Bpp = -imag(Y(pq,pq));
+
+    dBp  = decomposition(Bp);          % factor once
+    dBpp = decomposition(Bpp);
+
+    while ~converged
+        [P,Q] = injectedPower(Y, V, delta);
+        delta(pvpq) = delta(pvpq) + dBp  \ (dP ./ V(pvpq));
+        V(pq)       = V(pq)       + dBpp \ (dQ ./ V(pq));
+    end
+    ```
+
+    On a transmission case expect roughly 7–10 iterations against Newton's 4–5, but
+    each iteration is far cheaper.
+
+    On a feeder with R/X ≈ 1 it will take many times more iterations or fail to
+    converge — which is the finding from your own blog post, now reproducible in your
+    own code. Being able to demonstrate that from a tool you wrote is worth more than
+    reading it.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="N-1 contingency analysis">
+  Add a screening function that solves the base case, then re-solves with each branch
+  out, and reports which outages cause violations.
+
+  <Solution>
+    ```matlab
+    function violations = contingencyScreen(c, vmin, vmax)
+        base = powerflow.solve(c);
+        assert(base.info.converged, 'Base case does not converge');
+
+        n_br = c.nbranch;
+        outage = strings(0,1);  worstV = []; note = strings(0,1);
+
+        for k = 1:n_br
+            branch_k = c.branch;
+            branch_k(k, 8) = 0;                        % take it out of service
+            try
+                ck = powerflow.Case(c.bus, branch_k, c.baseMVA);
+                rk = powerflow.solve(ck);
+
+                if ~rk.info.converged
+                    outage(end+1,1) = sprintf('%d-%d', c.branch(k,1), c.branch(k,2));
+                    worstV(end+1,1) = NaN;
+                    note(end+1,1)   = "did not converge";
+                elseif any(rk.V < vmin | rk.V > vmax)
+                    outage(end+1,1) = sprintf('%d-%d', c.branch(k,1), c.branch(k,2));
+                    worstV(end+1,1) = min(rk.V);
+                    note(end+1,1)   = "voltage violation";
+                end
+            catch err
+                outage(end+1,1) = sprintf('%d-%d', c.branch(k,1), c.branch(k,2));
+                worstV(end+1,1) = NaN;
+                note(end+1,1)   = string(err.message);
+            end
+        end
+
+        violations = table(outage, worstV, note);
+    end
+    ```
+
+    Two things this teaches beyond the code. **Non-convergence is a result**, not an
+    error — an outage that islands part of the network genuinely has no solution, and
+    the report should say so rather than crashing. And the `try/catch` matters, because
+    removing a branch can isolate a bus and make `Case` construction fail its own
+    validation.
+
+    This is also where `decomposition` pays off: the Y-bus changes each time, but for a
+    real contingency analysis you would use a rank-one update rather than rebuilding.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="Publish it">
+  Package the tool for someone else to use.
+
+  <Solution>
+    The checklist:
+
+    - **README** — what it does, how to install, a worked example that runs in under a
+      minute, and the validation results
+    - **Help text on every public function**, with an `Example:` block
+    - **The test suite**, and instructions to run it
+    - **A licence.** MIT is the usual choice for academic tooling
+    - **A validation table in the README** — the case, iterations, and max deviation
+      against MATPOWER. That table is what makes a stranger trust it.
+
+    Then put it on GitHub. A load-flow solver that reproduces IEEE results, with tests
+    and honest documentation, is a genuinely credible thing to show a professor or an
+    interviewer — far more so than a description of one.
+
+    It would also make the project page on this site something you can link to.
+  </Solution>
+</Exercise>
+
+## What you built
+
+A load-flow tool that reads standard case data, validates it, solves it with a
+correct Newton-Raphson implementation, enforces reactive limits, checks itself against
+published results, produces report-ready output, and has a usable interface.
+
+<KeyIdea>
+  You did not learn MATLAB. You learned to **build engineering software you can
+  defend** — validated against known results, tested, documented, and honest about what
+  it does and doesn't do. The language was the medium.
+</KeyIdea>
+
+## Where to go next
+
+- **The Python track** — the same problems in the language your research career will
+  use, ending in an automated hosting capacity study
+- **Add three-phase unbalanced modelling**, and the tool starts to overlap with what
+  OpenDSS does
+- **Continuation power flow**, to trace the P–V curve past the nose — the natural
+  extension of the conditioning work in Numerical Methods
+- **Publish it**, and link it from your projects page
+
+## Further reading
+
+- Grainger & Stevenson, Chapter 9
+- MATPOWER User's Manual and source — a production implementation to compare against
+- Your own [note on the load flow Jacobian](/notes/newton-raphson-jacobian) and
+  [post on fast decoupled load flow](/blog/why-fast-decoupled-load-flow-fails-on-distribution-feeders)

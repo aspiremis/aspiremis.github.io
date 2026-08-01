@@ -1,0 +1,331 @@
+---
+title: Symmetrical Components
+track: matlab
+module: power-systems
+order: 41
+description: The transformation that turns three coupled unbalanced phases into three independent balanced systems — and why it makes fault analysis tractable.
+objectives:
+  - Transform between phase and sequence quantities in both directions
+  - Explain why the transformation decouples a balanced network
+  - Compute voltage and current unbalance factors from measurements
+prerequisites: [load-flow]
+estimatedMinutes: 30
+difficulty: advanced
+tags: ['matlab', 'symmetrical-components', 'unbalance', 'fault-analysis']
+---
+
+An unbalanced three-phase system has three coupled phasors. Analysing it directly
+means solving a 3×3 coupled system at every step.
+
+Fortescue's insight, in 1918: any set of three unbalanced phasors can be decomposed
+into three *balanced* sets — and in a balanced network those three sets don't interact.
+Three independent single-phase problems instead of one coupled three-phase one.
+
+## The transformation
+
+With $a = 1\angle 120° = e^{j2\pi/3}$:
+
+$$
+\begin{bmatrix} V_a \\ V_b \\ V_c \end{bmatrix} =
+\begin{bmatrix} 1 & 1 & 1 \\ 1 & a^2 & a \\ 1 & a & a^2 \end{bmatrix}
+\begin{bmatrix} V_0 \\ V_1 \\ V_2 \end{bmatrix}
+$$
+
+and the inverse, with its factor of one third:
+
+$$
+\begin{bmatrix} V_0 \\ V_1 \\ V_2 \end{bmatrix} = \frac{1}{3}
+\begin{bmatrix} 1 & 1 & 1 \\ 1 & a & a^2 \\ 1 & a^2 & a \end{bmatrix}
+\begin{bmatrix} V_a \\ V_b \\ V_c \end{bmatrix}
+$$
+
+The three sequences:
+
+- **Positive (1)** — balanced, a-b-c rotation. What a healthy system carries.
+- **Negative (2)** — balanced, a-c-b rotation. Appears under unbalance; heats rotors.
+- **Zero (0)** — all three in phase. Requires a neutral or earth return path.
+
+<Analogy>
+  Think of it as **resolving a force into components**.
+
+  A diagonal force is awkward to work with directly. Split it into horizontal and
+  vertical components and each can be handled independently, then recombined.
+
+  Symmetrical components does that for three-phase phasors — and the payoff is that in
+  a balanced network the three "directions" don't influence each other.
+</Analogy>
+
+## Implementation
+
+<CodeFile name="sequence_transform.m">
+```matlab
+function A = fortescue_matrix()
+%FORTESCUE_MATRIX Symmetrical component transformation matrix.
+%   V_abc = A * V_012;   V_012 = A \ V_abc
+
+    a = exp(1i*2*pi/3);
+    A = [1  1     1;
+         1  a^2   a;
+         1  a     a^2];
+end
+
+function V012 = to_sequence(Vabc)
+%TO_SEQUENCE Phase quantities to symmetrical components.
+    V012 = fortescue_matrix() \ Vabc(:);       % backslash, not inv
+end
+
+function Vabc = to_phase(V012)
+%TO_PHASE Symmetrical components back to phase quantities.
+    Vabc = fortescue_matrix() * V012(:);
+end
+```
+</CodeFile>
+
+Using `A \ Vabc` rather than `inv(A)*Vabc` is the linear-systems lesson applied — and
+here `A` is perfectly conditioned, so it makes little numerical difference, but the
+habit is right.
+
+Verify the inverse contains the factor of 1/3:
+
+```matlab
+A = fortescue_matrix();
+disp(round(inv(A) * 3, 10));      % should be [1 1 1; 1 a a^2; 1 a^2 a]
+```
+
+Deriving that symbolically once — as the Symbolic Math lesson suggested — makes the
+1/3 stick far better than memorising the matrix.
+
+## Why it decouples
+
+For a **balanced** three-phase impedance with self $Z_s$ and mutual $Z_m$:
+
+$$
+Z_{abc} = \begin{bmatrix} Z_s & Z_m & Z_m \\ Z_m & Z_s & Z_m \\ Z_m & Z_m & Z_s \end{bmatrix}
+$$
+
+Transform it:
+
+$$
+Z_{012} = A^{-1} Z_{abc} A =
+\begin{bmatrix} Z_s + 2Z_m & 0 & 0 \\ 0 & Z_s - Z_m & 0 \\ 0 & 0 & Z_s - Z_m \end{bmatrix}
+$$
+
+**Diagonal.** The sequences don't interact. That is the entire reason the method
+exists.
+
+```matlab
+syms Zs Zm
+A = fortescue_matrix();                        % or build symbolically
+Zabc = [Zs Zm Zm; Zm Zs Zm; Zm Zm Zs];
+Z012 = simplify(inv(A) * Zabc * A)             % confirm it is diagonal
+```
+
+<Callout type="warning" title="Decoupling requires a balanced network">
+  The transformation always *works* — you can always compute sequence components of
+  any three phasors. But the sequences only **decouple** if the network impedance
+  matrix has that symmetric structure.
+
+  An untransposed transmission line, or a single-phase load on one phase of a
+  distribution feeder, produces off-diagonal terms in $Z_{012}$ and the sequences
+  couple. Symmetrical components is then still valid but no longer simplifying, which
+  is why distribution analysis often works directly in phase coordinates — and why
+  OpenDSS does.
+</Callout>
+
+## Sequence networks in practice
+
+Each sequence has its own network with its own impedances:
+
+- **Positive** — the normal load flow network. Generators appear as sources.
+- **Negative** — similar topology, no sources; machine negative-sequence impedance is
+  roughly the subtransient value.
+- **Zero** — depends heavily on transformer winding connections and grounding.
+
+<Callout type="engineering">
+  The zero-sequence network is where students lose marks, because it is the one that
+  isn't just "the same network again":
+
+  - **Delta winding** — blocks zero sequence entirely. Open circuit.
+  - **Star with the neutral solidly earthed** — provides a zero-sequence path.
+  - **Star with an ungrounded neutral** — blocks it.
+  - **Delta-star earthed** — zero-sequence current circulates in the delta and appears
+    as a source on the star side.
+
+  A grounding impedance $Z_n$ in the neutral appears as **$3Z_n$** in the zero-sequence
+  network, because all three phase currents flow through it and $I_a + I_b + I_c = 3I_0$.
+
+  That factor of 3 is worth deriving once rather than remembering.
+</Callout>
+
+## Unbalance factors
+
+What a power quality analyser reports.
+
+<CodeFile name="unbalance.m">
+```matlab
+function u = unbalance(Vabc)
+%UNBALANCE Voltage unbalance factors from three phasors.
+%
+%   Returns negative- and zero-sequence unbalance as percentages of the
+%   positive sequence — the IEC definition.
+
+    arguments
+        Vabc (3,1) double
+    end
+
+    V012 = fortescue_matrix() \ Vabc;
+
+    u.V0 = V012(1);
+    u.V1 = V012(2);
+    u.V2 = V012(3);
+
+    assert(abs(u.V1) > 1e-12, 'Positive sequence is zero — cannot form a ratio');
+
+    u.negative_pct = 100 * abs(u.V2) / abs(u.V1);      % VUF
+    u.zero_pct     = 100 * abs(u.V0) / abs(u.V1);
+
+    % Reconstruction check — the transform must be lossless
+    err = norm(fortescue_matrix()*V012 - Vabc) / norm(Vabc);
+    assert(err < 1e-10, 'Round-trip error %.2e', err);
+end
+```
+</CodeFile>
+
+<Callout type="engineering">
+  The commonly applied limit is **2% voltage unbalance factor** (negative sequence over
+  positive) at the point of common coupling. Some standards use 1% for sustained
+  operation.
+
+  It matters because negative-sequence voltage drives a rotating field opposite to the
+  rotor in an induction machine. The resulting currents are large — negative-sequence
+  impedance is close to the locked-rotor value — and they produce heating with no
+  useful torque. A 2% voltage unbalance can cause 10–15% current unbalance, which is
+  why the limit is so tight.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Forgetting the 1/3 in the inverse">
+  `inv(A)` has it; hand-writing the inverse matrix without it scales every sequence
+  component by three.
+</Callout>
+
+<Callout type="warning" title="Wrong a-operator convention">
+  Some texts order the transformation matrix rows as 0,1,2 and others as 1,2,0. Both
+  are valid; mixing them silently swaps your positive and negative sequences. Pick one
+  and state it in a comment.
+</Callout>
+
+<Callout type="warning" title="Assuming zero sequence exists">
+  With no neutral or earth path, $I_0 = 0$ regardless of how unbalanced the phases are.
+  A three-wire delta system simply has no zero-sequence current.
+</Callout>
+
+<Callout type="warning" title="Expecting decoupling on an unbalanced network">
+  The transform always works; the decoupling requires network symmetry.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What sequences are present?">
+  For each set of phase voltages, predict which sequence components are non-zero.
+
+  1. `[1∠0°, 1∠−120°, 1∠120°]`
+  2. `[1∠0°, 1∠0°, 1∠0°]`
+  3. `[1∠0°, 0, 0]`
+  4. `[1∠0°, 1∠120°, 1∠−120°]`
+
+  <Solution>
+    1. **Positive only.** Perfectly balanced a-b-c. $V_1 = 1$, others zero.
+    2. **Zero only.** All in phase is the definition of zero sequence. $V_0 = 1$.
+    3. **All three, each 1/3.** A single energised phase decomposes equally:
+       $V_0 = V_1 = V_2 = 1/3$. This is why a single line-to-ground fault involves all
+       three sequence networks.
+    4. **Negative only.** The a-c-b rotation. $V_2 = 1$.
+
+    Case 3 is the one to remember — it explains the structure of the LG fault
+    connection in the next lesson.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Analyse a real unbalance">
+  A three-phase supply measures 233, 228 and 241 V with angles 0°, −119° and 122°.
+  Compute the unbalance factors and judge compliance against a 2% limit.
+
+  <Solution>
+    ```matlab
+    Vabc = [233 * exp(1i*deg2rad(0));
+            228 * exp(1i*deg2rad(-119));
+            241 * exp(1i*deg2rad(122))];
+
+    u = unbalance(Vabc);
+
+    fprintf('V0 = %.3f V at %.1f deg\n', abs(u.V0), rad2deg(angle(u.V0)));
+    fprintf('V1 = %.3f V at %.1f deg\n', abs(u.V1), rad2deg(angle(u.V1)));
+    fprintf('V2 = %.3f V at %.1f deg\n', abs(u.V2), rad2deg(angle(u.V2)));
+    fprintf('\nVUF (negative) = %.2f%%\n', u.negative_pct);
+    fprintf('Zero sequence  = %.2f%%\n', u.zero_pct);
+
+    if u.negative_pct > 2
+        fprintf('EXCEEDS the 2%% limit\n');
+    else
+        fprintf('Within the 2%% limit\n');
+    end
+    ```
+
+    Both magnitude and angle deviations contribute. A common mistake is judging
+    unbalance from magnitudes alone — three equal magnitudes at 0°, −115° and 125° are
+    substantially unbalanced with no magnitude difference at all.
+
+    That's a genuine argument for computing the VUF properly rather than using the
+    NEMA approximation based on maximum deviation from the mean, which sees only
+    magnitude.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why does the symmetrical component transformation simplify analysis?',
+      options: [
+        'It reduces three phasors to one',
+        'In a balanced network the sequence impedance matrix is diagonal, so the sequences decouple',
+        'It eliminates complex numbers',
+        'It removes the need for a neutral conductor',
+      ],
+      answer: 1,
+      explain:
+        'Three independent single-phase problems replace one coupled three-phase problem. The decoupling depends on network symmetry — on an untransposed line or an unbalanced feeder the sequences couple again.',
+    },
+    {
+      q: 'A neutral grounding impedance Zn appears in the zero-sequence network as:',
+      options: ['Zn', '3Zn', 'Zn/3', 'It does not appear'],
+      answer: 1,
+      explain:
+        'All three phase currents flow through the neutral, and Ia + Ib + Ic = 3I0. The voltage drop is therefore 3·I0·Zn, which is an impedance of 3Zn in the zero-sequence circuit.',
+    },
+    {
+      q: 'Decomposing [1∠0°, 0, 0] gives which sequence components?',
+      options: [
+        'Positive only',
+        'Zero only',
+        'All three, each equal to 1/3',
+        'Positive and negative, each 1/2',
+      ],
+      answer: 2,
+      explain:
+        'A single energised phase splits equally into all three sequences. This is exactly why a single line-to-ground fault couples all three sequence networks in series.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Symmetrical components turns **one coupled three-phase problem into three independent
+  single-phase ones** — but only when the network is balanced. The transformation always
+  works; the *simplification* is what depends on symmetry.
+</KeyIdea>
+
+## Further reading
+
+- Grainger & Stevenson, Chapter 11
+- Next: **fault analysis** — connecting the sequence networks for each fault type
