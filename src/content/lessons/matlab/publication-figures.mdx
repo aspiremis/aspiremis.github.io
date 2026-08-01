@@ -1,0 +1,317 @@
+---
+title: Figures Worth Publishing
+track: matlab
+module: data-visualisation
+order: 20
+description: Sizing, fonts, colour and export — turning a working plot into one that survives a journal, a thesis and a projector.
+objectives:
+  - Size and export a figure at the dimensions it will actually be printed
+  - Choose colours that survive greyscale printing and colour vision deficiency
+  - Write a reusable style function instead of restyling every figure by hand
+prerequisites: [subplots-and-layout]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'plotting', 'figures', 'publishing']
+---
+
+MATLAB's default figure is designed to be looked at on screen while you work. It is
+not designed to be printed at 85 mm wide in a two-column IEEE paper, where the axis
+labels become unreadable.
+
+The gap between the two is a handful of settings, applied once.
+
+## Size the figure for its destination
+
+The single most common failure: designing a figure on a large screen, then shrinking
+it into a document. Everything scales down — including the text, which becomes
+illegible.
+
+The fix is to set the figure to its **final printed size from the start**, so what
+you see is what the reader gets.
+
+<CodeFile name="figure_sizing.m">
+```matlab
+% IEEE two-column: single column is 88 mm wide. Height ~ 2/3 for a readable ratio.
+fig = figure('Units', 'centimeters', ...
+             'Position', [2 2 8.8 6.6], ...      % [x y width height]
+             'Color', 'w');                       % white, not grey
+
+plot(hours, demand, 'LineWidth', 1.2);
+xlabel('Hour of day');
+ylabel('Demand (MW)');
+grid on;
+
+set(gca, 'FontSize', 9, 'FontName', 'Helvetica', 'LineWidth', 0.6);
+```
+</CodeFile>
+
+Useful widths: **8.8 cm** for a single IEEE column, **18 cm** for a full-width
+two-column figure, **16 cm** for a thesis page with normal margins.
+
+<Callout type="tip" title="9pt text, 1.2pt lines">
+  At 8.8 cm wide, 9-point axis text and 1.2-point lines reproduce well in print and
+  on a projector. Anything below 8pt disappears. If you find yourself zooming to read
+  your own figure, so will a reviewer.
+</Callout>
+
+## Export properly
+
+`exportgraphics` is the modern function and does the right thing by default.
+
+```matlab
+exportgraphics(fig, 'load_curve.pdf', 'ContentType', 'vector');
+exportgraphics(fig, 'load_curve.png', 'Resolution', 300);
+```
+
+<Compare
+  headings={['Format', 'Use for', 'Why']}
+  rows={[
+    { option: 'PDF (vector)', when: 'LaTeX documents, theses, papers', cost: 'Scales to any size, small files', recommended: true },
+    { option: 'PNG at 300 dpi', when: 'Word documents, slides, the web', cost: 'Fixed resolution, universally accepted' },
+    { option: 'EPS', when: 'Older journal submission systems that demand it', cost: 'Vector, but dated' },
+    { option: 'Screenshot', when: 'Never', cost: 'Low resolution, wrong colours, no text' },
+  ]}
+/>
+
+Vector for anything with lines and text; raster only when the plot contains a genuine
+image, like a heatmap with thousands of cells.
+
+<Callout type="warning" title="Do not use saveas or the Save button">
+  `saveas` and the figure window's save dialogue apply MATLAB's old printing path,
+  which often changes the size and re-renders the fonts. `exportgraphics` writes what
+  you see, at the size you set.
+</Callout>
+
+## Colour
+
+Two constraints that are easy to satisfy and embarrassing to miss.
+
+**It will be printed in greyscale by someone.** Reviewers print. Examiners print.
+If two lines are distinguishable only by hue, the greyscale version is unreadable.
+
+**Roughly 8% of men have a colour vision deficiency**, most commonly red–green.
+A red line and a green line is the worst possible pairing.
+
+```matlab
+% Colourblind-safe, and distinguishable in greyscale by lightness
+blue   = [0.00 0.45 0.70];
+orange = [0.90 0.62 0.00];
+teal   = [0.00 0.62 0.45];
+grey   = [0.40 0.40 0.40];
+
+plot(x, y1, '-',  'Color', blue,   'LineWidth', 1.2); hold on;
+plot(x, y2, '--', 'Color', orange, 'LineWidth', 1.2);
+plot(x, y3, ':',  'Color', teal,   'LineWidth', 1.4);
+hold off;
+```
+
+Note that each series has **both** a distinct colour and a distinct line style. That
+redundancy costs nothing and makes the figure robust.
+
+For colour maps, avoid `jet`. It has bright bands that create features that aren't in
+the data, and it collapses in greyscale.
+
+```matlab
+colormap(parula);     % MATLAB default — perceptually uniform
+colormap(turbo);      % jet-like but perceptually corrected
+colormap(gray);       % when the figure will definitely be printed
+```
+
+<Callout type="engineering">
+  For a **diverging** quantity — voltage deviation above and below 1.0 pu, or power
+  flow direction — use a diverging map centred on the neutral value, and set the
+  limits symmetrically:
+
+  ```matlab
+  imagesc(deviation);
+  colormap(redblue);              % or any diverging map
+  clim([-0.06 0.06]);             % symmetric about zero
+  colorbar;
+  ```
+
+  Without symmetric limits, the visual centre of the colour scale won't sit at 1.0 pu,
+  and the map will imply the feeder is biased one way when it isn't.
+</Callout>
+
+## Style once, reuse everywhere
+
+Restyling every figure by hand is how inconsistency creeps into a thesis. Write it
+once.
+
+<CodeFile name="apply_paper_style.m">
+```matlab
+function apply_paper_style(fig, width_cm, height_cm)
+%APPLY_PAPER_STYLE Set a figure to publication dimensions and typography.
+%
+%   APPLY_PAPER_STYLE(FIG, WIDTH_CM, HEIGHT_CM) sizes FIG and applies
+%   consistent fonts and line weights to every axes it contains.
+%
+%   Defaults to 8.8 x 6.6 cm — one IEEE column.
+
+    arguments
+        fig       (1,1) matlab.ui.Figure
+        width_cm  (1,1) double = 8.8
+        height_cm (1,1) double = 6.6
+    end
+
+    fig.Units    = 'centimeters';
+    fig.Position = [2 2 width_cm height_cm];
+    fig.Color    = 'w';
+
+    % Style every axes in the figure, including tiled layouts
+    for ax = findall(fig, 'Type', 'axes')'
+        ax.FontSize  = 9;
+        ax.FontName  = 'Helvetica';
+        ax.LineWidth = 0.6;
+        ax.Box       = 'on';
+        ax.TickDir   = 'out';
+        grid(ax, 'on');
+        ax.GridAlpha = 0.12;
+    end
+end
+```
+</CodeFile>
+
+```matlab
+fig = figure;
+plot(hours, demand, 'LineWidth', 1.2);
+xlabel('Hour of day'); ylabel('Demand (MW)');
+
+apply_paper_style(fig);
+exportgraphics(fig, 'load_curve.pdf', 'ContentType', 'vector');
+```
+
+Now every figure in your thesis matches, and changing the house style is one edit.
+
+## Common mistakes
+
+<Callout type="warning" title="Designing large and shrinking">
+  A figure built at 30 cm and inserted at 8 cm has 3pt text. Set the final size first.
+</Callout>
+
+<Callout type="warning" title="Titles inside the figure">
+  Journals want the caption below the figure, set by the document, not baked into the
+  image. Use `title` while working; remove it before export and put the text in the
+  LaTeX or Word caption.
+</Callout>
+
+<Callout type="warning" title="Trusting the on-screen colours">
+  Print one. Or convert to greyscale and look at it. Two minutes now, versus a
+  reviewer who can't tell your curves apart.
+</Callout>
+
+<Callout type="warning" title="Raster export for line plots">
+  A 300 dpi PNG of a line plot looks soft next to vector text. Use PDF unless the
+  destination demands otherwise.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Make one publication-ready figure">
+  Take the voltage profile from the plotting lesson and export it as a vector PDF
+  sized for a single IEEE column, colourblind-safe and greyscale-readable.
+
+  <Solution>
+    ```matlab
+    bus  = 1:12;
+    V_pu = [1.00 0.99 0.98 0.97 0.96 0.96 0.95 0.94 0.94 0.93 0.93 0.92];
+    bad  = V_pu < 0.95;
+
+    blue = [0.00 0.45 0.70];
+
+    fig = figure;
+    plot(bus, V_pu, '-o', 'Color', blue, 'LineWidth', 1.2, 'MarkerSize', 3.5);
+    hold on;
+    plot(bus(bad), V_pu(bad), 's', 'Color', 'k', 'MarkerSize', 7, 'LineWidth', 1.0);
+    yline(0.95, '--', 'Color', [0.45 0.45 0.45], 'LineWidth', 0.8);
+    hold off;
+
+    xlabel('Bus number');
+    ylabel('Voltage (pu)');
+    legend({'Voltage', 'Below 0.95 pu', 'Statutory limit'}, ...
+           'Location', 'southwest', 'FontSize', 8, 'Box', 'off');
+    ylim([0.90 1.02]);
+    xticks(1:12);
+
+    apply_paper_style(fig);
+    exportgraphics(fig, 'voltage_profile.pdf', 'ContentType', 'vector');
+    ```
+
+    The violating buses are marked with a **black square** rather than a red circle.
+    Shape survives greyscale; hue doesn't. The limit line is dashed grey, so it reads
+    as a reference rather than as data.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="read" title="Critique this figure description">
+  A student submits: 30 cm wide, jet colormap, three series in red/green/blue solid
+  lines, title inside the image, exported as a 96 dpi PNG. List what needs fixing.
+
+  <Solution>
+    - **Too wide.** At 30 cm designed and 8.8 cm printed, all text is illegible.
+    - **jet colormap.** Creates banding that looks like structure in the data, and
+      collapses in greyscale.
+    - **Red/green/blue solid.** Worst case for red–green colour deficiency, and
+      indistinguishable in greyscale. Vary line style too.
+    - **Title inside.** Journals set captions themselves; it will be duplicated.
+    - **96 dpi PNG.** Both too low resolution and the wrong format — a line plot
+      should be vector PDF.
+
+    Every one of these is a two-line fix, and every one of them is common enough that
+    reviewers comment on it.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why set the figure to its final printed size before plotting?',
+      options: [
+        'MATLAB renders faster at small sizes',
+        'So text and line weights are correct at the size the reader sees, rather than shrinking to illegibility',
+        'Large figures cannot be exported',
+        'It reduces file size',
+      ],
+      answer: 1,
+      explain:
+        'Shrinking a figure scales the text down with it. Designing at final size means what you see while working is what the reviewer will see.',
+    },
+    {
+      q: 'Why avoid the jet colormap?',
+      options: [
+        'It is slow to render',
+        'It is not perceptually uniform — it creates visual bands that are not in the data',
+        'It only works on 3D plots',
+        'It is deprecated in MATLAB',
+      ],
+      answer: 1,
+      explain:
+        'jet has sharp lightness reversals that read as edges, so viewers see features the data does not contain. parula and turbo are perceptually corrected.',
+    },
+    {
+      q: 'Which export is right for a line plot going into a LaTeX thesis?',
+      options: [
+        'PNG at 96 dpi',
+        'A screenshot of the figure window',
+        'Vector PDF via exportgraphics',
+        'JPEG at maximum quality',
+      ],
+      answer: 2,
+      explain:
+        'Vector PDF keeps text and lines sharp at any zoom and produces small files. Raster formats are only appropriate when the figure contains a genuine image.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Design at the **size it will be printed**, encode every series with **both colour
+  and line style**, and export **vector**. Wrap the settings in one style function so
+  every figure in your thesis matches without you thinking about it again.
+</KeyIdea>
+
+## Further reading
+
+- `doc exportgraphics`, `doc colormap`
+- Paul Tol's *colour schemes for scientific figures* — the standard reference for
+  colourblind-safe palettes
+- Next: **3D and surface plots** — and when a third dimension actually helps

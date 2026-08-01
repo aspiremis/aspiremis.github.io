@@ -1,0 +1,308 @@
+---
+title: Reading and Writing Data Files
+track: matlab
+module: data-visualisation
+order: 17
+description: Getting real measurement data into MATLAB — CSV, Excel and .mat — and handling the gaps, headers and sentinel values that real files always have.
+objectives:
+  - Read CSV and Excel files into tables, with correct types and headers
+  - Handle missing values and sentinel codes without corrupting your statistics
+  - Choose between .mat, CSV and Excel for saving results
+prerequisites: [data-structures]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'file-io', 'data', 'tables']
+---
+
+Every example so far has had its data typed into the script. Real data arrives in
+files, and real files are messy in ways that will silently corrupt your results if
+you let them.
+
+## `readtable` is the default answer
+
+For almost any tabular file, this is the function.
+
+```matlab
+data = readtable('feeder_load.csv');
+
+head(data)              % first 8 rows
+height(data)            % number of rows
+data.Properties.VariableNames
+summary(data)           % per-column type, range, missing count
+```
+
+`readtable` detects the delimiter, uses the first row as column names, and infers a
+type per column. You get a table — which, from the previous module, is the container
+that keeps rows together through sorting and filtering.
+
+<Callout type="tip" title="Run summary() before anything else">
+  `summary(data)` reports the range and the **number of missing values** in every
+  column. Thirty seconds here regularly saves an hour of confusion about why a mean
+  looks wrong.
+</Callout>
+
+## When the defaults aren't right
+
+Real files need coaxing. `detectImportOptions` shows you what MATLAB decided, and
+lets you override it.
+
+<CodeFile name="import_options.m">
+```matlab
+opts = detectImportOptions('scada_export.csv');
+
+disp(opts.VariableNames);
+disp(opts.VariableTypes);
+
+% Force a column that looks numeric to be read as text (bus IDs like "007")
+opts = setvartype(opts, 'BusID', 'char');
+
+% Treat the utility's sentinel codes as missing
+opts.TreatAsMissing = {'-99', 'NaN', 'NA', ''};
+
+% Only read the columns you actually need — much faster on large files
+opts.SelectedVariableNames = {'Timestamp', 'BusID', 'V_pu', 'P_MW'};
+
+data = readtable('scada_export.csv', opts);
+```
+</CodeFile>
+
+That `TreatAsMissing` line is the important one. Utility exports commonly encode "no
+reading" as `-99`, `9999` or an empty cell. Read naively, those become real numbers
+and your mean voltage is nonsense — with no error and no warning.
+
+<Callout type="engineering">
+  A bus ID of `007` read as a number becomes `7`, and no longer matches the `"007"`
+  in your branch data file. Join fails, silently, on some rows. Forcing identifier
+  columns to text is a habit worth having before it costs you an afternoon.
+</Callout>
+
+## Timestamps
+
+Time series data needs its time column parsed properly, not left as text.
+
+```matlab
+opts = detectImportOptions('load_2026.csv');
+opts = setvartype(opts, 'Timestamp', 'datetime');
+opts = setvaropts(opts, 'Timestamp', 'InputFormat', 'yyyy-MM-dd HH:mm:ss');
+
+data = readtable('load_2026.csv', opts);
+
+data.Timestamp.TimeZone = 'Asia/Kolkata';    % be explicit
+```
+
+Once it's a `datetime`, you can do the things you actually want:
+
+```matlab
+data.Hour     = hour(data.Timestamp);
+data.Weekday  = ~isweekend(data.Timestamp);
+
+peak_hours = data(data.Hour >= 18 & data.Hour <= 22, :);
+```
+
+Setting the timezone explicitly matters more in energy data than almost anywhere
+else, because demand is driven by local clock time. Two datasets from different
+sources, one in UTC and one in IST, will misalign by five and a half hours and the
+correlation will simply look poor.
+
+## Excel
+
+```matlab
+data = readtable('measurements.xlsx', 'Sheet', 'Feeder3');
+sheets = sheetnames('measurements.xlsx');
+data = readtable('measurements.xlsx', 'Sheet', 1, 'Range', 'B4:H500');
+```
+
+Common with utility and manufacturer data. Watch for merged cells and multi-row
+headers — `Range` is usually how you skip past decorative headers to where the real
+table starts.
+
+## `.mat` — MATLAB's own format
+
+```matlab
+save('results.mat', 'Y', 'V_pu', 'branch');    % specific variables
+save('everything.mat');                        % whole workspace
+
+load('results.mat');                           % restore into the workspace
+r = load('results.mat');                       % better: into a struct
+disp(r.V_pu);
+```
+
+Prefer `r = load(...)`. A bare `load` dumps variables straight into your workspace,
+silently overwriting anything with the same name — one of the harder bugs to spot.
+
+<Compare
+  headings={['Format', 'Use it for', 'Trade-off']}
+  rows={[
+    { option: '.mat', when: 'Intermediate results you will reload in MATLAB', cost: 'Fast, exact, but MATLAB-only', recommended: true },
+    { option: 'CSV', when: 'Anything you will share, version-control or open elsewhere', cost: 'Text — readable and diffable, loses type info' },
+    { option: 'Excel', when: 'Handing results to someone who works in Excel', cost: 'Slow to write, awkward to automate' },
+    { option: 'Parquet', when: 'Very large datasets', cost: 'Efficient, needs a reader outside MATLAB' },
+  ]}
+/>
+
+## Writing results out
+
+```matlab
+writetable(results, 'fault_study.csv');
+writetable(results, 'report.xlsx', 'Sheet', 'Faults');
+```
+
+<Callout type="warning" title="Write results, not conclusions">
+  Save the numbers your analysis produced, not a formatted summary. A CSV of results
+  can be re-plotted, re-analysed and checked. A pasted paragraph cannot.
+</Callout>
+
+## Where MATLAB looks
+
+If `readtable` reports it can't find your file, the file is not on the path. Being
+explicit removes the problem:
+
+```matlab
+fullfile('data', 'raw', 'feeder_load.csv')      % builds a valid path on any OS
+exist('feeder_load.csv', 'file')                % 2 if found
+which('feeder_load.csv')                         % where MATLAB is looking
+```
+
+Use `fullfile` rather than string concatenation — it inserts the right separator on
+Windows and macOS, so your script runs on the lab machine as well as your laptop.
+
+## Common mistakes
+
+<Callout type="warning" title="Sentinel values read as real numbers">
+  `-99` in a voltage column is not a voltage. Declare it in `TreatAsMissing`, or
+  clean it explicitly with logical indexing, before computing anything.
+</Callout>
+
+<Callout type="warning" title="Bare load() overwriting your workspace">
+  `load('results.mat')` will silently replace an existing `V_pu`. Use
+  `r = load('results.mat')` and reach in through `r`.
+</Callout>
+
+<Callout type="warning" title="Ignoring timezone">
+  Energy data is driven by local time. Mixing UTC and local-time series without
+  saying so misaligns them by hours and quietly destroys any correlation.
+</Callout>
+
+<Callout type="warning" title="Hard-coded absolute paths">
+  `C:\Users\Shalini\Desktop\data.csv` works on exactly one machine. Use relative
+  paths built with `fullfile`.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="Why is the mean voltage 218?">
+  A file of per-unit voltages gives `mean(data.V_pu)` of 218, when every reading
+  should be near 1.0.
+
+  <Solution>
+    Almost certainly a sentinel value being read as data. If missing readings are
+    encoded as `9999`, even a handful will drag the mean up enormously.
+
+    Diagnose:
+
+    ```matlab
+    summary(data)                   % check the reported range
+    unique(data.V_pu(data.V_pu > 2))   % what are the impossible values?
+    ```
+
+    Fix at import:
+
+    ```matlab
+    opts = detectImportOptions('file.csv');
+    opts.TreatAsMissing = {'9999', '-99', 'NA'};
+    data = readtable('file.csv', opts);
+    mean(data.V_pu, 'omitnan')
+    ```
+
+    Or after the fact:
+
+    ```matlab
+    data.V_pu(data.V_pu > 2 | data.V_pu < 0.5) = NaN;
+    ```
+
+    Note the second form encodes a *physical* judgement — no per-unit voltage on a
+    healthy system is above 2.0 — which is exactly the kind of check from the
+    debugging lesson.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Load, clean, summarise">
+  Write a function that reads a CSV of hourly demand, removes readings outside a
+  plausible range, and reports how many were dropped.
+
+  <Solution>
+    ```matlab
+    function [data, n_dropped] = load_demand(filename, min_MW, max_MW)
+    %LOAD_DEMAND Read hourly demand, clean implausible readings.
+    %
+    %   [DATA, N_DROPPED] = LOAD_DEMAND(FILENAME, MIN_MW, MAX_MW) reads a CSV
+    %   with Timestamp and Demand_MW columns, sets readings outside
+    %   [MIN_MW, MAX_MW] to NaN, and reports how many were affected.
+
+        arguments
+            filename (1,:) char
+            min_MW   (1,1) double = 0
+            max_MW   (1,1) double = 1e4
+        end
+
+        assert(exist(filename, 'file') == 2, 'File not found: %s', filename);
+
+        opts = detectImportOptions(filename);
+        opts.TreatAsMissing = {'-99', '9999', 'NA', ''};
+        data = readtable(filename, opts);
+
+        bad = data.Demand_MW < min_MW | data.Demand_MW > max_MW;
+        n_dropped = sum(bad);
+        data.Demand_MW(bad) = NaN;
+
+        fprintf('%d rows read, %d implausible (%.2f%%) set to NaN\n', ...
+                height(data), n_dropped, 100*n_dropped/height(data));
+    end
+    ```
+
+    Returning `n_dropped` rather than only printing it matters: a caller can then
+    refuse to proceed if too much data was thrown away. Silently discarding 40% of a
+    dataset and carrying on is worse than failing.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why prefer r = load("results.mat") over a bare load("results.mat")?',
+      options: [
+        'It is faster',
+        'It puts the variables in a struct instead of silently overwriting your workspace',
+        'Bare load only works on small files',
+        'There is no difference',
+      ],
+      answer: 1,
+      explain:
+        'A bare load drops every saved variable straight into the workspace, replacing anything with a matching name without warning. Loading into a struct makes the source explicit.',
+    },
+    {
+      q: 'A utility export encodes missing readings as -99. What is the risk of ignoring that?',
+      options: [
+        'MATLAB will refuse to read the file',
+        'The values are treated as real measurements and corrupt every statistic',
+        'The file will import as text',
+        'Nothing — MATLAB detects sentinels automatically',
+      ],
+      answer: 1,
+      explain:
+        'Nothing errors. -99 is a perfectly valid number, so it flows into means, minima and plots as though it were a measurement. This is a silently-wrong-answer bug of exactly the kind assertions exist to catch.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Real files have **missing values, sentinel codes and ambiguous types**. Run
+  `summary()` before you trust anything, declare your sentinels at import, and force
+  identifier columns to text. Data cleaning is not a preliminary to the analysis —
+  it is part of it.
+</KeyIdea>
+
+## Further reading
+
+- `doc readtable`, `doc detectImportOptions`, `doc datetime`
+- Next: **plotting** — turning the data you just loaded into something you can read

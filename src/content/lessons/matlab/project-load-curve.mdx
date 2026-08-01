@@ -1,0 +1,392 @@
+---
+title: 'Project: Daily Load Curve Analyser'
+track: matlab
+module: data-visualisation
+order: 23
+description: Read a year of half-hourly demand, clean it, compute the statistics a planner actually asks for, and produce a report-ready figure.
+objectives:
+  - Build an end-to-end pipeline from raw file to publication figure
+  - Compute load factor, duration curves and peak statistics from real data
+  - Handle missing data honestly rather than silently
+prerequisites: [file-io, plotting, subplots-and-layout, publication-figures]
+estimatedMinutes: 55
+difficulty: intermediate
+tags: ['matlab', 'project', 'load-analysis', 'visualisation']
+---
+
+This is the first project that touches data you didn't type in yourself, and the
+first that produces something you'd put in a report.
+
+Load curve analysis is the bread and butter of distribution planning: how much
+demand, when, how peaky, and how much of the year is spent near the maximum. Every
+number here feeds a real decision about equipment sizing.
+
+## The problem
+
+Given a year of half-hourly demand readings, produce:
+
+- **Load factor** — average demand ÷ peak demand. How efficiently the network is used.
+- **Peak and minimum demand**, with the timestamps they occurred at
+- **A load duration curve** — demand sorted descending, showing what fraction of the
+  year is spent above any level
+- **A typical day profile** — the average shape, with the spread around it
+- **A figure** good enough for a report
+
+<Callout type="engineering">
+  Load factor drives investment. A feeder with 80% load factor is well used; one at
+  35% has been built for a peak that occurs for a handful of hours a year. The
+  duration curve makes the case visible — if the top 200 MW only occurs for 20 hours,
+  demand-side management is cheaper than a new transformer.
+</Callout>
+
+## Stage 1 — synthesise a test dataset
+
+You don't have a real file yet, so make one. Building your own test data is a good
+habit anyway: you know the right answer, which means you can tell if the analysis is
+wrong.
+
+<CodeFile name="make_test_data.m">
+```matlab
+%% Generate a plausible year of half-hourly demand
+rng(42);                                        % reproducible
+
+t = (datetime(2026,1,1,0,0,0) : minutes(30) : datetime(2026,12,31,23,30,0))';
+n = numel(t);
+
+hour_of_day = hour(t) + minute(t)/60;
+day_of_year = day(t, 'dayofyear');
+is_weekend  = isweekend(t);
+
+daily   = 12 * sin((hour_of_day - 9) * pi/12) + 6 * sin((hour_of_day - 19) * pi/6);
+seasonal = 8 * cos((day_of_year - 200) * 2*pi/365);   % summer peak
+weekday_factor = 1 - 0.15 * is_weekend;
+
+demand = (45 + daily + seasonal) .* weekday_factor + 1.5*randn(n,1);
+
+% Inject the messiness a real file would have
+demand(randperm(n, 40))  = NaN;      % missing readings
+demand(randperm(n, 12))  = -99;      % sentinel code
+
+data = table(t, demand, 'VariableNames', {'Timestamp', 'Demand_MW'});
+writetable(data, 'feeder_2026.csv');
+
+fprintf('Wrote %d rows to feeder_2026.csv\n', n);
+```
+</CodeFile>
+
+Note the deliberate NaNs and `-99` values. Real data has them, and an analysis that
+only works on clean data doesn't work.
+
+## Stage 2 — load and clean, honestly
+
+<CodeFile name="load_feeder_data.m">
+```matlab
+function [data, report] = load_feeder_data(filename)
+%LOAD_FEEDER_DATA Read and clean a half-hourly demand file.
+%
+%   [DATA, REPORT] = LOAD_FEEDER_DATA(FILENAME) returns a table with a
+%   datetime Timestamp and a Demand_MW column, with implausible readings set
+%   to NaN. REPORT is a struct recording what was removed and why.
+
+    arguments
+        filename (1,:) char
+    end
+
+    assert(exist(filename, 'file') == 2, 'File not found: %s', filename);
+
+    opts = detectImportOptions(filename);
+    opts = setvartype(opts, 'Timestamp', 'datetime');
+    opts.TreatAsMissing = {'-99', '9999', 'NA', ''};
+
+    data = readtable(filename, opts);
+
+    raw_missing = sum(ismissing(data.Demand_MW));
+
+    % Physical plausibility — demand cannot be negative, and this feeder
+    % cannot plausibly exceed 200 MW.
+    implausible = data.Demand_MW < 0 | data.Demand_MW > 200;
+    data.Demand_MW(implausible) = NaN;
+
+    report.total        = height(data);
+    report.missing_raw  = raw_missing;
+    report.implausible  = sum(implausible);
+    report.usable       = sum(~ismissing(data.Demand_MW));
+    report.coverage_pct = 100 * report.usable / report.total;
+
+    fprintf('%d readings: %d usable (%.2f%%), %d missing, %d implausible\n', ...
+            report.total, report.usable, report.coverage_pct, ...
+            report.missing_raw, report.implausible);
+
+    % Refuse to proceed on a dataset too gappy to trust
+    if report.coverage_pct < 95
+        warning('Only %.1f%% coverage — results may not be representative.', ...
+                report.coverage_pct);
+    end
+end
+```
+</CodeFile>
+
+<Callout type="tip" title="Return the report, don't just print it">
+  A caller can then decide what to do about poor coverage. Printing alone means the
+  information vanishes into the console and any downstream code carries on regardless.
+</Callout>
+
+## Stage 3 — the statistics
+
+<CodeFile name="load_statistics.m">
+```matlab
+function s = load_statistics(data)
+%LOAD_STATISTICS Core planning statistics for a demand time series.
+
+    d = data.Demand_MW;
+    t = data.Timestamp;
+
+    valid = ~isnan(d);
+    dv = d(valid);
+    tv = t(valid);
+
+    s.n_readings   = numel(dv);
+    s.average_MW   = mean(dv);
+
+    [s.peak_MW, ip] = max(dv);
+    s.peak_time     = tv(ip);
+
+    [s.min_MW, im]  = min(dv);
+    s.min_time      = tv(im);
+
+    s.load_factor   = s.average_MW / s.peak_MW;
+
+    % Energy: half-hourly readings, so each is 0.5 h of consumption
+    s.energy_GWh    = sum(dv) * 0.5 / 1000;
+
+    % How much of the period sits above 90% of peak?
+    s.hours_above_90pct = sum(dv > 0.9 * s.peak_MW) * 0.5;
+end
+```
+</CodeFile>
+
+That last statistic is the one planners care about. If demand exceeds 90% of peak for
+only 15 hours a year, reinforcing the network for that peak is expensive per hour of
+benefit — and that's the argument the duration curve makes visually.
+
+## Stage 4 — the figure
+
+Four panels: the duration curve, a typical day with spread, the seasonal pattern, and
+the distribution.
+
+<CodeFile name="plot_load_analysis.m">
+```matlab
+function fig = plot_load_analysis(data, s)
+%PLOT_LOAD_ANALYSIS Four-panel summary figure for a demand time series.
+
+    d = data.Demand_MW;
+    valid = ~isnan(d);
+
+    fig = figure('Units','centimeters','Position',[2 2 18 14],'Color','w');
+    tl = tiledlayout(2, 2, 'TileSpacing','compact', 'Padding','compact');
+
+    blue   = [0.00 0.45 0.70];
+    orange = [0.90 0.62 0.00];
+
+    %% Load duration curve
+    nexttile;
+    sorted_d = sort(d(valid), 'descend');
+    pct = (1:numel(sorted_d)) / numel(sorted_d) * 100;
+
+    plot(pct, sorted_d, 'LineWidth', 1.4, 'Color', blue);
+    yline(s.peak_MW * 0.9, '--', '90% of peak', 'Color', [0.5 0.5 0.5], 'FontSize', 8);
+    xlabel('Percentage of period (%)');
+    ylabel('Demand (MW)');
+    title('Load duration curve');
+    grid on; xlim([0 100]);
+
+    %% Typical day, with spread
+    nexttile;
+    hh = hour(data.Timestamp) + minute(data.Timestamp)/60;
+    edges = 0:0.5:24;
+    [~, ~, bin] = histcounts(hh, edges);
+
+    mean_profile = accumarray(bin(valid), d(valid), [48 1], @mean);
+    p10 = accumarray(bin(valid), d(valid), [48 1], @(x) prctile(x, 10));
+    p90 = accumarray(bin(valid), d(valid), [48 1], @(x) prctile(x, 90));
+    half_hours = (0:47) * 0.5;
+
+    fill([half_hours fliplr(half_hours)], [p10' fliplr(p90')], blue, ...
+         'FaceAlpha', 0.15, 'EdgeColor', 'none');
+    hold on;
+    plot(half_hours, mean_profile, 'LineWidth', 1.6, 'Color', blue);
+    hold off;
+
+    xlabel('Hour of day'); ylabel('Demand (MW)');
+    title('Typical day (mean, 10th-90th percentile)');
+    grid on; xlim([0 24]); xticks(0:6:24);
+
+    %% Seasonal pattern — daily mean across the year
+    nexttile;
+    doy = day(data.Timestamp, 'dayofyear');
+    daily_mean = accumarray(doy(valid), d(valid), [], @mean);
+
+    plot(1:numel(daily_mean), daily_mean, 'LineWidth', 1.0, 'Color', orange);
+    xlabel('Day of year'); ylabel('Mean demand (MW)');
+    title('Seasonal variation');
+    grid on; xlim([1 numel(daily_mean)]);
+
+    %% Distribution
+    nexttile;
+    histogram(d(valid), 40, 'FaceColor', blue, 'EdgeColor', 'none');
+    xline(s.average_MW, '--',  'Mean', 'Color', [0.3 0.3 0.3], 'FontSize', 8);
+    xline(s.peak_MW,   '--',  'Peak', 'Color', [0.7 0.2 0.2], 'FontSize', 8);
+    xlabel('Demand (MW)'); ylabel('Half-hours');
+    title('Demand distribution');
+    grid on;
+
+    title(tl, sprintf('Feeder demand analysis — load factor %.1f%%', ...
+                      s.load_factor * 100), 'FontWeight', 'bold');
+end
+```
+</CodeFile>
+
+<Callout type="tip" title="accumarray is the tool for grouped statistics">
+  `accumarray(bin, values, [], @mean)` computes the mean of `values` within each
+  group named by `bin` — a group-by, in one call. It replaces a loop over 48
+  half-hour slots, and it handles the percentile bands just as easily.
+</Callout>
+
+## Stage 5 — the driver
+
+<CodeFile name="analyse_feeder.m">
+```matlab
+%% Feeder load analysis
+clear; clc; close all;
+
+[data, report] = load_feeder_data('feeder_2026.csv');
+s = load_statistics(data);
+
+fprintf('\n--- Feeder demand summary ---\n');
+fprintf('Average demand : %7.2f MW\n',   s.average_MW);
+fprintf('Peak demand    : %7.2f MW  at %s\n', s.peak_MW, s.peak_time);
+fprintf('Minimum demand : %7.2f MW  at %s\n', s.min_MW,  s.min_time);
+fprintf('Load factor    : %7.1f %%\n',   s.load_factor * 100);
+fprintf('Annual energy  : %7.1f GWh\n',  s.energy_GWh);
+fprintf('Hours above 90%% of peak: %.1f h (%.3f%% of the year)\n', ...
+        s.hours_above_90pct, 100*s.hours_above_90pct/8760);
+
+%% Sanity checks
+assert(s.load_factor > 0 && s.load_factor < 1, 'Load factor must lie in (0,1)');
+assert(s.peak_MW > s.average_MW, 'Peak must exceed the average');
+assert(s.min_MW  < s.average_MW, 'Minimum must be below the average');
+assert(report.coverage_pct > 90, 'Too much missing data to report on');
+
+%% Figure
+fig = plot_load_analysis(data, s);
+exportgraphics(fig, 'feeder_analysis.pdf', 'ContentType', 'vector');
+fprintf('\nWrote feeder_analysis.pdf\n');
+```
+</CodeFile>
+
+Those four assertions encode things that must be true of *any* load series. A load
+factor above 1 would mean the average exceeds the peak, which is arithmetically
+impossible — so if it fires, there's a bug, and you find out before the figure is in
+a report.
+
+## Extend it
+
+<Exercise n={1} kind="practice" title="Separate weekdays and weekends">
+  Demand profiles differ substantially between weekdays and weekends. Split the
+  typical-day panel into two curves.
+
+  <Solution>
+    ```matlab
+    is_we = isweekend(data.Timestamp);
+
+    wd = valid & ~is_we;
+    we = valid &  is_we;
+
+    profile_wd = accumarray(bin(wd), d(wd), [48 1], @mean);
+    profile_we = accumarray(bin(we), d(we), [48 1], @mean);
+
+    plot(half_hours, profile_wd, '-',  'LineWidth', 1.6, 'Color', blue);
+    hold on;
+    plot(half_hours, profile_we, '--', 'LineWidth', 1.6, 'Color', orange);
+    hold off;
+    legend({'Weekday','Weekend'}, 'Location','northwest', 'Box','off');
+    ```
+
+    Note the logical AND with `valid` — combining the weekend mask with the
+    missing-data mask, so gaps don't silently become zeros in the group means. That's
+    the logical indexing lesson doing real work.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Coincidence factor">
+  Given several feeders, compute the coincidence factor: the system peak divided by
+  the sum of the individual feeder peaks. Why is it always ≤ 1, and why does it
+  matter?
+
+  <Solution>
+    ```matlab
+    function cf = coincidence_factor(demand_matrix)
+    %COINCIDENCE_FACTOR System peak divided by the sum of individual peaks.
+    %   DEMAND_MATRIX is time x feeder.
+
+        individual_peaks = max(demand_matrix, [], 1, 'omitnan');
+        system_peak      = max(sum(demand_matrix, 2, 'omitnan'));
+        cf = system_peak / sum(individual_peaks);
+    end
+    ```
+
+    It cannot exceed 1 because the feeders don't all peak at the same instant — the
+    system peak is at most the sum, and in practice is less.
+
+    It matters because sizing a substation for the *sum* of feeder peaks
+    over-provisions, often substantially. A coincidence factor of 0.8 means 20% of
+    that capacity would never be used. This is one of the most directly financial
+    numbers in distribution planning.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="debug" title="The load factor comes out above 1">
+  Your assertion fires. What are the likely causes?
+
+  <Solution>
+    Load factor is `mean/peak`, so exceeding 1 means the mean exceeds the maximum —
+    arithmetically impossible on the same data. So the two are being computed on
+    *different* data.
+
+    Most likely: **`mean` and `max` handling NaN differently.** `max` ignores NaN by
+    default; `mean` returns NaN unless told otherwise. If the mean were computed with
+    `'omitnan'` on a filtered subset while `max` ran on the full array — or a negative
+    sentinel survived into one but not the other — the two disagree.
+
+    The fix is the one already in `load_statistics`: build a single `valid` mask and
+    compute *everything* from `d(valid)`. One definition of "the data", used
+    consistently.
+
+    This is a good example of an assertion earning its place — the number would have
+    looked merely odd, not obviously wrong, and might well have reached a report.
+  </Solution>
+</Exercise>
+
+## What you built
+
+A pipeline that reads a real file, reports honestly on what it had to discard,
+computes the statistics a planner asks for, checks them against physical
+impossibilities, and produces a vector PDF sized for a report.
+
+Everything in this module: file import with sentinel handling, tables, grouped
+statistics, multi-panel layout, colourblind-safe styling, and vector export — plus
+the validation discipline from the Programming module.
+
+<KeyIdea>
+  A real analysis is **three-quarters data handling**. The statistics are a few lines;
+  loading honestly, deciding what to do about gaps, and reporting what you discarded
+  is the rest. Code that only works on clean data doesn't work.
+</KeyIdea>
+
+## Further reading
+
+- `doc accumarray`, `doc histcounts`, `doc prctile`
+- IEEE Std 1366 — distribution reliability indices, the next set of statistics worth
+  computing from data like this
+- Next module: **Numerical Methods** — why the computer's answer differs from the
+  mathematics

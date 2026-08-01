@@ -1,0 +1,282 @@
+---
+title: 3D and Surface Plots
+track: matlab
+module: data-visualisation
+order: 21
+description: meshgrid, surf and contour — how to plot a function of two variables, and the honest question of whether three dimensions help at all.
+objectives:
+  - Build a coordinate grid with meshgrid and plot a surface over it
+  - Choose between surf, contour and a heatmap for the same data
+  - Judge when a 3D plot communicates better than a 2D one, and when it doesn't
+prerequisites: [publication-figures]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'plotting', '3d', 'surfaces']
+---
+
+Some results genuinely have two independent variables. Hosting capacity depends on
+penetration *and* location. A P–V curve family depends on loading *and* power factor.
+
+MATLAB plots these well. It also makes it very easy to produce a rotating surface
+that looks impressive and communicates less than a contour plot would.
+
+## `meshgrid` first
+
+To evaluate a function of two variables you need every combination of them.
+`meshgrid` builds those coordinate matrices.
+
+```matlab
+x = 1:4;
+y = 1:3;
+[X, Y] = meshgrid(x, y);
+
+% X is 3x4:            Y is 3x4:
+%   1 2 3 4              1 1 1 1
+%   1 2 3 4              2 2 2 2
+%   1 2 3 4              3 3 3 3
+```
+
+`X` and `Y` together give the coordinates of every point in the grid. Evaluate your
+expression on them element-wise and you get a matrix of values:
+
+```matlab
+Z = X.^2 + Y.^2;        % note the dot — element-wise, one Z per grid point
+```
+
+<Callout type="warning" title="meshgrid rows are y, columns are x">
+  `size(X)` is `[numel(y), numel(x)]` — the *opposite* of the order you passed the
+  arguments. This trips up everyone once. If your surface looks transposed, this is
+  why. `ndgrid` uses the other convention if you prefer it.
+</Callout>
+
+## Surfaces and contours
+
+<CodeFile name="surface_basics.m">
+```matlab
+penetration = linspace(0, 1, 41);        % 0 to 100% PV penetration
+distance    = linspace(0, 1, 31);        % 0 = substation, 1 = feeder end
+
+[P, D] = meshgrid(penetration, distance);
+
+% Illustrative voltage rise: grows with both penetration and distance
+V_rise = 0.08 * P .* D.^1.2;
+
+figure;
+tiledlayout(1, 2, 'TileSpacing', 'compact');
+
+nexttile;
+surf(P, D, V_rise, 'EdgeColor', 'none');
+xlabel('PV penetration'); ylabel('Distance along feeder'); zlabel('\DeltaV (pu)');
+title('surf');
+colorbar; view(-35, 30);
+
+nexttile;
+contourf(P, D, V_rise, 12, 'LineColor', 'none');
+xlabel('PV penetration'); ylabel('Distance along feeder');
+title('contourf');
+colorbar;
+```
+</CodeFile>
+
+Look at both. The surface is more striking. The contour plot is easier to **read a
+value off**, because nothing is hidden behind anything else and you're not mentally
+correcting for perspective.
+
+<Compare
+  headings={['Plot', 'Best for', 'Weakness']}
+  rows={[
+    { option: 'contourf', when: 'Reading values, finding where a threshold is crossed', cost: 'Less immediately eye-catching', recommended: true },
+    { option: 'imagesc / heatmap', when: 'Dense grids, showing overall pattern', cost: 'No explicit level lines' },
+    { option: 'surf', when: 'Shape of the surface is the point — saddles, peaks', cost: 'Occlusion; values hard to read' },
+    { option: 'plot3', when: 'A trajectory through 3D space', cost: 'Rarely what power system data is' },
+    { option: 'Multiple 2D lines', when: 'One variable has few discrete values', cost: 'Clutter beyond ~6 lines' },
+  ]}
+/>
+
+## The honest question
+
+<Analogy>
+  A surface plot is a **photograph of a landscape**. Beautiful, and you cannot tell
+  the altitude of any particular hill.
+
+  A contour plot is a **topographic map**. Less dramatic, and you can read the
+  height of any point exactly, which is why walkers carry maps and not photographs.
+</Analogy>
+
+Ask what the reader needs to *do* with the figure:
+
+- **"Is there a peak, and roughly where?"** → `surf` works.
+- **"At what penetration does voltage rise exceed 0.05 pu?"** → `contour`, with the
+  level you care about drawn explicitly.
+- **"What is the value at 60% penetration, mid-feeder?"** → contour or heatmap. A
+  surface makes this nearly impossible.
+
+<Callout type="engineering">
+  For a hosting capacity study, the useful figure is almost always a contour with the
+  **limit drawn as a single labelled line**:
+
+  ```matlab
+  contourf(P, D, V_rise, 12, 'LineColor', 'none');
+  hold on;
+  [c, h] = contour(P, D, V_rise, [0.05 0.05], 'k', 'LineWidth', 2);
+  clabel(c, h, 'FontSize', 8);
+  hold off;
+  ```
+
+  That black line *is* the answer — everything on one side of it is acceptable and
+  everything on the other isn't. A surface plot buries that boundary in shading.
+</Callout>
+
+## Often, don't use 3D at all
+
+When one variable takes only a few values, a family of 2D lines beats any surface.
+
+```matlab
+distance = linspace(0, 1, 51);
+levels   = [0.2 0.4 0.6 0.8 1.0];       % five penetration levels
+
+figure; hold on;
+for p = levels
+    plot(distance, 0.08 * p * distance.^1.2, 'LineWidth', 1.3);
+end
+hold off;
+
+xlabel('Distance along feeder (pu)');
+ylabel('Voltage rise (pu)');
+legend(compose('%.0f%% penetration', levels*100), 'Location', 'northwest');
+yline(0.05, '--k', 'Limit');
+grid on;
+```
+
+Every curve is readable, the limit is explicit, and it prints in greyscale. That's
+usually a better figure than the surface it replaces.
+
+## Viewing and lighting
+
+```matlab
+view(-35, 30);          % azimuth, elevation
+view(2);                % straight down — equivalent to a heatmap
+view(3);                % default 3D
+
+shading interp;         % smooth rather than faceted
+colormap(parula);
+colorbar;
+
+surf(X, Y, Z, 'FaceAlpha', 0.85);   % slight transparency
+```
+
+<Callout type="tip" title="Always state the viewing angle">
+  A surface looks completely different from different angles, and it is possible —
+  usually accidentally — to choose one that hides the feature you're discussing. Set
+  `view` explicitly rather than leaving whatever rotation you last dragged to.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Forgetting the dot in the surface expression">
+  `Z = X^2 + Y^2` attempts matrix power and errors on a non-square grid. You want
+  `X.^2 + Y.^2` — element-wise, one value per grid point.
+</Callout>
+
+<Callout type="warning" title="Transposed surfaces">
+  meshgrid returns `[numel(y), numel(x)]`. If your axes look swapped, check this
+  before doubting the data.
+</Callout>
+
+<Callout type="warning" title="3D when 2D would be clearer">
+  If the reader needs to read a value, a surface is the wrong choice. Impressive is
+  not the same as informative.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What size is Z?">
+  ```matlab
+  x = 1:5;  y = 1:3;
+  [X, Y] = meshgrid(x, y);
+  Z = X .* Y;
+  size(Z)
+  ```
+
+  <Solution>
+    `3 5` — rows follow `y`, columns follow `x`.
+
+    This is the opposite of the argument order you'd expect from `meshgrid(x, y)`,
+    and it is the reason transposed surfaces are such a common bug. Check `size`
+    whenever a surface looks rotated.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Draw the limit boundary">
+  For a grid of voltage rise over penetration and distance, produce a filled contour
+  with the 0.05 pu limit drawn as a labelled black line, and report what fraction of
+  the grid is in violation.
+
+  <Solution>
+    ```matlab
+    penetration = linspace(0, 1, 41);
+    distance    = linspace(0, 1, 31);
+    [P, D] = meshgrid(penetration, distance);
+    V_rise = 0.08 * P .* D.^1.2;
+
+    limit = 0.05;
+
+    fig = figure;
+    contourf(P, D, V_rise, 12, 'LineColor', 'none');
+    colormap(parula);
+    cb = colorbar; cb.Label.String = 'Voltage rise (pu)';
+
+    hold on;
+    [c, h] = contour(P, D, V_rise, [limit limit], 'k', 'LineWidth', 2);
+    clabel(c, h, 'FontSize', 8, 'LabelSpacing', 300);
+    hold off;
+
+    xlabel('PV penetration (pu of feeder load)');
+    ylabel('Distance along feeder (pu)');
+
+    violating = mean(V_rise(:) > limit) * 100;
+    fprintf('%.1f%% of the operating space exceeds %.2f pu rise\n', violating, limit);
+    ```
+
+    `V_rise(:)` flattens the grid so `mean` of the logical gives the fraction directly
+    — the "sum a condition" idiom from logical indexing, applied to a matrix.
+
+    Note the colorbar has a **label with units**. A colour scale without one is as
+    incomplete as an unlabelled axis.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'For a 41-element x and 31-element y, what is size(meshgrid(x, y))?',
+      options: ['[41 31]', '[31 41]', '[41 41]', '[31 31]'],
+      answer: 1,
+      explain:
+        'Rows follow y, columns follow x — the opposite of the argument order. A transposed-looking surface is nearly always this.',
+    },
+    {
+      q: 'A reader needs to know at what penetration voltage rise crosses 0.05 pu. Which figure?',
+      options: [
+        'A surf plot, rotated to show the peak',
+        'A contour plot with the 0.05 level drawn and labelled',
+        'A 3D scatter of every grid point',
+        'A heatmap with no contour lines',
+      ],
+      answer: 1,
+      explain:
+        'The question is about a threshold crossing, so draw the threshold. A surface hides the boundary in shading and forces the reader to estimate against a colour scale.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Ask what the reader must **do** with the figure. Find a shape → surface. Read a
+  value or find a threshold → contour, with the threshold drawn. And when one
+  variable has only a few levels, a family of 2D lines usually beats both.
+</KeyIdea>
+
+## Further reading
+
+- `doc meshgrid`, `doc surf`, `doc contourf`, `doc view`
+- Next: **animation** — and the narrower question of when it earns its cost

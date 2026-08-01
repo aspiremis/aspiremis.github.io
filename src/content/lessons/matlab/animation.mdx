@@ -1,0 +1,278 @@
+---
+title: Animation
+track: matlab
+module: data-visualisation
+order: 22
+description: Animating a time series or an iterating solver — how to do it efficiently, and the honest test of whether it's worth doing at all.
+objectives:
+  - Animate a plot efficiently by updating data rather than redrawing
+  - Save an animation as a video or GIF
+  - Judge whether an animation communicates more than a static figure would
+prerequisites: [surface-plots]
+estimatedMinutes: 25
+difficulty: intermediate
+tags: ['matlab', 'plotting', 'animation']
+---
+
+Animation is the most oversold technique in this module. It is genuinely useful in a
+narrow set of situations and a waste of effort everywhere else, so this lesson spends
+as much time on *when* as on *how*.
+
+## The efficient way
+
+The naive approach redraws the entire figure every frame:
+
+```matlab
+% Slow — rebuilds everything each pass
+for k = 1:numel(t)
+    plot(x, y(k,:));
+    drawnow;
+end
+```
+
+The right way creates the plot **once** and updates its data:
+
+<CodeFile name="animate_profile.m">
+```matlab
+bus   = 1:12;
+hours = 0:23;
+V     = 1.0 + 0.03*sin((hours' - 6)*pi/12) .* linspace(0, -1, 12);  % 24 x 12
+
+figure;
+h = plot(bus, V(1,:), '-o', 'LineWidth', 1.5);   % create once, keep the handle
+yline(0.95, '--', 'Color', [0.6 0.6 0.6]);
+yline(1.05, '--', 'Color', [0.6 0.6 0.6]);
+xlabel('Bus number'); ylabel('Voltage (pu)');
+ylim([0.90 1.08]); grid on;
+ttl = title('Hour 0');
+
+for k = 1:numel(hours)
+    h.YData   = V(k,:);                    % update the DATA, not the plot
+    ttl.String = sprintf('Hour %d', hours(k));
+    drawnow limitrate;                     % throttled — much faster
+end
+```
+</CodeFile>
+
+Two things make this fast:
+
+**Keep the handle and set `YData`.** MATLAB updates the existing line rather than
+tearing down and rebuilding the axes. On a large plot this is the difference between
+smooth and unusable.
+
+**`drawnow limitrate`.** Plain `drawnow` forces a screen update every single frame.
+`limitrate` caps it at about 20 fps, which looks identical and runs far faster.
+
+## `animatedline` for growing traces
+
+When points accumulate rather than replace — a convergence history, a trajectory —
+`animatedline` is purpose-built.
+
+```matlab
+figure;
+h = animatedline('LineWidth', 1.4, 'Marker', 'o');
+set(gca, 'YScale', 'log');
+xlabel('Iteration'); ylabel('Max mismatch (pu)');
+yline(1e-8, '--', 'Tolerance'); grid on;
+
+for k = 1:numel(mismatch_history)
+    addpoints(h, k, mismatch_history(k));
+    drawnow limitrate;
+end
+```
+
+Watching a Newton-Raphson mismatch fall is one of the genuinely instructive
+animations in power systems — you *see* the quadratic convergence steepen, which is
+harder to appreciate from a static plot.
+
+## Saving it
+
+```matlab
+v = VideoWriter('voltage_day.mp4', 'MPEG-4');
+v.FrameRate = 10;
+open(v);
+
+for k = 1:numel(hours)
+    h.YData = V(k,:);
+    ttl.String = sprintf('Hour %d', hours(k));
+    drawnow;
+    writeVideo(v, getframe(gcf));
+end
+
+close(v);
+```
+
+For a GIF — better for embedding in a webpage or a slide:
+
+```matlab
+filename = 'voltage_day.gif';
+for k = 1:numel(hours)
+    h.YData = V(k,:);
+    drawnow;
+
+    frame = getframe(gcf);
+    [ind, cmap] = rgb2ind(frame2im(frame), 256);
+
+    if k == 1
+        imwrite(ind, cmap, filename, 'gif', 'LoopCount', inf, 'DelayTime', 0.1);
+    else
+        imwrite(ind, cmap, filename, 'gif', 'WriteMode', 'append', 'DelayTime', 0.1);
+    end
+end
+```
+
+<Callout type="warning" title="Use drawnow, not drawnow limitrate, when recording">
+  `limitrate` may skip frames — fine on screen, but it means your recording drops
+  them too. When capturing, take every frame.
+</Callout>
+
+## When it's worth it
+
+<Analogy>
+  An animation is a **film**; a static figure is a **photograph**.
+
+  A film is better for showing *how something unfolds*. A photograph is better for
+  *studying the detail*, because it holds still while you look.
+
+  A thesis is read, not watched. Almost everything in it should be a photograph.
+</Analogy>
+
+<Compare
+  headings={['Situation', 'Verdict', 'Why']}
+  rows={[
+    { option: 'A thesis or paper figure', when: 'Static, always', cost: 'Print cannot animate', recommended: true },
+    { option: 'Debugging a solver', when: 'Animate', cost: 'Watching it diverge shows where and when' },
+    { option: 'A conference talk', when: 'Sometimes', cost: 'One good animation lands; three is a distraction' },
+    { option: 'Time-series results', when: 'Usually static', cost: 'A heatmap of time x bus shows the whole day at once' },
+    { option: 'Explaining a mechanism', when: 'Animate', cost: 'Sequence is the content — e.g. a travelling wave' },
+  ]}
+/>
+
+<Callout type="engineering">
+  The specific trap in power systems: animating a day of voltage profiles feels
+  natural, and a **heatmap of bus versus hour** almost always communicates more.
+
+  ```matlab
+  imagesc(hours, bus, V');
+  xlabel('Hour'); ylabel('Bus'); colorbar;
+  ```
+
+  The animation shows one hour at a time and demands the viewer hold the rest in
+  memory. The heatmap shows all 24 hours and all 12 buses at once, and the pattern —
+  which buses sag, at which hours — is immediately visible. It also prints.
+
+  Animate to *understand*, in front of your own screen. Publish the static figure.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Calling plot() inside the loop">
+  Rebuilds the entire axes every frame. Keep the handle and update `XData`/`YData`.
+</Callout>
+
+<Callout type="warning" title="Axes rescaling on every frame">
+  If limits aren't fixed, they jump around as the data changes and the motion becomes
+  unreadable. Set `xlim` and `ylim` explicitly before the loop.
+</Callout>
+
+<Callout type="warning" title="Animating for a document">
+  A GIF in a PDF is a static first frame. If it's going into a thesis, make it a
+  figure.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="Why is this animation so slow?">
+  ```matlab
+  for k = 1:1000
+      plot(x, data(k,:));
+      xlim([0 100]); ylim([0 50]);
+      title(sprintf('Step %d', k));
+      drawnow;
+  end
+  ```
+
+  <Solution>
+    Three problems, compounding.
+
+    1. `plot` inside the loop destroys and rebuilds the axes 1000 times.
+    2. `xlim`, `ylim` and `title` are re-applied every frame.
+    3. Plain `drawnow` forces a full screen refresh on all 1000 frames.
+
+    ```matlab
+    h   = plot(x, data(1,:));
+    ttl = title('Step 1');
+    xlim([0 100]); ylim([0 50]);     % once, outside the loop
+
+    for k = 1:1000
+        h.YData    = data(k,:);
+        ttl.String = sprintf('Step %d', k);
+        drawnow limitrate;
+    end
+    ```
+
+    Set up once, update the minimum inside the loop, throttle the refresh. Typically
+    an order of magnitude faster.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="read" title="Animate or not?">
+  1. Showing a reviewer how bus voltages vary over a day
+  2. Diagnosing why your Newton-Raphson diverges on one test case
+  3. A conference slide explaining how a fault travels along a line
+  4. A thesis chapter comparing five PV penetration scenarios
+
+  <Solution>
+    1. **Static.** A bus-versus-hour heatmap shows everything at once and prints.
+       Reviewers read PDFs.
+    2. **Animate** — for yourself. Watching the mismatch grow tells you *which*
+       iteration goes wrong and in which direction. Nobody else needs to see it.
+    3. **Animate.** The sequence is the content, and a slide can play it.
+    4. **Static.** Five lines on one axes with a legend. A reader wants to compare
+       them side by side, which an animation actively prevents.
+
+    The pattern: animate when the *unfolding* is the message and the medium can play
+    it. Otherwise a static figure is more useful and always works.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the efficient way to animate a line plot?',
+      options: [
+        'Call plot() each frame with the new data',
+        'Keep the plot handle and update its YData property',
+        'Use clf then plot each frame',
+        'Save each frame as an image and combine them afterwards',
+      ],
+      answer: 1,
+      explain:
+        'Updating YData on an existing line avoids rebuilding the axes every frame. Combined with drawnow limitrate it is typically an order of magnitude faster.',
+    },
+    {
+      q: 'Why is a heatmap usually better than an animation for a day of bus voltages?',
+      options: [
+        'Heatmaps are faster to generate',
+        'It shows every bus and every hour simultaneously, and it prints',
+        'MATLAB animations are low quality',
+        'Heatmaps use less memory',
+      ],
+      answer: 1,
+      explain:
+        'The animation shows one hour at a time and asks the viewer to remember the rest. A heatmap makes the whole pattern visible at once — and works in a document, which an animation does not.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Animate to **understand**, publish **static**. The efficient technique is to create
+  the plot once and update its data — but the more valuable skill is asking whether a
+  heatmap or a family of lines would say more, on paper, where your work will actually
+  be read.
+</KeyIdea>
+
+## Further reading
+
+- `doc animatedline`, `doc VideoWriter`, `doc drawnow`
+- Next: the **module project** — a load curve analyser producing report-ready figures

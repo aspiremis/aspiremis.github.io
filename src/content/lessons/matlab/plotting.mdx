@@ -1,0 +1,310 @@
+---
+title: Plotting
+track: matlab
+module: data-visualisation
+order: 18
+description: Turning arrays into figures — line plots, multiple series, labels — and the small set of commands that covers most engineering graphs.
+objectives:
+  - Produce a labelled line plot with multiple series and a legend
+  - Control axes, limits and grid, and know when a log scale is right
+  - Explain what hold on does and why figures accumulate unexpectedly
+prerequisites: [file-io]
+estimatedMinutes: 30
+difficulty: beginner
+tags: ['matlab', 'plotting', 'visualisation']
+---
+
+A table of two hundred voltages tells you almost nothing. The same numbers plotted
+against bus number tell you immediately where the feeder is sagging.
+
+## The minimum viable plot
+
+```matlab
+hours = 0:23;
+demand = [38 35 34 33 34 37 45 52 58 61 60 57 ...
+          55 54 56 59 63 68 66 60 54 48 43 40];
+
+plot(hours, demand);
+```
+
+That works and is not yet a figure anyone should see. A plot without axis labels is
+not a result — nobody, including you in a month, knows what it shows.
+
+<CodeFile name="load_curve.m">
+```matlab
+hours  = 0:23;
+demand = [38 35 34 33 34 37 45 52 58 61 60 57 ...
+          55 54 56 59 63 68 66 60 54 48 43 40];
+
+figure;
+plot(hours, demand, '-o', 'LineWidth', 1.5, 'MarkerSize', 4);
+
+xlabel('Hour of day');
+ylabel('Demand (MW)');
+title('Feeder 3 — daily load curve, 12 August 2026');
+grid on;
+xlim([0 23]);
+xticks(0:3:23);
+```
+</CodeFile>
+
+<Callout type="tip" title="Units in the axis label, always">
+  `ylabel('Demand')` is ambiguous. `ylabel('Demand (MW)')` is a result. This is the
+  single most common thing missing from student figures, and the easiest to fix.
+</Callout>
+
+## Multiple series
+
+Two ways, and they behave differently.
+
+```matlab
+% One call, several series — MATLAB assigns colours automatically
+plot(hours, demand_weekday, hours, demand_weekend);
+
+% Or accumulate with hold on
+figure;
+plot(hours, demand_weekday, 'LineWidth', 1.5);
+hold on;
+plot(hours, demand_weekend, '--', 'LineWidth', 1.5);
+hold off;
+
+legend('Weekday', 'Weekend', 'Location', 'northwest');
+```
+
+`hold on` tells the axes to **keep** what's already drawn. Without it, each `plot`
+replaces the last.
+
+<Callout type="warning" title="hold on is sticky">
+  It stays on until you turn it off, and it applies to that axes object. Forget
+  `hold off` and your next plot lands on top of the previous one, in the same
+  figure, and you spend ten minutes wondering why there are eleven lines.
+
+  A safe pattern: start every figure with `figure;` — a fresh figure has `hold`
+  off by default.
+</Callout>
+
+## Line styles and colours
+
+```matlab
+plot(x, y, 'r--o')      % red, dashed, circle markers — the shorthand
+
+% Or explicit, which is clearer and more capable
+plot(x, y, 'Color', [0.85 0.33 0.10], 'LineStyle', '--', ...
+           'LineWidth', 1.5, 'Marker', 'o', 'MarkerSize', 4);
+```
+
+Shorthand codes: colours `r g b c m y k w`; styles `-` `--` `:` `-.`; markers
+`o + * . x s d ^ v`.
+
+Use markers when you have few points and each is a measurement. Omit them when the
+line is a dense series — 8760 hourly points with circles is a black smear.
+
+## Axes control
+
+```matlab
+xlim([0 23]);            ylim([30 70]);
+axis tight;              % shrink-wrap to the data
+axis equal;              % equal scaling — essential for phasor diagrams
+grid on;  grid minor;
+
+xticks(0:3:24);
+xticklabels({'00','03','06','09','12','15','18','21','24'});
+```
+
+`axis equal` matters more than it sounds in power systems: on a phasor diagram
+with unequal axis scaling, a 90° angle doesn't look like 90°, and the picture
+misleads.
+
+## Log scales
+
+```matlab
+semilogy(iteration, mismatch, '-o');    % log y — for convergence
+loglog(frequency, impedance);           % both log — for frequency response
+```
+
+<Callout type="engineering">
+  Convergence plots belong on a **log y-axis**, always. On a linear scale a mismatch
+  falling from 10⁻¹ to 10⁻¹⁵ looks like a line dropping to zero immediately and then
+  nothing. On a log scale you see the *shape* — and the shape is the diagnostic from
+  the debugging lesson:
+
+  ```matlab
+  semilogy(1:numel(history), history, '-o', 'LineWidth', 1.4);
+  xlabel('Iteration');
+  ylabel('Max power mismatch (pu)');
+  yline(1e-8, '--', 'Tolerance');
+  grid on;
+  ```
+
+  A straight line on this plot means linear convergence — your Jacobian is wrong.
+  A curve bending steeply downward means quadratic — it's right.
+</Callout>
+
+## Reference lines and annotation
+
+```matlab
+yline(1.05, '--r', 'Upper limit');
+yline(0.95, '--r', 'Lower limit');
+xline(18, ':k', 'Evening peak');
+
+text(18, 68, ' peak', 'VerticalAlignment', 'bottom');
+```
+
+`yline` and `xline` are the clean way to show a limit. On a voltage profile, the
+statutory band drawn as two dashed lines turns a plot into an assessment — the reader
+sees compliance at a glance rather than having to check numbers against a limit they
+have to remember.
+
+## Other plot types you'll actually use
+
+```matlab
+bar(categories, values);            % discrete comparisons
+histogram(V_pu, 30);                % distribution of a measurement
+scatter(irradiance, pv_output);     % relationship between two variables
+stairs(hours, tariff);              % values that hold constant then step
+area(hours, [wind; solar; thermal]');  % stacked generation mix
+errorbar(x, y, err);                % measurements with uncertainty
+```
+
+`stairs` is the right choice for anything piecewise-constant — tariff bands, tap
+positions, on/off states. Using `plot` for those draws sloped lines between values
+that never actually took intermediate values.
+
+## Common mistakes
+
+<Callout type="warning" title="Unlabelled axes">
+  If a figure would be meaningless printed on its own, it isn't finished.
+</Callout>
+
+<Callout type="warning" title="Dimension mismatch in plot">
+  `Vectors must be the same length` means `x` and `y` differ in size. Check
+  `numel` of both — usually an off-by-one from a colon expression.
+</Callout>
+
+<Callout type="warning" title="Colour as the only distinction">
+  Roughly 8% of men have some colour vision deficiency, and figures get printed in
+  greyscale. Vary **line style** as well as colour, so the plot survives both.
+</Callout>
+
+<Callout type="warning" title="Leaving hold on">
+  Everything ends up on one axes. Start with `figure;` each time.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Voltage profile with limits">
+  Plot per-unit voltage against bus number for a 12-bus feeder, with the 0.95–1.05
+  band marked and violating buses highlighted.
+
+  <Solution>
+    ```matlab
+    bus  = 1:12;
+    V_pu = [1.00 0.99 0.98 0.97 0.96 0.96 0.95 0.94 0.94 0.93 0.93 0.92];
+
+    figure;
+    plot(bus, V_pu, '-o', 'LineWidth', 1.5, 'MarkerSize', 5);
+    hold on;
+
+    bad = V_pu < 0.95 | V_pu > 1.05;
+    plot(bus(bad), V_pu(bad), 'o', 'MarkerSize', 10, ...
+         'LineWidth', 1.5, 'Color', [0.8 0.1 0.1]);
+
+    yline(1.05, '--', 'Upper limit', 'Color', [0.5 0.5 0.5]);
+    yline(0.95, '--', 'Lower limit', 'Color', [0.5 0.5 0.5]);
+    hold off;
+
+    xlabel('Bus number');
+    ylabel('Voltage (pu)');
+    title('Feeder voltage profile at peak load');
+    legend('Voltage', 'Outside limits', 'Location', 'southwest');
+    ylim([0.90 1.08]);
+    grid on;
+    ```
+
+    The logical indexing from the previous module does the highlighting — `bus(bad)`
+    and `V_pu(bad)` select exactly the violating points, with no loop and no manual
+    bookkeeping about which buses they were.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="debug" title="Why is everything on one figure?">
+  A student's script produces one figure with eleven overlapping lines instead of
+  eleven separate figures.
+
+  ```matlab
+  hold on;
+  for k = 1:11
+      plot(x, results(k,:));
+  end
+  ```
+
+  <Solution>
+    `hold on` is outside the loop and never turned off, so every `plot` accumulates
+    on the same axes.
+
+    If eleven separate figures were wanted:
+
+    ```matlab
+    for k = 1:11
+        figure;                       % new figure each pass
+        plot(x, results(k,:));
+        title(sprintf('Scenario %d', k));
+    end
+    ```
+
+    Though eleven figures is usually the wrong answer. Either one figure with a
+    legend, or `tiledlayout` — which is the next lesson.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why plot solver convergence on a semilogy axis?',
+      options: [
+        'It looks more professional',
+        'The error spans many orders of magnitude, and the shape of the decay is the diagnostic',
+        'MATLAB cannot plot small numbers linearly',
+        'It makes convergence appear faster',
+      ],
+      answer: 1,
+      explain:
+        'On a linear axis, a drop from 10⁻¹ to 10⁻¹⁵ looks like an immediate fall to zero. On a log axis you can see whether the decay is linear (wrong Jacobian) or quadratic (correct).',
+    },
+    {
+      q: 'When should you use stairs instead of plot?',
+      options: [
+        'When there are very few data points',
+        'For piecewise-constant quantities like tariff bands or tap positions',
+        'Whenever the data is noisy',
+        'For logarithmic data',
+      ],
+      answer: 1,
+      explain:
+        'plot draws sloped lines between points, implying the quantity passed through intermediate values. A tap position never sits between taps — stairs shows what actually happened.',
+    },
+    {
+      q: 'Why vary line style as well as colour?',
+      options: [
+        'It makes the plot look busier and more detailed',
+        'So the figure survives greyscale printing and colour vision deficiency',
+        'MATLAB requires it for legends',
+        'Colour is not supported in exported figures',
+      ],
+      answer: 1,
+      explain:
+        'Around 8% of men have some colour vision deficiency, and figures still get printed in greyscale. Redundant encoding costs nothing and keeps the figure readable either way.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A figure is finished when it would still make sense **printed on its own, in
+  greyscale, with no caption**. Labelled axes with units, a legend when there are
+  multiple series, and limits drawn where limits exist.
+</KeyIdea>
+
+## Further reading
+
+- `doc plot`, `doc yline`, `doc semilogy`
+- Next: **subplots and layout** — several related plots in one figure

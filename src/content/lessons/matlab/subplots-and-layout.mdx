@@ -1,0 +1,267 @@
+---
+title: Subplots and Layout
+track: matlab
+module: data-visualisation
+order: 19
+description: Several related plots in one figure — tiledlayout, shared axes and linked zooming — and when a second panel beats a second y-axis.
+objectives:
+  - Build multi-panel figures with tiledlayout
+  - Share and link axes so panels stay aligned and zoom together
+  - Decide between subplots, overlaid series and a second y-axis
+prerequisites: [plotting]
+estimatedMinutes: 25
+difficulty: intermediate
+tags: ['matlab', 'plotting', 'layout']
+---
+
+Power system results are rarely one quantity. You want voltage *and* current, real
+*and* reactive power, all against the same time axis, and you want them aligned so
+the eye can compare them.
+
+## `tiledlayout` — the modern way
+
+MATLAB has two systems. `subplot` is the old one and still works everywhere;
+`tiledlayout` is newer, better, and what you should use.
+
+<CodeFile name="pq_panels.m">
+```matlab
+hours = 0:23;
+P = [38 35 34 33 34 37 45 52 58 61 60 57 55 54 56 59 63 68 66 60 54 48 43 40];
+Q = P * 0.35 + 2*sin(hours/3);
+
+figure;
+t = tiledlayout(2, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+nexttile;
+plot(hours, P, 'LineWidth', 1.4);
+ylabel('P (MW)');
+grid on;
+
+nexttile;
+plot(hours, Q, 'LineWidth', 1.4, 'Color', [0.85 0.33 0.10]);
+ylabel('Q (MVAr)');
+grid on;
+
+xlabel(t, 'Hour of day');                       % one shared x label
+title(t, 'Feeder 3 — real and reactive demand');
+```
+</CodeFile>
+
+Three things `tiledlayout` gives you that `subplot` doesn't:
+
+**Shared labels.** `xlabel(t, ...)` on the layout, not the axes — one label for the
+whole figure instead of repeating it under every panel.
+
+**Tight spacing.** `'TileSpacing','compact'` removes the wasteful gaps `subplot`
+leaves. `'tight'` removes more.
+
+**Growable.** `tiledlayout('flow')` adds tiles as you call `nexttile`, without
+deciding the grid in advance.
+
+## Sharing the x-axis
+
+When panels share a time axis, hide the duplicate tick labels and link the zoom.
+
+```matlab
+t = tiledlayout(3, 1, 'TileSpacing', 'tight');
+
+ax1 = nexttile; plot(hours, V_pu);  ylabel('V (pu)');
+ax2 = nexttile; plot(hours, P);     ylabel('P (MW)');
+ax3 = nexttile; plot(hours, Q);     ylabel('Q (MVAr)');
+
+xticklabels([ax1 ax2], {});          % only the bottom panel shows hours
+xlabel(ax3, 'Hour of day');
+
+linkaxes([ax1 ax2 ax3], 'x');        % zoom one, all three follow
+```
+
+`linkaxes` is the one to remember. Zoom into the evening peak on any panel and all
+three move together — which is exactly what you want when you're trying to work out
+whether a voltage dip lines up with a load spike.
+
+<Callout type="engineering">
+  This three-panel, linked-axis layout — voltage, real power, reactive power against
+  time — is the standard way to present a QSTS simulation or a day of SCADA data.
+  Learn it once and you'll use it constantly.
+</Callout>
+
+## Spanning tiles
+
+```matlab
+t = tiledlayout(3, 2);
+
+nexttile([1 2]);        % one row tall, two columns wide — full-width top panel
+plot(hours, total_demand);
+title('System demand');
+
+nexttile; plot(hours, feeder1); title('Feeder 1');
+nexttile; plot(hours, feeder2); title('Feeder 2');
+nexttile; plot(hours, feeder3); title('Feeder 3');
+nexttile; plot(hours, feeder4); title('Feeder 4');
+```
+
+A wide summary panel above a grid of details is a good default for "here's the whole
+system, and here's the breakdown."
+
+## Two y-axes — use sparingly
+
+```matlab
+yyaxis left;
+plot(hours, V_pu);  ylabel('Voltage (pu)');
+
+yyaxis right;
+plot(hours, P);     ylabel('Demand (MW)');
+```
+
+<Callout type="warning" title="Two y-axes can imply a relationship that isn't there">
+  With independent scales, you can make any two series appear correlated or
+  uncorrelated by choosing the limits. Readers see the visual coincidence, not the
+  scaling choice you made.
+
+  Use it when the two quantities are genuinely tied — voltage and current on the same
+  feeder — and prefer stacked panels with a shared x-axis when they aren't. The
+  panels make no claim about relative magnitude.
+</Callout>
+
+<Compare
+  headings={['Layout', 'Use when', 'Risk']}
+  rows={[
+    { option: 'One axes, several lines', when: 'Same quantity and units — voltages at several buses', cost: 'Clutter beyond ~6 series', recommended: true },
+    { option: 'Stacked tiles, linked x', when: 'Different quantities over a shared time axis', cost: 'Uses vertical space' },
+    { option: 'Grid of tiles', when: 'Same plot repeated across scenarios or feeders', cost: 'Each becomes small' },
+    { option: 'Two y-axes', when: 'Two genuinely coupled quantities', cost: 'Can imply a false relationship' },
+  ]}
+/>
+
+## Legends across a layout
+
+```matlab
+lg = legend(ax1, {'Bus 1', 'Bus 7', 'Bus 12'});
+lg.Layout.Tile = 'east';        % one legend beside the whole layout
+```
+
+Placing the legend on the layout rather than inside an axes stops it covering data
+and avoids repeating the same key in every panel.
+
+## Common mistakes
+
+<Callout type="warning" title="Repeating the x label under every panel">
+  With a shared axis, one label on the layout is correct. Repeating it wastes space
+  and implies the axes might differ.
+</Callout>
+
+<Callout type="warning" title="Panels with different x limits">
+  If the top panel shows 0–23 and the bottom 6–18, the eye compares them anyway and
+  reads a relationship that isn't there. `linkaxes` prevents this.
+</Callout>
+
+<Callout type="warning" title="Too many tiles">
+  Beyond about six panels nobody reads any of them. Either aggregate, or produce
+  several figures.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="A three-panel day">
+  Build a figure with voltage, real power and reactive power stacked over 24 hours,
+  sharing one x-axis, with limit lines on the voltage panel.
+
+  <Solution>
+    ```matlab
+    hours = 0:23;
+    V_pu  = 1.02 - 0.001*[38 35 34 33 34 37 45 52 58 61 60 57 ...
+                          55 54 56 59 63 68 66 60 54 48 43 40];
+    P = [38 35 34 33 34 37 45 52 58 61 60 57 55 54 56 59 63 68 66 60 54 48 43 40];
+    Q = P * 0.35;
+
+    figure('Position', [100 100 700 700]);
+    t = tiledlayout(3, 1, 'TileSpacing', 'tight', 'Padding', 'compact');
+
+    ax1 = nexttile;
+    plot(hours, V_pu, 'LineWidth', 1.4);
+    yline(1.05, '--', 'Color', [0.6 0.6 0.6]);
+    yline(0.95, '--', 'Color', [0.6 0.6 0.6]);
+    ylabel('V (pu)'); ylim([0.93 1.07]); grid on;
+
+    ax2 = nexttile;
+    plot(hours, P, 'LineWidth', 1.4);
+    ylabel('P (MW)'); grid on;
+
+    ax3 = nexttile;
+    plot(hours, Q, 'LineWidth', 1.4);
+    ylabel('Q (MVAr)'); grid on;
+
+    xticklabels([ax1 ax2], {});
+    xlabel(t, 'Hour of day');
+    title(t, 'Feeder 3 — 12 August 2026');
+    linkaxes([ax1 ax2 ax3], 'x');
+    xlim(ax1, [0 23]);
+    ```
+
+    Note `xlim` on one axes only — because the axes are linked, setting one sets all
+    three. That's the property doing useful work rather than just being convenient.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="read" title="Which layout?">
+  Choose a layout for each:
+
+  1. Voltage at 40 buses along one feeder
+  2. Demand and temperature over a year
+  3. The same voltage profile under 6 different PV penetration levels
+  4. Convergence history of three different solvers on one system
+
+  <Solution>
+    1. **One axes, one line** — voltage against bus number. Forty *series* would be
+       clutter; forty *points on one line* is a profile.
+    2. **Two stacked tiles with linked x.** Different units entirely. A second y-axis
+       would invite the reader to see a correlation you haven't demonstrated.
+    3. **One axes, six lines with a legend** — same quantity, same units, and
+       comparison is the whole point. A 2×3 grid would make comparison harder.
+    4. **One axes, semilogy, three lines.** Same quantity, and the comparison of
+       convergence *rates* is exactly what the figure is for.
+
+    The pattern: same quantity and units → one axes. Different units → separate
+    panels.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does linkaxes([ax1 ax2], "x") do?',
+      options: [
+        'Draws the two axes with identical styling',
+        'Ties their x limits together, so zooming or panning one moves the other',
+        'Merges the two axes into one',
+        'Copies data from one axes to the other',
+      ],
+      answer: 1,
+      explain:
+        'Linked axes stay aligned through zoom and pan — essential when you are checking whether an event in one panel coincides with an event in another.',
+    },
+    {
+      q: 'Why be cautious with yyaxis (two y-axes)?',
+      options: [
+        'It is slow to render',
+        'Independent scaling lets you make any two series look correlated or not',
+        'MATLAB does not support legends with it',
+        'It cannot be exported to PDF',
+      ],
+      answer: 1,
+      explain:
+        'The reader sees the visual coincidence, not the axis limits you chose. Stacked panels with a shared x-axis make no claim about relative magnitude.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Same quantity and units → one axes. Different units → stacked tiles with a linked
+  x-axis.** Reach for two y-axes only when the quantities are genuinely coupled, and
+  know that the choice of scaling is an argument you're making.
+</KeyIdea>
+
+## Further reading
+
+- `doc tiledlayout`, `doc nexttile`, `doc linkaxes`
+- Next: **figures worth publishing** — sizing, fonts and export
