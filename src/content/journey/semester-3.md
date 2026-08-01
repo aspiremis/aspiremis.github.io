@@ -7,12 +7,11 @@ summary: >-
   Coursework gives way to research. Phase I is problem formulation, literature
   review and building the simulation environment the rest of the thesis depends on.
 courses:
-  - name: M.Tech Thesis — Phase I
+  - code: EE6D102
+    name: Thesis Part-2
+    credits: 14
     type: Thesis
-    note: 'Intended. Course code assigned at registration.'
-  - name: 'Elective: Machine Learning for Energy Systems'
-    type: Elective
-    note: 'Intended, subject to what is actually offered.'
+    note: 'The whole semester. Per the department curriculum.'
 labs: []
 highlights: []
 books: []

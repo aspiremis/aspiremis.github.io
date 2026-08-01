@@ -7,9 +7,11 @@ summary: >-
   Completing the thesis, defending it, and turning the result into something that
   outlives the degree — a paper, a released tool, or ideally both.
 courses:
-  - name: M.Tech Thesis — Phase II
+  - code: EE6D103
+    name: Thesis Part-3
+    credits: 14
     type: Thesis
-    note: 'Intended. Course code assigned at registration.'
+    note: 'The whole semester. Per the department curriculum.'
 labs: []
 highlights: []
 books: []

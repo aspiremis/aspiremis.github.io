@@ -8,23 +8,45 @@ summary: >-
   protection coordination and the optimisation methods that decide how a system is
   actually operated. This is also when I expect to settle on a thesis direction.
 courses:
-  - name: Power System Dynamics and Stability
+  - code: EE6L004
+    name: Power System Protection
+    ltp: '3-1-0'
+    credits: 4
     type: Core
-    note: >-
-      Intended — synchronous machine modelling, small-signal and transient stability.
-      Course codes and offerings are confirmed at registration; nothing here is fixed yet.
-  - name: Power System Protection
+    note: 'Per the department curriculum. Instructor confirmed at registration.'
+  - code: EE6L021
+    name: Power System Stability and Control
+    ltp: '3-1-0'
+    credits: 4
     type: Core
-    note: 'Intended — relay coordination, distance protection, protection of inverter-fed networks.'
-  - name: FACTS and HVDC Transmission
+    note: 'Per the department curriculum.'
+  - name: Department Elective IV
+    ltp: '3-0-0'
+    credits: 3
     type: Elective
-    note: 'Intended.'
-  - name: Optimisation Techniques in Power Systems
+    note: 'Not yet chosen. The department list includes FACTS, HVDC Transmission, Smart Grid Technology, Wide Area Monitoring Systems and Power System Modelling and Simulation.'
+  - name: Department Elective V
+    ltp: '3-0-0'
+    credits: 3
     type: Elective
-    note: 'Intended — OPF, unit commitment, convex relaxations.'
-  - name: Seminar
-    type: Seminar
-    note: 'Intended — literature survey feeding into the thesis proposal.'
+    note: 'Not yet chosen.'
+  - code: EE6P002
+    name: Energy Systems Laboratory
+    ltp: '0-0-3'
+    credits: 2
+    type: Core Lab
+    note: 'Per the department curriculum.'
+  - code: EE6P057
+    name: Computer Methods in Power System Laboratory
+    ltp: '1-0-3'
+    credits: 3
+    type: Core Lab
+    note: 'Per the department curriculum. The computational half of the degree, and the reason the MATLAB track on this site exists.'
+  - code: EE6D101
+    name: Thesis Part-1
+    credits: 2
+    type: Thesis
+    note: 'Problem formulation and literature survey.'
 labs: []
 highlights: []
 books:
