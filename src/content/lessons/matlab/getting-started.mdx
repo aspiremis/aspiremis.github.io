@@ -1,0 +1,240 @@
+---
+title: Getting MATLAB and Finding Your Way Around
+track: matlab
+module: foundations
+order: 2
+description: Installing MATLAB through your institute's licence, and a tour of the four panels you'll spend the next two years in.
+objectives:
+  - Install MATLAB using an academic licence
+  - Identify what each panel of the interface is for
+  - Run your first commands and know where the results went
+prerequisites: [why-matlab]
+estimatedMinutes: 20
+difficulty: beginner
+tags: ['matlab', 'setup', 'interface']
+---
+
+This lesson is housekeeping, and it's short. But getting the installation right
+once saves a surprising amount of frustration, and knowing what the panels are for
+turns the interface from intimidating to obvious.
+
+## Getting MATLAB
+
+IIT Bhubaneswar holds a **Total Academic Headcount (TAH)** licence. In practice
+that means the full desktop MATLAB with essentially every toolbox, free to you,
+installable on your personal machine.
+
+The route is always the same:
+
+1. Go to `mathworks.com` and create an account **using your institute email
+   address** — this is the step that matters. A personal Gmail account will not
+   associate with the campus licence.
+2. MathWorks recognises the domain and offers the institutional licence.
+3. Download the installer and, when asked which products to install, take
+   everything unless you're short on disk space.
+
+<Callout type="tip" title="Install more than you think you need">
+  A full install is large — budget 25–30 GB. It is still far less painful than
+  discovering mid-assignment that Simscape Electrical isn't there. If disk space
+  is genuinely tight, install MATLAB, Simulink, Symbolic Math, Control System,
+  Signal Processing and Optimization; you can always add more later.
+</Callout>
+
+If your account isn't recognising the licence, that's an institute IT question,
+not a MathWorks one — the licence administrator has to have your email on the list.
+
+<Callout type="note" title="MATLAB Online as a fallback">
+  `matlab.mathworks.com` runs MATLAB in a browser with the same licence, no
+  install. It's genuinely useful on a lab machine you can't install on. Two
+  limitations to know: file access works differently, and Simulink is noticeably
+  slower. Use it as a supplement, not your main environment.
+</Callout>
+
+## The four panels
+
+Open MATLAB and you'll see a window divided into regions. Almost all of your work
+happens in four of them.
+
+<Analogy>
+  Think of it as a **workbench**.
+
+  The **Command Window** is the bench surface — where you try things, quickly and
+  disposably. The **Workspace** is the parts tray, holding everything you've made
+  so far. The **Editor** is where you write down a procedure you want to repeat.
+  The **Current Folder** is the drawer you're reaching into.
+</Analogy>
+
+**Command Window** — type an expression, press Enter, see the answer. This is where
+you experiment. Nothing here is saved when you close MATLAB.
+
+**Workspace** — every variable you've created, with its size and type. This panel
+is enormously useful while learning: it makes the abstract concrete. When you
+create a matrix, you can *see* it appear with its dimensions.
+
+**Editor** — where scripts and functions live. Anything you want to run more than
+once belongs here, not in the Command Window.
+
+**Current Folder** — MATLAB looks here first when you ask for a file or call a
+function you wrote. If MATLAB says it can't find your script, this panel is the
+first thing to check.
+
+## Your first commands
+
+Type each of these into the Command Window and watch the Workspace panel as you go.
+
+<CodeFile name="first_commands.m" caption="Type these one at a time">
+```matlab
+% Anything after a percent sign is a comment — MATLAB ignores it.
+
+V = 230              % no semicolon: MATLAB echoes the result
+I = 5;               % semicolon: computed silently, still stored
+P = V * I            % uses both variables
+
+whos                 % list everything in the workspace, with sizes
+clear I              % remove one variable
+clc                  % clear the screen (variables survive)
+```
+</CodeFile>
+
+Three things worth noticing:
+
+**The semicolon controls echoing, not computation.** `I = 5;` still creates `I`.
+The semicolon only suppresses the printed output. In a script that computes a
+thousand values, forgetting semicolons means a thousand lines of output.
+
+**`ans` appears when you don't assign.** Type `3 + 4` with no variable and MATLAB
+stores the result in a variable called `ans`. It's overwritten by the next
+unassigned expression, so never rely on it beyond the next line.
+
+**`clear` and `clc` are different.** `clc` clears the *screen*. `clear` deletes
+*variables*. Confusing them leads to "why is my old value still there?"
+
+<Callout type="engineering">
+  That `P = V * I` is your first power calculation in MATLAB. It's trivial, and it
+  is also exactly the shape of everything that follows — define quantities, combine
+  them with an expression that looks like the physics.
+</Callout>
+
+## Getting help without leaving MATLAB
+
+You will not memorise the function library, and you don't need to.
+
+```matlab
+help sqrt        % quick summary, in the Command Window
+doc sqrt         % full documentation with examples, in a browser
+lookfor impedance % search all help text for a word
+```
+
+`lookfor` is the underused one. When you don't know a function's name but know what
+it does, it searches every function's description.
+
+## Common mistakes
+
+<Callout type="warning" title="Working in the Command Window and losing everything">
+  It's tempting to build up an analysis interactively, line by line. Then MATLAB
+  closes, or you clear the workspace, and the work is gone with no record of how
+  you got there. Explore in the Command Window; the moment something works, move it
+  into a script.
+</Callout>
+
+<Callout type="warning" title="Saving scripts outside the Current Folder">
+  If MATLAB reports `Undefined function or variable`, and you're sure you wrote it,
+  the file is almost certainly not in the Current Folder or on the path. Check the
+  Current Folder panel before doubting your code.
+</Callout>
+
+<Callout type="warning" title="Naming a variable after a built-in function">
+  Writing `sum = 10` works, and then `sum([1 2 3])` fails confusingly, because
+  `sum` is now your number rather than MATLAB's function. Avoid `sum`, `max`,
+  `min`, `length`, `size`, `i` and `j` as variable names. The last two matter
+  especially in power systems — `i` and `j` are the imaginary unit.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Base impedance">
+  Using only what's in this lesson, compute the base impedance of a system with
+  132 kV line-to-line and 100 MVA three-phase, using
+
+  $$Z_{base} = \frac{V_{base}^2}{S_{base}}$$
+
+  Store it in a variable called `Z_base` and display the result.
+
+  <Solution>
+    ```matlab
+    V_base = 132e3;              % volts
+    S_base = 100e6;              % volt-amperes
+    Z_base = V_base^2 / S_base   % no semicolon, so it prints
+    ```
+
+    You should get `Z_base = 174.24` ohms.
+
+    The `e3` / `e6` notation is worth adopting immediately — `132e3` is far harder
+    to mistype than `132000`, and much easier to read back.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="debug" title="Why does this fail?">
+  A student writes the following and gets an error on the last line. What happened?
+
+  ```matlab
+  i = 10;
+  Z = 5 + 3i;
+  abs(Z)
+  ```
+
+  <Solution>
+    The first line redefines `i` as the number 10. On the second line, `3i` no
+    longer means "3 times the imaginary unit" — MATLAB's special parsing of `3i`
+    still works, but any expression written as `3*i` would silently become 30.
+
+    In power systems this is a genuine hazard, because complex impedances are
+    everywhere and `i` is a natural loop-counter name. Two habits avoid it:
+
+    - Use `1i` explicitly for the imaginary unit: `Z = 5 + 3*1i`
+    - Never name a loop counter `i` or `j` in code that also does complex arithmetic
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does a semicolon at the end of a MATLAB line do?',
+      options: [
+        'Prevents the line from running',
+        'Suppresses the printed output, but the line still runs',
+        'Marks the end of a statement, as in C',
+        'Comments out the line',
+      ],
+      answer: 1,
+      explain:
+        'The line executes either way. The semicolon only stops MATLAB echoing the result — which is why a script without semicolons floods the Command Window.',
+    },
+    {
+      q: 'You get "Undefined function or variable \'myscript\'". What should you check first?',
+      options: [
+        'Whether MATLAB needs reinstalling',
+        'Whether your licence has expired',
+        'Whether the file is in the Current Folder or on the path',
+        'Whether you have enough memory',
+      ],
+      answer: 2,
+      explain:
+        "MATLAB looks in the Current Folder and along its path. The overwhelmingly common cause is that the file is saved somewhere else — check the Current Folder panel.",
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Explore in the **Command Window**, keep anything worth repeating in the
+  **Editor**, and watch the **Workspace** to see what you've actually created. The
+  Workspace panel in particular is the best learning tool in the interface — it
+  makes every abstract idea in the next few lessons visible.
+</KeyIdea>
+
+## Further reading
+
+- `doc matlab_env` — the official tour of the desktop
+- MathWorks' *MATLAB Onramp*, a free two-hour interactive tutorial. Worth doing
+  alongside this track; it drills syntax while this Hub explains why
+- Next: **variables and types** — what MATLAB is actually storing when you write `V = 230`

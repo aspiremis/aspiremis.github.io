@@ -131,6 +131,55 @@ reflection that makes the page worth reading.
 `EE6103` and the rest with your actual codes, credits and instructors as you get
 them.
 
+### A Learning Hub lesson
+
+The Hub is three levels: **track → module → lesson**. Modules group lessons
+visually but don't appear in URLs, so they can be reorganised without breaking
+links.
+
+- **Tracks** — `src/content/tracks/matlab.md`. Metadata plus an intro essay.
+- **Modules** — `src/content/modules.json`. One object each; no body.
+- **Lessons** — `src/content/lessons/<track>/<slug>.mdx` → `/learning/<track>/<slug>`.
+
+Lesson filenames carry **no numeric prefix**. Ordering comes from `order`, so a
+lesson can move within its module without changing its URL.
+
+```yaml
+---
+title: Element-wise vs Matrix Operations
+track: matlab
+module: foundations                   # matches a `slug` in modules.json
+order: 7
+description: One sentence for the lesson list and search.
+objectives:                           # rendered above the lesson body
+  - Choose correctly between * and .*
+prerequisites: [matrices, indexing]   # lesson slugs, auto-linked
+estimatedMinutes: 30
+difficulty: beginner                  # beginner | intermediate | advanced
+toolboxes: []                         # e.g. ['Symbolic Math'] — badged on the lesson
+tags: ['matlab']
+---
+```
+
+Body sections follow a fixed order: **Intuition → Theory → Implementation →
+Visualisation → Common Mistakes → Mini Tasks → Reflection → Further Reading.**
+
+These components work in any lesson with **no import statement** — the route
+injects them, so lessons stay clean prose:
+
+`<Analogy>` · `<KeyIdea>` · `<Callout type="tip|warning|engineering|note">` ·
+`<CodeFile name="x.m">` · `<Exercise n={1} kind="predict">` · `<Solution>` ·
+`<Quiz questions={[…]}>` · `<Compare rows={[…]}>`
+
+Wrapping a code block in `<CodeFile name="per_unit.m">` adds a filename header and
+a download button. The downloaded file is built client-side from the rendered
+text, so there is never a second copy on disk to drift out of sync with the lesson.
+
+**Progress tracking** lives in `localStorage` under `learn-progress:v1` and is
+applied by `ProgressStore.astro`. Pages render at 0% and hydrate, so CLS stays at
+zero and the Hub is fully readable with JavaScript off — you just don't get ticks.
+It is per-browser by design; the hub's Progress panel exports and imports JSON.
+
 ### A paper you've read
 
 `src/content/papers/`. The `takeaway` field is the point — a reading list without
@@ -154,7 +203,11 @@ src/
 ├── consts.ts              Identity, navigation, topic taxonomy — edit here first
 ├── content.config.ts      Schemas for every collection
 ├── content/               All the writing
-├── components/            21 reusable components
+│   ├── tracks/            Learning Hub tracks
+│   ├── modules.json       Learning Hub modules
+│   └── lessons/           Learning Hub lessons (MDX)
+├── components/
+│   └── learning/          Hub-specific: callouts, quizzes, progress, icons
 ├── layouts/
 │   ├── BaseLayout.astro   Shell: head, theme, nav, footer, palette
 │   └── ArticleLayout.astro Long-form: prose, ToC, reading progress

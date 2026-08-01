@@ -1,11 +1,11 @@
 ---
 import { getCollection, render } from 'astro:content';
-import BaseLayout from '../layouts/BaseLayout.astro';
-import PageHeader from '../components/PageHeader.astro';
-import MathStyles from '../components/MathStyles.astro';
-import Badge from '../components/Badge.astro';
-import { TOPIC_LABELS } from '../consts';
-import { byOrderThenDate } from '../lib/utils';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import MathStyles from '../../components/MathStyles.astro';
+import Badge from '../../components/Badge.astro';
+import { TOPIC_LABELS } from '../../consts';
+import { byOrderThenDate } from '../../lib/utils';
 
 const topics = (await getCollection('learning')).sort(byOrderThenDate);
 
@@ -39,9 +39,9 @@ const averageProgress = topics.length
 >
   <MathStyles />
   <PageHeader
-    eyebrow="In progress"
-    title="What I'm learning"
-    lead="A running record of what I'm studying and how far in I actually am. The percentages are my own honest estimate of coverage, not a grade — the point is to see where the gaps are, including by admitting them."
+    eyebrow="Learning · Progress"
+    title="What I'm studying"
+    lead="A running record of what I'm working through and how far in I actually am. The percentages are my own honest estimate of coverage, not a grade — the point is to see where the gaps are, including by admitting them. For the structured courses I'm writing, see the Learning Hub."
   >
     <div class="mt-8 flex flex-wrap items-center gap-6 text-sm text-subtle">
       <span><span class="font-mono text-fg">{topics.length}</span> active topics</span>
@@ -94,7 +94,9 @@ const averageProgress = topics.length
 
     <div class="mt-16 rounded-card border border-dashed border-line-strong bg-bg-subtle/50 p-8 text-center">
       <p class="text-sm text-muted">
-        The books, tools and datasets behind all of this live on the
+        Structured lessons live in the
+        <a href="/learning" class="text-accent link-underline">Learning Hub</a>; the books,
+        tools and datasets behind all of this are on the
         <a href="/resources" class="text-accent link-underline">resources page</a>.
       </p>
     </div>

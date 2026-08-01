@@ -1,0 +1,202 @@
+---
+import { render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import MathStyles from '../../../components/MathStyles.astro';
+import Badge from '../../../components/Badge.astro';
+import ProgressStore from '../../../components/learning/ProgressStore.astro';
+import ProgressRing from '../../../components/learning/ProgressRing.astro';
+import TrackIcon from '../../../components/learning/TrackIcon.astro';
+import { getTracks, getTrackTree, formatDuration, DIFFICULTY, lessonPath } from '../../../lib/learning';
+import type { TrackTree } from '../../../lib/learning';
+
+interface Props {
+  tree: TrackTree;
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const tracks = await getTracks();
+  const entries = await Promise.all(
+    tracks.map(async (track) => ({
+      params: { track: track.id },
+      props: { tree: (await getTrackTree(track.id))! },
+    })),
+  );
+  return entries;
+};
+
+const { tree } = Astro.props;
+const { track, modules, lessonCount, minutes } = tree;
+const { Content } = await render(track);
+
+const allIds = modules.flatMap((m) => m.lessons.map((l) => l.id));
+---
+
+<BaseLayout
+  title={track.data.title}
+  description={track.data.description}
+  showProgress
+>
+  <MathStyles />
+  <ProgressStore />
+
+  <div class="mx-auto max-w-(--container-page) px-5 pt-14 sm:px-8 sm:pt-20">
+    <nav aria-label="Breadcrumb">
+      <ol class="flex items-center gap-1.5 text-[13px] text-subtle">
+        <li><a href="/learning" class="transition-colors hover:text-accent">Learning</a></li>
+        <li aria-hidden="true">/</li>
+        <li class="text-muted">{track.data.title}</li>
+      </ol>
+    </nav>
+
+    <header class="mt-7 flex flex-wrap items-start gap-x-8 gap-y-8">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-3">
+          <span class="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-accent-border bg-accent-tint text-accent">
+            <TrackIcon name={track.data.icon} />
+          </span>
+          <h1 class="text-h1 font-semibold tracking-tight text-fg">{track.data.title}</h1>
+        </div>
+
+        <p class="mt-5 max-w-2xl text-lead text-muted">{track.data.description}</p>
+
+        <div class="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-subtle">
+          <span>{modules.length} modules</span>
+          <span aria-hidden="true">·</span>
+          <span>{lessonCount} lessons written</span>
+          {
+            minutes > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{formatDuration(minutes)}</span>
+              </>
+            )
+          }
+        </div>
+      </div>
+
+      {allIds.length > 0 && <ProgressRing lessons={allIds} label={`${track.data.title} progress`} />}
+    </header>
+
+    <div class="prose-notebook prose mt-12 max-w-(--container-prose) border-t border-line pt-10 dark:prose-invert">
+      <Content />
+    </div>
+
+    {/* ------------------------------------------------------------ Modules */}
+    <div class="mt-16 space-y-10">
+      {
+        modules.map((entry, index) => {
+          const ids = entry.lessons.map((l) => l.id);
+          const empty = entry.lessons.length === 0;
+
+          return (
+            <section
+              class="reveal"
+              aria-labelledby={`module-${entry.module.data.slug}`}
+              data-progress-group={ids.join(',')}
+            >
+              <div class="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+                <span class="font-mono text-xs text-accent">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <h2
+                  id={`module-${entry.module.data.slug}`}
+                  class="text-h2 font-semibold tracking-tight text-fg"
+                >
+                  {entry.module.data.title}
+                </h2>
+                {empty ? (
+                  <Badge tone="planned">Not written yet</Badge>
+                ) : (
+                  <span class="font-mono text-[11px] text-subtle">
+                    <span data-progress-done>0</span>/<span data-progress-total>{ids.length}</span>
+                  </span>
+                )}
+              </div>
+
+              <p class="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+                {entry.module.data.description}
+              </p>
+
+              {!empty && (
+                <ol class="mt-6 overflow-hidden rounded-card border border-line">
+                  {entry.lessons.map((lesson, i) => {
+                    const difficulty = DIFFICULTY[lesson.data.difficulty];
+                    return (
+                      <li class="border-b border-line last:border-0">
+                        <a
+                          href={lessonPath(lesson)}
+                          class="lesson-row group flex items-center gap-4 bg-surface px-5 py-4 transition-colors hover:bg-surface-hover"
+                          data-lesson-tick={lesson.id}
+                        >
+                          <span
+                            class="tick grid h-6 w-6 shrink-0 place-items-center rounded-full border border-line-strong font-mono text-[11px] text-subtle transition-colors"
+                            aria-hidden="true"
+                          >
+                            <span class="num">{i + 1}</span>
+                            <svg class="check hidden h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="m5 12 5 5L20 7" />
+                            </svg>
+                          </span>
+
+                          <span class="min-w-0 flex-1">
+                            <span class="block text-[15px] font-medium text-fg transition-colors group-hover:text-accent">
+                              {lesson.data.title}
+                            </span>
+                            <span class="mt-0.5 block truncate text-xs text-subtle">
+                              {lesson.data.description}
+                            </span>
+                          </span>
+
+                          <span class="hidden shrink-0 items-center gap-3 text-[11px] sm:flex">
+                            <span class={difficulty.tone}>{difficulty.label}</span>
+                            <span class="font-mono text-subtle">
+                              {lesson.data.estimatedMinutes}m
+                            </span>
+                          </span>
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+
+              {entry.module.data.project && (
+                <div
+                  class:list={[
+                    'mt-4 rounded-card border p-5 sm:p-6',
+                    entry.module.data.project.capstone
+                      ? 'border-accent-border bg-accent-tint'
+                      : 'border-line bg-bg-subtle',
+                  ]}
+                >
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-accent">
+                    {entry.module.data.project.capstone ? 'Capstone project' : 'Module project'}
+                  </p>
+                  <h3 class="mt-2 text-base font-semibold text-fg">
+                    {entry.module.data.project.title}
+                  </h3>
+                  <p class="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted">
+                    {entry.module.data.project.description}
+                  </p>
+                </div>
+              )}
+            </section>
+          );
+        })
+      }
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  /* Completed rows swap their number for a tick and pick up the accent. */
+  .lesson-row.is-done .tick {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-contrast);
+  }
+  .lesson-row.is-done .num { display: none; }
+  .lesson-row.is-done .check { display: block; }
+</style>

@@ -1,0 +1,57 @@
+---
+/**
+ * Collapsible answer, nested inside an <Exercise>.
+ *
+ * Native <details>: hidden until requested, works with JavaScript off,
+ * keyboard-operable, and findable by in-page search once opened.
+ */
+---
+
+<details class="solution group mt-4 rounded-lg border border-line bg-bg-subtle">
+  <summary
+    class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:text-fg"
+  >
+    <svg
+      class="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90"
+      viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+    >
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+    Show solution
+  </summary>
+
+  <div class="solution-body border-t border-line px-4 py-4 text-[15px] leading-relaxed text-muted">
+    <slot />
+  </div>
+</details>
+
+<style>
+  .solution summary::-webkit-details-marker { display: none; }
+  .solution[open] summary { color: var(--fg); }
+
+  .solution-body :global(p) { margin: 0.6rem 0; }
+  .solution-body :global(p:first-child) { margin-top: 0; }
+  .solution-body :global(p:last-child) { margin-bottom: 0; }
+  .solution-body :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+  .solution-body :global(pre) {
+    background: var(--bg) !important;
+    border: 1px solid var(--border);
+    border-radius: 0.625rem;
+    padding: 1rem;
+    margin: 0.75rem 0;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+  .solution-body :global(pre) :global(code) {
+    background: none; border: 0; padding: 0;
+  }
+</style>

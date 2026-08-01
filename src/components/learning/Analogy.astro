@@ -1,0 +1,28 @@
+---
+/**
+ * The "real-world analogy" box that opens most lessons.
+ *
+ * Visually distinct from Callout on purpose — it's a different *kind* of
+ * content (intuition before rigour), so it gets the serif treatment rather
+ * than looking like another warning box.
+ */
+interface Props {
+  title?: string;
+}
+
+const { title = 'Think of it like this' } = Astro.props;
+---
+
+<aside class="not-prose my-8 border-l-2 border-accent-border pl-6">
+  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">{title}</p>
+  <div class="analogy-body mt-3 font-serif text-[17px] leading-relaxed text-fg">
+    <slot />
+  </div>
+</aside>
+
+<style>
+  .analogy-body :global(p) { margin: 0.6rem 0; }
+  .analogy-body :global(p:first-child) { margin-top: 0; }
+  .analogy-body :global(p:last-child) { margin-bottom: 0; }
+  .analogy-body :global(strong) { font-weight: 600; }
+</style>

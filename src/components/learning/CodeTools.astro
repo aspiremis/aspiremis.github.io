@@ -1,0 +1,127 @@
+---
+/**
+ * Adds a copy button to every code block in the lesson, and a download button
+ * to those wrapped in <CodeFile name="…">.
+ *
+ * Downloads are built client-side from the rendered text via a Blob, so there
+ * is no second copy of the code on disk to drift out of sync with the lesson.
+ * What you read is byte-for-byte what you download.
+ *
+ * Include once per lesson page.
+ */
+---
+
+<script>
+  const EXTENSION_LABEL: Record<string, string> = {
+    m: 'MATLAB',
+    py: 'Python',
+    txt: 'Text',
+  };
+
+  function enhanceCodeBlocks() {
+    document.querySelectorAll<HTMLElement>('.lesson-body pre').forEach((pre) => {
+      if (pre.dataset.enhanced) return;
+      pre.dataset.enhanced = 'true';
+
+      const code = pre.querySelector('code');
+      if (!code) return;
+
+      // <CodeFile> wraps the block in a figure carrying the filename.
+      const wrapper = pre.closest<HTMLElement>('[data-code-file]');
+      const filename = wrapper?.dataset.codeFile;
+
+      const bar = document.createElement('div');
+      bar.className = 'code-tools';
+
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'code-tool';
+      copy.textContent = 'Copy';
+      copy.setAttribute('aria-label', 'Copy code to clipboard');
+      copy.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(code.textContent ?? '');
+          copy.textContent = 'Copied';
+        } catch {
+          // Clipboard API needs a secure context and permission; say so rather
+          // than silently doing nothing.
+          copy.textContent = 'Press ⌘C';
+        }
+        setTimeout(() => (copy.textContent = 'Copy'), 1800);
+      });
+      bar.appendChild(copy);
+
+      if (filename) {
+        const extension = filename.split('.').pop() ?? 'txt';
+        const download = document.createElement('button');
+        download.type = 'button';
+        download.className = 'code-tool';
+        download.textContent = `${EXTENSION_LABEL[extension] ?? extension} ↓`;
+        download.setAttribute('aria-label', `Download ${filename}`);
+        download.addEventListener('click', () => {
+          const blob = new Blob([code.textContent ?? ''], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          // Revoking immediately can race the download in some browsers.
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+        });
+        bar.appendChild(download);
+      }
+
+      pre.appendChild(bar);
+    });
+  }
+
+  enhanceCodeBlocks();
+  document.addEventListener('astro:page-load', enhanceCodeBlocks);
+</script>
+
+<style is:global>
+  .lesson-body pre {
+    position: relative;
+  }
+
+  .code-tools {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    gap: 0.375rem;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  /* Revealed on hover for mouse users, and always visible on touch, where
+     there is no hover to reveal it with. */
+  .lesson-body pre:hover .code-tools,
+  .code-tools:focus-within {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .code-tools { opacity: 1; }
+  }
+
+  .code-tool {
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg-muted);
+    border-radius: 0.375rem;
+    padding: 0.2rem 0.5rem;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+    white-space: nowrap;
+  }
+  .code-tool:hover {
+    color: var(--accent);
+    border-color: var(--accent-border);
+  }
+</style>

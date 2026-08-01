@@ -1,0 +1,129 @@
+---
+/**
+ * Self-check quiz at the end of a lesson.
+ *
+ * Answers are in the page source — this is a study aid, not an exam, and
+ * pretending otherwise on a static site would be dishonest. The value is the
+ * immediate feedback and the explanation, not secrecy.
+ */
+interface Question {
+  q: string;
+  options: string[];
+  /** Zero-based index of the correct option. */
+  answer: number;
+  explain: string;
+}
+
+interface Props {
+  questions: Question[];
+  title?: string;
+}
+
+const { questions, title = 'Check yourself' } = Astro.props;
+const id = `quiz-${Math.abs(questions.map((q) => q.q).join('').split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7))}`;
+---
+
+<section class="not-prose my-10 rounded-card border border-line bg-surface p-6" data-quiz id={id}>
+  <div class="flex items-center justify-between gap-4">
+    <h3 class="text-sm font-semibold uppercase tracking-[0.14em] text-subtle">{title}</h3>
+    <p class="font-mono text-xs text-subtle">
+      <span data-quiz-score>0</span>/{questions.length}
+    </p>
+  </div>
+
+  <ol class="mt-5 space-y-7">
+    {
+      questions.map((question, qi) => (
+        <li data-question={qi} data-answer={question.answer}>
+          <p class="text-[15px] font-medium leading-relaxed text-fg">{question.q}</p>
+
+          <div class="mt-3 space-y-1.5" role="group" aria-label={`Question ${qi + 1} options`}>
+            {question.options.map((option, oi) => (
+              <button
+                type="button"
+                data-option={oi}
+                class="quiz-option flex w-full items-start gap-3 rounded-lg border border-line px-3.5 py-2.5 text-left text-sm text-muted transition-colors hover:border-line-strong hover:bg-surface-hover"
+              >
+                <span class="mt-px font-mono text-[11px] text-subtle" aria-hidden="true">
+                  {String.fromCharCode(65 + oi)}
+                </span>
+                <span class="flex-1">{option}</span>
+                <span class="quiz-mark shrink-0 text-sm" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+
+          <p
+            class="quiz-explain mt-3 hidden rounded-lg border border-accent-border bg-accent-tint px-3.5 py-2.5 text-sm leading-relaxed text-muted"
+            role="status"
+          >
+            {question.explain}
+          </p>
+        </li>
+      ))
+    }
+  </ol>
+</section>
+
+<style>
+  .quiz-option[data-state='correct'] {
+    border-color: color-mix(in srgb, #059669 40%, transparent);
+    background: color-mix(in srgb, #10b981 8%, transparent);
+  }
+  .quiz-option[data-state='wrong'] {
+    border-color: color-mix(in srgb, #e11d48 35%, transparent);
+    background: color-mix(in srgb, #f43f5e 7%, transparent);
+  }
+  .quiz-option[data-state='correct'] .quiz-mark::after { content: '✓'; color: #059669; }
+  .quiz-option[data-state='wrong'] .quiz-mark::after { content: '✕'; color: #e11d48; }
+  :global(.dark) .quiz-option[data-state='correct'] .quiz-mark::after { color: #34d399; }
+  :global(.dark) .quiz-option[data-state='wrong'] .quiz-mark::after { color: #fb7185; }
+  .quiz-option[disabled] { cursor: default; }
+</style>
+
+<script>
+  function wireQuizzes() {
+    document.querySelectorAll<HTMLElement>('[data-quiz]').forEach((quiz) => {
+      if (quiz.dataset.wired) return;
+      quiz.dataset.wired = 'true';
+
+      let score = 0;
+      const scoreEl = quiz.querySelector('[data-quiz-score]');
+
+      quiz.querySelectorAll<HTMLElement>('[data-question]').forEach((question) => {
+        const correct = Number(question.dataset.answer);
+        const options = question.querySelectorAll<HTMLButtonElement>('[data-option]');
+        const explain = question.querySelector<HTMLElement>('.quiz-explain');
+
+        options.forEach((option) => {
+          option.addEventListener('click', () => {
+            // One attempt per question: lock the row once answered, so the
+            // score means something.
+            if (question.dataset.answered) return;
+            question.dataset.answered = 'true';
+
+            const chosen = Number(option.dataset.option);
+            const isRight = chosen === correct;
+            if (isRight) {
+              score += 1;
+              if (scoreEl) scoreEl.textContent = String(score);
+            }
+
+            options.forEach((other) => {
+              const index = Number(other.dataset.option);
+              other.disabled = true;
+              if (index === correct) other.dataset.state = 'correct';
+              else if (index === chosen) other.dataset.state = 'wrong';
+            });
+
+            option.setAttribute('aria-live', 'polite');
+            explain?.classList.remove('hidden');
+          });
+        });
+      });
+    });
+  }
+
+  wireQuizzes();
+  document.addEventListener('astro:page-load', wireQuizzes);
+</script>

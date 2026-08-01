@@ -151,6 +151,91 @@ const resources = defineCollection({
   }),
 });
 
+/* ==========================================================================
+   Learning Hub
+   --------------------------------------------------------------------------
+   Three levels: track → module → lesson.
+
+   Modules group lessons visually but deliberately do NOT appear in URLs
+   (/learning/matlab/variables, not /learning/matlab/foundations/variables).
+   That keeps paths short and means modules can be reorganised later without
+   breaking a single link.
+
+   Lesson filenames carry no numeric prefix — ordering lives in `order`, so a
+   lesson can be moved within its module without renaming the file and
+   invalidating its URL.
+   ========================================================================== */
+
+const TRACK_ICONS = [
+  'matrix',
+  'brackets',
+  'bus',
+  'sigma',
+  'convergence',
+  'feedback',
+  'waveform',
+  'descent',
+  'frames',
+  'book',
+] as const;
+
+const tracks = defineCollection({
+  loader: glob({ base: './src/content/tracks', pattern: '**/*.{md,mdx}' }),
+  schema: z.object({
+    title: z.string(),
+    tagline: z.string(),
+    description: z.string(),
+    icon: z.enum(TRACK_ICONS),
+    order: z.number(),
+    /** `planned` tracks render on the roadmap but aren't yet walkable. */
+    status: z.enum(['active', 'planned']),
+    /** Drives the default download extension for code blocks in this track. */
+    language: z.enum(['matlab', 'python', 'none']).default('none'),
+  }),
+});
+
+const modules = defineCollection({
+  loader: file('./src/content/modules.json'),
+  schema: z.object({
+    id: z.string(),
+    track: z.string(),
+    slug: z.string(),
+    title: z.string(),
+    description: z.string(),
+    order: z.number(),
+    /** Every module ends in something you build. */
+    project: z
+      .object({
+        title: z.string(),
+        description: z.string(),
+        capstone: z.boolean().default(false),
+      })
+      .optional(),
+  }),
+});
+
+const lessons = defineCollection({
+  loader: glob({ base: './src/content/lessons', pattern: '**/*.{md,mdx}' }),
+  schema: z.object({
+    title: z.string(),
+    track: z.string(),
+    /** Matches a `slug` in modules.json. */
+    module: z.string(),
+    order: z.number(),
+    description: z.string(),
+    objectives: z.array(z.string()).min(1),
+    /** Lesson ids within the same track — rendered as links, so typos show. */
+    prerequisites: z.array(z.string()).default([]),
+    estimatedMinutes: z.number().int().positive(),
+    difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
+    /** e.g. ['Symbolic Math Toolbox'] — badged so a lesson never dead-ends. */
+    toolboxes: z.array(z.string()).default([]),
+    tags: z.array(z.string()).default([]),
+    updated: z.coerce.date().optional(),
+    draft: z.boolean().default(false),
+  }),
+});
+
 const publications = defineCollection({
   loader: file('./src/content/publications.json'),
   schema: z.object({
@@ -176,4 +261,7 @@ export const collections = {
   learning,
   resources,
   publications,
+  tracks,
+  modules,
+  lessons,
 };

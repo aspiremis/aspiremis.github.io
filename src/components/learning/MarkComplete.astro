@@ -1,0 +1,71 @@
+---
+/**
+ * The button that records a lesson as done. Rendered in its "not done" state on
+ * the server; ProgressStore flips it on load if localStorage says otherwise.
+ */
+interface Props {
+  lessonId: string;
+}
+
+const { lessonId } = Astro.props;
+---
+
+<button
+  type="button"
+  class="mark-complete group inline-flex h-11 items-center gap-2.5 rounded-lg border border-line bg-surface px-5 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover"
+  data-mark-complete={lessonId}
+  data-lesson-tick={lessonId}
+  aria-pressed="false"
+>
+  <span
+    class="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-line-strong transition-colors"
+    aria-hidden="true"
+  >
+    <svg class="check h-3 w-3 opacity-0 transition-opacity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m5 12 5 5L20 7" />
+    </svg>
+  </span>
+  <span class="label-todo">Mark as complete</span>
+  <span class="label-done hidden">Completed</span>
+</button>
+
+<style>
+  .mark-complete.is-done {
+    border-color: var(--accent-border);
+    background: var(--accent-tint);
+    color: var(--accent);
+  }
+  .mark-complete.is-done span[aria-hidden] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-contrast);
+  }
+  .mark-complete.is-done .check { opacity: 1; }
+  .mark-complete.is-done .label-todo { display: none; }
+  .mark-complete.is-done .label-done { display: inline; }
+</style>
+
+<script>
+  function wireMarkComplete() {
+    document.querySelectorAll<HTMLButtonElement>('[data-mark-complete]').forEach((button) => {
+      if (button.dataset.wired) return;
+      button.dataset.wired = 'true';
+
+      button.addEventListener('click', () => {
+        const store = window.learnProgress;
+        if (!store) return;
+        const done = store.toggle(button.dataset.markComplete!);
+        button.setAttribute('aria-pressed', String(done));
+      });
+    });
+
+    // Keep aria-pressed truthful after ProgressStore paints the initial state.
+    document.querySelectorAll<HTMLButtonElement>('[data-mark-complete]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.classList.contains('is-done')));
+    });
+  }
+
+  wireMarkComplete();
+  document.addEventListener('learn:progress', wireMarkComplete);
+  document.addEventListener('astro:page-load', wireMarkComplete);
+</script>

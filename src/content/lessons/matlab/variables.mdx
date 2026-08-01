@@ -1,0 +1,265 @@
+---
+title: Variables and What MATLAB Actually Stores
+track: matlab
+module: foundations
+order: 3
+description: What happens in memory when you write V = 230, why double is the default, and how complex numbers work natively.
+objectives:
+  - Explain what a variable is in terms of names and stored values
+  - Predict the class and size of any simple assignment
+  - Work confidently with complex numbers for phasor arithmetic
+prerequisites: [getting-started]
+estimatedMinutes: 25
+difficulty: beginner
+tags: ['matlab', 'variables', 'data-types', 'complex-numbers']
+---
+
+You've already written `V = 230`. This lesson is about what MATLAB actually did.
+
+That sounds pedantic. It isn't: almost every confusing error message you'll meet in
+the next two years comes from a mismatch between what you *thought* was in a
+variable and what was actually there.
+
+## What a variable really is
+
+A variable is a **name bound to a stored value**. Two separate things.
+
+<Analogy>
+  Think of the workspace as a wall of labelled boxes.
+
+  `V = 230` means: find a box, put 230 in it, stick the label `V` on it. Writing
+  `V = 400` doesn't create a second box — it throws away the contents of the
+  existing one and puts 400 in. The old value is simply gone; MATLAB keeps no
+  history.
+
+  `W = V` makes a **new box** with a copy of the value. Change `V` afterwards and
+  `W` is unaffected, because they were only ever two boxes that happened to hold
+  the same number.
+</Analogy>
+
+This copy-on-assignment behaviour is worth internalising early. It is why you can
+pass a matrix to a function without worrying that the function will corrupt your
+original.
+
+## The default type: double
+
+Type `V = 230` and check the Workspace panel. MATLAB reports:
+
+```text
+Name      Size      Bytes    Class
+V         1x1       8        double
+```
+
+Three things it's telling you:
+
+**Size is `1x1`.** Not "a number" — a 1×1 *matrix*. Exactly as the last lesson
+promised.
+
+**Class is `double`.** A double-precision floating point number, 64 bits. MATLAB
+uses this for everything numeric unless told otherwise, and for engineering work
+that is almost always what you want: roughly 15–16 significant decimal digits.
+
+**Bytes is 8.** 64 bits. That matters when a matrix gets large — a 1000×1000
+double matrix is 8 MB.
+
+<Callout type="engineering">
+  Double precision gives about 16 significant digits. A per-unit voltage of
+  1.0234567 uses 8. You will effectively never run out of precision in
+  steady-state power system work — but you *can* run into trouble with
+  ill-conditioned matrices, where small errors get amplified. That's a
+  conditioning problem, not a precision one, and it's covered in the Numerical
+  Methods module.
+</Callout>
+
+## The types worth knowing now
+
+<Compare
+  headings={['Type', 'Use it for', 'Note']}
+  rows={[
+    { option: 'double', when: 'Essentially all engineering numbers', cost: 'The default', recommended: true },
+    { option: 'complex', when: 'Phasors, impedances, power', cost: 'Automatic — no special declaration' },
+    { option: 'logical', when: 'true/false, and results of comparisons', cost: 'Powers logical indexing later' },
+    { option: 'char / string', when: 'Bus names, file paths, labels', cost: "Use double quotes for strings" },
+    { option: 'int8 … int64', when: 'Rarely — counters where memory matters', cost: 'Integer division truncates' },
+  ]}
+/>
+
+You will use `double` and `complex` for almost everything. `logical` becomes
+important in the Programming module.
+
+## Complex numbers are native
+
+This is where MATLAB starts earning its place in a power systems degree. Complex
+numbers are not a library or a special type you have to opt into — they're built
+into the language.
+
+<CodeFile name="complex_basics.m">
+```matlab
+Z = 3 + 4i;              % impedance, ohms — 1i is the imaginary unit
+
+real(Z)                  % 3
+imag(Z)                  % 4
+abs(Z)                   % 5       — magnitude
+angle(Z)                 % 0.9273  — phase in RADIANS
+conj(Z)                  % 3 - 4i
+
+% Phasor form, the way you'd write it in a report
+mag = abs(Z);
+ang_deg = rad2deg(angle(Z));    % 53.13 degrees
+```
+</CodeFile>
+
+Note that `angle` returns **radians**. Every trigonometric function in MATLAB works
+in radians by default. Power system convention is degrees, so `rad2deg` and
+`deg2rad` will become reflexes — and there are degree-native variants (`sind`,
+`cosd`, `atan2d`) when that's cleaner.
+
+<CodeFile name="phasor_power.m" caption="A complete complex power calculation">
+```matlab
+% Single-phase load: 230 V at 0 degrees, drawing 5 A lagging by 30 degrees
+V = 230 * exp(1i * deg2rad(0));      % 230 + 0i
+I = 5   * exp(1i * deg2rad(-30));    % lagging => negative angle
+
+S = V * conj(I);                     % complex power, VA
+
+P = real(S);                         % watts
+Q = imag(S);                         % VAr
+pf = cos(angle(V) - angle(I));       % power factor
+
+fprintf('P = %.1f W, Q = %.1f VAr, pf = %.3f lagging\n', P, Q, pf);
+```
+</CodeFile>
+
+That `S = V * conj(I)` is the definition of complex power straight from your
+textbook, written once, with no manual splitting into real and imaginary parts.
+This is the payoff of a language where complex numbers are first-class.
+
+## Naming things
+
+MATLAB rules: start with a letter, then letters, digits and underscores only. Case
+matters — `V` and `v` are different variables.
+
+Conventions worth adopting now, because you'll be reading your own code in two
+years:
+
+```matlab
+V_base = 132e3;          % descriptive, units implied by name
+Z_line = 0.05 + 0.2i;    % underscore for subscripts, matching Z_line in a report
+n_buses = 14;            % n_ prefix for counts
+```
+
+Avoid single letters except where the mathematics genuinely uses them (`V`, `I`,
+`Z`, `Y` are fine and clearer than `voltage_value`). And never shadow a built-in —
+`sum`, `max`, `length`, `i`, `j`.
+
+## Common mistakes
+
+<Callout type="warning" title="Using i or j as a loop counter">
+  `for i = 1:10` is the most natural loop in the world, and in power systems code
+  it's a trap: `i` is the imaginary unit. Once reassigned, `3*i` means 3 times your
+  counter. Use `k`, `idx`, or `bus` instead, and write `1i` explicitly for the
+  imaginary unit.
+</Callout>
+
+<Callout type="warning" title="Assuming degrees">
+  `sin(30)` is not 0.5. It's the sine of 30 *radians*, which is −0.988. Either
+  convert with `deg2rad`, or use `sind(30)`. This bites everyone once — usually in
+  a fault calculation where the answer is wrong but not obviously so.
+</Callout>
+
+<Callout type="warning" title="Expecting the workspace to persist">
+  Variables live in memory only. Close MATLAB and they're gone. `save results.mat`
+  and `load results.mat` persist them — but the better habit is a script that can
+  recreate them from scratch.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What class and size?">
+  Predict the class and size of each, then check with `whos`.
+
+  ```matlab
+  a = 5;
+  b = 5 + 0i;
+  c = (3 > 2);
+  d = "Bus 14";
+  ```
+
+  <Solution>
+    - `a` → `1x1 double`
+    - `b` → `1x1 double`. **Not complex.** MATLAB drops a zero imaginary part
+      automatically. Add `0.0001i` and it becomes complex.
+    - `c` → `1x1 logical`. Comparisons return logicals, not numbers — though they
+      behave as 1 and 0 in arithmetic.
+    - `d` → `1x1 string`. Double quotes make a string object; single quotes would
+      make a `1x6 char` array instead.
+
+    The `b` case surprises people. If you need a value to stay complex regardless,
+    `complex(5, 0)` forces it.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Impedance to admittance">
+  A transmission line has impedance $Z = 0.05 + j0.25$ per unit. Compute its
+  admittance $Y = 1/Z$, and report the magnitude and angle of $Y$ in degrees.
+
+  <Solution>
+    ```matlab
+    Z = 0.05 + 0.25i;
+    Y = 1 / Z;
+
+    fprintf('Y = %.4f + %.4fi pu\n', real(Y), imag(Y));
+    fprintf('|Y| = %.4f pu at %.2f degrees\n', abs(Y), rad2deg(angle(Y)));
+    ```
+
+    `Y = 0.7692 - 3.8462i`, magnitude 3.9223 pu at −78.69°.
+
+    Two things to notice. The reciprocal of a complex number needs no special
+    handling — `1/Z` just works. And the angle is *negative*: an inductive
+    impedance becomes a capacitive-looking admittance, which is exactly right and
+    a useful sanity check when you build a Y-bus.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the class of the result of 3 > 2 in MATLAB?',
+      options: ['double', 'logical', 'int8', 'boolean'],
+      answer: 1,
+      explain:
+        'Comparisons produce logical values. They behave as 1 and 0 in arithmetic, but their class is logical — which is what makes logical indexing possible later.',
+    },
+    {
+      q: 'What does sin(30) return?',
+      options: [
+        '0.5, the sine of 30 degrees',
+        '−0.988, the sine of 30 radians',
+        'An error, because units are ambiguous',
+        '30',
+      ],
+      answer: 1,
+      explain:
+        'MATLAB trigonometry works in radians. Use sind(30) for degrees, or convert with deg2rad. This is a classic source of silently wrong fault calculations.',
+    },
+    {
+      q: 'After V = 230; W = V; V = 400; what is W?',
+      options: ['400', '230', 'An error', 'It depends on the order of evaluation'],
+      answer: 1,
+      explain:
+        'Assignment copies the value. W got its own copy of 230 and is unaffected by later changes to V — which is also why passing a matrix to a function is safe.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A variable is a **name bound to a copy of a value**. MATLAB's default is a 1×1
+  `double`, and complex numbers are native — which is why `S = V * conj(I)` reads
+  exactly like the textbook definition of complex power.
+</KeyIdea>
+
+## Further reading
+
+- `doc datatypes` — the full list of classes
+- `doc complex` — complex arithmetic in depth
+- Next: **vectors** — what happens when one box holds many numbers

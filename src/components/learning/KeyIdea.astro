@@ -1,0 +1,28 @@
+---
+/**
+ * The one sentence from a lesson worth remembering six months later.
+ *
+ * Marked up with `data-key-idea` so a future flashcard or revision-sheet
+ * generator can harvest these across every lesson without re-parsing prose.
+ */
+---
+
+<aside
+  class="not-prose my-8 rounded-card border border-accent-border bg-accent-tint px-6 py-5"
+  data-key-idea
+>
+  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-accent">Key idea</p>
+  <div class="key-body mt-2.5 text-[17px] font-medium leading-relaxed text-fg">
+    <slot />
+  </div>
+</aside>
+
+<style>
+  .key-body :global(p) { margin: 0.4rem 0; }
+  .key-body :global(p:first-child) { margin-top: 0; }
+  .key-body :global(p:last-child) { margin-bottom: 0; }
+  .key-body :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+  }
+</style>

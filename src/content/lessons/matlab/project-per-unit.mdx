@@ -1,0 +1,311 @@
+---
+title: 'Project: Per-Unit Base Converter'
+track: matlab
+module: foundations
+order: 8
+description: Build a working tool that converts impedances between bases, validated against a hand calculation. Uses every idea in this module and nothing beyond it.
+objectives:
+  - Combine variables, vectors, matrices and indexing into one working script
+  - Convert equipment impedances onto a common system base
+  - Validate a computed result against a hand calculation before trusting it
+prerequisites: [variables, vectors, matrices, indexing, array-operations]
+estimatedMinutes: 45
+difficulty: beginner
+tags: ['matlab', 'project', 'per-unit', 'power-systems']
+---
+
+Everything in this module has been building to something you can actually use.
+This is it.
+
+Per-unit conversion is the first genuinely tedious calculation in power system
+analysis: manufacturer data arrives on each machine's own rating, and none of it is
+usable until it's all on one common base. Doing it by hand for a dozen items is
+slow and error-prone. Doing it once in MATLAB means never doing it by hand again.
+
+## The problem
+
+Every piece of equipment is rated on its own base. A transformer's 8% impedance
+means 8% *on that transformer's* MVA and kV rating. Before any network calculation,
+everything must be referred to one system base.
+
+The conversion, derived in your Power System Analysis course:
+
+$$
+Z_{pu,new} = Z_{pu,old} \times \frac{S_{base,new}}{S_{base,old}} \times \left(\frac{V_{base,old}}{V_{base,new}}\right)^2
+$$
+
+Note the asymmetry — power scales linearly, voltage squared. That's because
+impedance base is $Z_{base} = V_{base}^2 / S_{base}$, so the conversion factor
+inherits exactly that shape. Getting the square on the wrong term is the classic
+error, and the reason this deserves a tested tool rather than mental arithmetic.
+
+<Callout type="engineering">
+  This isn't a toy exercise. Before any load flow, fault study or stability run,
+  somebody has to do this for every generator, transformer and line in the system.
+  On a real study that's hundreds of items. A script that does it correctly, once,
+  is genuinely worth having.
+</Callout>
+
+## What you're building
+
+A script that takes a list of equipment on mixed bases and returns everything on a
+common system base, with a validation check.
+
+Build it in stages. Get each one working before moving on.
+
+## Stage 1 — a single conversion
+
+<CodeFile name="per_unit_single.m">
+```matlab
+%% Stage 1: convert one impedance to a new base
+% A transformer rated 50 MVA, 132 kV, with 10% impedance on its own base.
+% Convert to a 100 MVA, 132 kV system base.
+
+Z_old   = 0.10;      % pu, on the equipment's own base
+S_old   = 50e6;      % VA  — equipment rating
+V_old   = 132e3;     % V   — equipment rating
+S_new   = 100e6;     % VA  — system base
+V_new   = 132e3;     % V   — system base
+
+Z_new = Z_old * (S_new / S_old) * (V_old / V_new)^2;
+
+fprintf('Z on equipment base: %.4f pu\n', Z_old);
+fprintf('Z on system base:    %.4f pu\n', Z_new);
+```
+</CodeFile>
+
+Run it. You should get **0.2000 pu**.
+
+Check that against intuition before going further: the system base is twice the
+equipment base in MVA, and the voltages match, so the per-unit impedance should
+double. It does. If a result doesn't match a sanity check on a case this simple,
+stop and find out why — that habit is worth more than the script.
+
+## Stage 2 — many items at once
+
+This is where vectorisation earns its place. Same arithmetic, no loop.
+
+<CodeFile name="per_unit_batch.m">
+```matlab
+%% Stage 2: convert a whole equipment list
+% Each row is one item; columns are Z_pu, S_rating (MVA), V_rating (kV)
+equipment = [0.10   50   132;    % transformer T1
+             0.08   75   132;    % transformer T2
+             0.12   25    33;    % transformer T3
+             0.20  100   132;    % generator  G1
+             0.15   60    11];   % generator  G2
+
+names = ["T1", "T2", "T3", "G1", "G2"];
+
+% System base
+S_base = 100;      % MVA
+V_base = 132;      % kV
+
+% Pull out the columns — indexing from the previous lesson
+Z_old = equipment(:, 1);
+S_old = equipment(:, 2);
+V_old = equipment(:, 3);
+
+% One expression, every item. Note the dots: same-size result.
+Z_new = Z_old .* (S_base ./ S_old) .* (V_old ./ V_base).^2;
+
+fprintf('%-6s %12s %12s\n', 'Item', 'Z own (pu)', 'Z sys (pu)');
+for k = 1:numel(Z_new)
+    fprintf('%-6s %12.4f %12.4f\n', names(k), Z_old(k), Z_new(k));
+end
+```
+</CodeFile>
+
+<Callout type="warning" title="Watch the dots">
+  `Z_old .* (S_base ./ S_old)` — every operation here is element-wise, because you
+  want one answer per item, the same size as the input. Drop a dot and you'll get
+  either an error or, worse, a matrix.
+</Callout>
+
+Notice T3 and G2. Their voltage ratings (33 kV and 11 kV) differ from the system
+base of 132 kV, so the squared voltage term does real work — their converted
+impedances change dramatically. That is exactly the case where hand calculation
+goes wrong.
+
+## Stage 3 — validate
+
+Never trust a script you haven't checked against something you computed
+independently.
+
+<CodeFile name="per_unit_validate.m">
+```matlab
+%% Stage 3: check against a hand calculation
+% T1 by hand:  0.10 * (100/50) * (132/132)^2 = 0.10 * 2 * 1 = 0.20
+
+expected_T1 = 0.20;
+actual_T1   = Z_new(1);
+
+tolerance = 1e-10;
+if abs(actual_T1 - expected_T1) < tolerance
+    fprintf('PASS: T1 = %.4f pu, matches hand calculation\n', actual_T1);
+else
+    fprintf('FAIL: T1 = %.6f, expected %.6f\n', actual_T1, expected_T1);
+end
+
+% A second check where the voltage term actually matters.
+% T3 by hand: 0.12 * (100/25) * (33/132)^2 = 0.12 * 4 * 0.0625 = 0.03
+expected_T3 = 0.03;
+if abs(Z_new(3) - expected_T3) < tolerance
+    fprintf('PASS: T3 = %.4f pu\n', Z_new(3));
+else
+    fprintf('FAIL: T3 = %.6f, expected %.6f\n', Z_new(3), expected_T3);
+end
+```
+</CodeFile>
+
+Two checks, deliberately chosen: one where the voltage ratio is 1 (so only the
+power term matters), and one where it isn't (so an error in the squared term would
+show). A test that can't distinguish a right answer from a wrong one isn't a test.
+
+<Callout type="tip" title="Why a tolerance rather than ==">
+  `actual == expected` on floating point numbers is unreliable — `0.1 + 0.2` is not
+  exactly `0.3` in binary floating point. Comparing against a small tolerance is the
+  correct way to test numerical results, and you'll meet the reason properly in the
+  Numerical Methods module.
+</Callout>
+
+## Stage 4 — make it useful
+
+Add base impedance and ohmic values, which is what you'll actually want when
+cross-checking against a datasheet.
+
+<CodeFile name="per_unit_complete.m">
+```matlab
+%% Stage 4: full converter with ohmic values
+S_base = 100;      % MVA
+V_base = 132;      % kV
+
+Z_base_sys = V_base^2 / S_base;         % ohms — note kV^2/MVA gives ohms directly
+
+Z_new    = Z_old .* (S_base ./ S_old) .* (V_old ./ V_base).^2;
+Z_ohms   = Z_new * Z_base_sys;          % scalar multiply — no dot needed
+
+fprintf('\nSystem base: %.0f MVA, %.0f kV  (Z_base = %.2f ohms)\n\n', ...
+        S_base, V_base, Z_base_sys);
+fprintf('%-6s %10s %10s %12s %12s\n', ...
+        'Item', 'S (MVA)', 'V (kV)', 'Z sys (pu)', 'Z (ohms)');
+fprintf('%s\n', repmat('-', 1, 54));
+
+for k = 1:numel(Z_new)
+    fprintf('%-6s %10.0f %10.0f %12.4f %12.2f\n', ...
+            names(k), S_old(k), V_old(k), Z_new(k), Z_ohms(k));
+end
+```
+</CodeFile>
+
+That `V_base^2 / S_base` with kV and MVA gives ohms directly — the units work out,
+which is a small piece of per-unit elegance worth noticing.
+
+`repmat('-', 1, 54)` builds a divider line by repeating a character. A small thing,
+but readable output makes a tool you'll actually use.
+
+## Extend it
+
+Once the above runs, try these. They're all reachable with what you know now.
+
+<Exercise n={1} kind="practice" title="Handle a mixed-voltage system">
+  Real systems have several voltage levels. Add a fourth column giving each item's
+  voltage *level* (say 132, 33 or 11 kV), and convert each onto the base voltage for
+  its own level rather than a single system voltage.
+
+  <Solution>
+    ```matlab
+    % Z_pu, S_MVA, V_rating_kV, level_kV
+    equipment = [0.10  50  132  132;
+                 0.08  75  132  132;
+                 0.12  25   33   33;
+                 0.20 100  132  132;
+                 0.15  60   11   11];
+
+    V_level = equipment(:, 4);
+    Z_new = equipment(:,1) .* (S_base ./ equipment(:,2)) ...
+                           .* (equipment(:,3) ./ V_level).^2;
+    ```
+
+    With correctly chosen voltage bases — in the ratio of the transformer turns
+    ratios — the voltage term becomes 1 for equipment rated at its own level, and
+    transformers vanish from the impedance diagram as ideal elements. That is the
+    real payoff of per-unit, and it's why base selection isn't arbitrary.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Complex impedances">
+  Equipment data often gives R and X separately. Extend the tool to accept complex
+  impedances and report magnitude and X/R ratio.
+
+  <Solution>
+    ```matlab
+    Z_old_complex = [0.01+0.10i; 0.008+0.08i; 0.015+0.12i];
+
+    Z_new_complex = Z_old_complex .* (S_base ./ S_old) .* (V_old ./ V_base).^2;
+
+    for k = 1:numel(Z_new_complex)
+        R = real(Z_new_complex(k));
+        X = imag(Z_new_complex(k));
+        fprintf('%s: %.4f + j%.4f pu,  |Z| = %.4f,  X/R = %.1f\n', ...
+                names(k), R, X, abs(Z_new_complex(k)), X/R);
+    end
+    ```
+
+    The conversion arithmetic is unchanged — complex numbers are native, so the same
+    expression works. That's the lesson from the variables lesson paying off.
+
+    X/R ratio is worth reporting: it tells you how inductive the element is, and for
+    a transmission line a value near 1 is a warning that transmission-style
+    assumptions may not hold. That connects directly to the fast-decoupled load flow
+    problem you'll meet later.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="Add input validation">
+  What should happen if someone passes a negative MVA rating, or a zero voltage?
+
+  <Solution>
+    ```matlab
+    assert(all(S_old > 0), 'MVA ratings must be positive');
+    assert(all(V_old > 0), 'Voltage ratings must be positive');
+    assert(all(Z_old >= 0), 'Per-unit impedance magnitudes cannot be negative');
+    ```
+
+    A zero voltage would produce `Inf` or `NaN` and propagate silently through
+    everything downstream. Failing immediately with a clear message is far better
+    than producing a table full of `NaN` and working out why an hour later.
+
+    Validating inputs at the boundary is a habit worth forming now — it's the same
+    discipline as checking `converged` after an OpenDSS solve.
+  </Solution>
+</Exercise>
+
+## What you built
+
+A tool that:
+
+- converts any number of items to a common base in one vectorised expression
+- reports both per-unit and ohmic values
+- validates itself against hand calculations
+- fails clearly on bad input
+
+Every technique in it came from this module: variables and complex numbers,
+vectors, matrix column extraction, indexing, and element-wise operations. No loops
+over data, no functions yet — those arrive in the Programming module, where this
+script becomes a proper reusable function.
+
+<KeyIdea>
+  The tool is not the point. **Validating it against a hand calculation is.** Any
+  script can produce numbers; one you've checked against an answer you derived
+  independently is one you can build on. Make that the first thing you do, not the
+  last.
+</KeyIdea>
+
+## Further reading
+
+- Grainger & Stevenson, *Power System Analysis*, Chapter 1 — the per-unit derivation
+- Your own [note on the per-unit system](/notes/per-unit-system), which covers why
+  the transformer disappears
+- Next module: **Programming** — turning this script into a function you can call
+  from anywhere, with loops, conditionals and real debugging

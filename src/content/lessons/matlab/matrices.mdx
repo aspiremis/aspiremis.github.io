@@ -1,0 +1,321 @@
+---
+title: Matrices, and Why MATLAB Is Matrix-First
+track: matlab
+module: foundations
+order: 5
+description: Building two-dimensional arrays, the constructor functions you'll use constantly, and why matrix multiplication is the default operator.
+objectives:
+  - Build matrices by hand and with zeros, ones, eye and diag
+  - Explain why A*B is matrix multiplication rather than element-wise
+  - Solve a linear system with the backslash operator
+prerequisites: [vectors]
+estimatedMinutes: 35
+difficulty: beginner
+tags: ['matlab', 'matrices', 'linear-algebra', 'ybus']
+---
+
+A vector is a list. A matrix is a grid — and it is the object the whole language is
+named after.
+
+For power systems this is not an abstract data structure. A Y-bus *is* a matrix. A
+Jacobian *is* a matrix. The transformation to symmetrical components *is* a matrix.
+Getting comfortable here is most of the battle.
+
+## Building them
+
+<CodeFile name="making_matrices.m">
+```matlab
+% Semicolons separate rows, spaces or commas separate columns
+A = [1 2 3;
+     4 5 6;
+     7 8 9];          % 3x3
+
+size(A)               % 3 3
+size(A, 1)            % 3  — number of rows
+size(A, 2)            % 3  — number of columns
+numel(A)              % 9  — total elements
+```
+</CodeFile>
+
+Laying the rows out on separate lines like that is not required — `[1 2 3; 4 5 6]`
+is identical — but for anything bigger than 2×2 it makes the structure visible, and
+you will be reading this code again.
+
+## The constructor functions
+
+You'll use these constantly, and `zeros` most of all.
+
+<CodeFile name="constructors.m">
+```matlab
+zeros(3)          % 3x3 of zeros
+zeros(2, 5)       % 2x5 of zeros
+ones(3, 1)        % 3x1 column of ones
+eye(4)            % 4x4 identity matrix
+diag([1 2 3])     % 3x3 with 1,2,3 on the diagonal, zeros elsewhere
+
+n = 14;
+Y = zeros(n, n);  % pre-allocate a 14-bus admittance matrix
+```
+</CodeFile>
+
+That last line is the pattern you'll use every time you build a Y-bus: allocate the
+full matrix of zeros first, then fill in the entries branch by branch. Pre-allocating
+is both faster and clearer about intent.
+
+`diag` has a useful double life:
+
+```matlab
+diag([1 2 3])     % vector IN  -> matrix OUT (puts it on the diagonal)
+diag(A)           % matrix IN  -> vector OUT (extracts the diagonal)
+```
+
+Extracting the diagonal of a Y-bus gives you the self-admittances — a genuinely
+common operation.
+
+## Why `*` means matrix multiplication
+
+<Analogy>
+  Element-wise multiplication answers "what if I scale each thing independently?"
+
+  Matrix multiplication answers **"what happens to the whole system?"** Each output
+  is a weighted combination of *all* the inputs. That's what makes it the right
+  default in a language built for linear systems.
+</Analogy>
+
+The definition: for $C = AB$, each entry is a row of $A$ dotted with a column of $B$:
+
+$$
+C_{ij} = \sum_{k} A_{ik} B_{kj}
+$$
+
+Which requires the **inner dimensions to agree**: an $m \times n$ times an
+$n \times p$ gives $m \times p$. The two `n`s must match.
+
+```matlab
+A = [1 2; 3 4];      % 2x2
+B = [5; 6];          % 2x1
+A * B                % 2x1  -> [17; 39]     inner dims 2 and 2 agree
+
+C = [1 2 3];         % 1x3
+A * C                % ERROR: inner dims 2 and 1 don't agree
+```
+
+<Callout type="engineering">
+  This is exactly the network equation. For an $n$-bus system:
+
+  $$I = Y V$$
+
+  $Y$ is $n \times n$, $V$ is $n \times 1$, so $I$ comes out $n \times 1$. Each
+  injected current depends on *every* bus voltage, weighted by the admittances —
+  which is the physics, expressed as one matrix product.
+
+  Written element-wise it would be a double loop. Written as `I = Y * V` it is one
+  line that looks like the textbook.
+</Callout>
+
+## The backslash operator
+
+Given $I = YV$ and knowing $I$ and $Y$, how do you get $V$?
+
+Mathematically $V = Y^{-1}I$. In MATLAB you should **not** write `inv(Y) * I`.
+
+```matlab
+V = Y \ I;        % backslash: "solve Y*V = I for V"
+```
+
+Backslash is one of the most important operators in the language. It doesn't
+compute an inverse; it examines the matrix, picks an appropriate algorithm — LU
+factorisation, Cholesky if symmetric positive definite, a sparse solver if sparse —
+and solves the system directly.
+
+<Compare
+  headings={['Approach', 'Use it when', 'Why']}
+  rows={[
+    { option: 'Y \\ I', when: 'You want to solve Y·V = I', cost: 'Faster and more accurate', recommended: true },
+    { option: 'inv(Y) * I', when: 'Almost never', cost: 'Slower, less accurate' },
+    { option: 'inv(Y)', when: 'You genuinely need the inverse matrix itself, e.g. Z-bus', cost: 'Legitimate but rare' },
+  ]}
+/>
+
+Computing an explicit inverse does more arithmetic and accumulates more rounding
+error than solving directly. For an ill-conditioned matrix — which power system
+Jacobians can be near a voltage collapse — the difference is not academic.
+
+<Callout type="tip" title="Read the slash as a fraction">
+  `Y \ I` is "I divided by Y, with Y on the left" — matching $Y^{-1}I$. The
+  backslash leans toward the matrix that's doing the dividing. There's a forward
+  slash too: `I / Y` solves $VY = I$, with the matrix on the right.
+</Callout>
+
+## Useful matrix functions
+
+```matlab
+A'            % conjugate transpose
+A.'           % plain transpose
+det(A)        % determinant
+rank(A)       % rank
+trace(A)      % sum of the diagonal
+eig(A)        % eigenvalues — the heart of stability analysis
+cond(A)       % condition number: how much errors get amplified
+inv(A)        % inverse (use sparingly)
+```
+
+`cond` deserves a note now. A condition number near 1 is well behaved; a very large
+one means small input errors produce large output errors. When a load flow refuses
+to converge, `cond` of the Jacobian is one of the first diagnostics worth checking.
+
+## A worked example: a small Y-bus
+
+<CodeFile name="ybus_3bus.m" caption="Building a 3-bus admittance matrix by hand">
+```matlab
+% Three buses, three lines. Impedances in per unit.
+z12 = 0.02 + 0.06i;
+z13 = 0.08 + 0.24i;
+z23 = 0.06 + 0.18i;
+
+y12 = 1/z12;   y13 = 1/z13;   y23 = 1/z23;
+
+Y = zeros(3, 3);
+
+% Diagonal: sum of all admittances connected to that bus
+Y(1,1) = y12 + y13;
+Y(2,2) = y12 + y23;
+Y(3,3) = y13 + y23;
+
+% Off-diagonal: negative of the admittance between the pair
+Y(1,2) = -y12;   Y(2,1) = -y12;
+Y(1,3) = -y13;   Y(3,1) = -y13;
+Y(2,3) = -y23;   Y(3,2) = -y23;
+
+disp('Y-bus (pu):');
+disp(Y);
+
+% Sanity check: with no shunts, every row should sum to zero
+fprintf('Max row sum (should be ~0): %.2e\n', max(abs(sum(Y, 2))));
+```
+</CodeFile>
+
+That row-sum check is a real habit worth forming. With no shunt elements, each row
+of a Y-bus sums to zero by construction — so if it doesn't, you have a stamping
+error. Building the check into the script means you find out immediately rather
+than three steps later.
+
+`sum(Y, 2)` sums along dimension 2 (across columns, giving one value per row).
+`sum(Y, 1)` would sum down columns. For matrices, most reducing functions take a
+dimension argument.
+
+## Common mistakes
+
+<Callout type="warning" title="Using * when you meant .*">
+  With two same-sized matrices, `A * B` is a valid matrix product and will give you
+  a **wrong answer silently** rather than an error. This is nastier than the vector
+  case, where dimensions usually don't line up and MATLAB complains. Be deliberate.
+</Callout>
+
+<Callout type="warning" title="Reaching for inv()">
+  `inv(Y) * I` is what the mathematics looks like, so it's the natural thing to
+  write. Use `Y \ I` instead. Reserve `inv` for when the inverse matrix itself is
+  the thing you need.
+</Callout>
+
+<Callout type="warning" title="Forgetting to pre-allocate">
+  Building a matrix by assigning `Y(i,j)` inside a loop without `Y = zeros(n,n)`
+  first makes MATLAB resize repeatedly. For a 14-bus system nobody notices; for
+  1000 buses it dominates the runtime.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Dimensions">
+  For `A` of size 3×4 and `B` of size 4×2, which of these work, and what size is
+  the result?
+
+  ```matlab
+  A * B
+  B * A
+  A .* B
+  A' * A
+  ```
+
+  <Solution>
+    - `A * B` → **3×2**. Inner dimensions 4 and 4 agree.
+    - `B * A` → **error**. Inner dimensions 2 and 3 don't agree. Matrix
+      multiplication is not commutative — order matters.
+    - `A .* B` → **error**. Element-wise needs identical sizes; 3×4 and 4×2 aren't.
+    - `A' * A` → **4×4**. `A'` is 4×3, times 3×4 gives 4×4. This pattern appears
+      constantly in least-squares fitting.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Solve a small network">
+  Using the 3-bus Y-bus from the worked example, and injected currents
+
+  $$I = \begin{bmatrix} 1.0 - 0.3i \\ -0.6 + 0.2i \\ -0.4 + 0.1i \end{bmatrix} \text{pu}$$
+
+  find the bus voltages. Use backslash, not `inv`.
+
+  <Solution>
+    ```matlab
+    I = [1.0 - 0.3i; -0.6 + 0.2i; -0.4 + 0.1i];
+    V = Y \ I;
+
+    for k = 1:3
+        fprintf('Bus %d: %.4f pu at %.2f deg\n', ...
+                k, abs(V(k)), rad2deg(angle(V(k))));
+    end
+    ```
+
+    MATLAB may warn that the matrix is singular or badly conditioned — and that is
+    physically correct, not a bug. A Y-bus with no connection to ground is singular:
+    voltages are only defined relative to a reference. In a real load flow one bus
+    is designated the slack bus and its row and column are removed, which makes the
+    remaining system solvable.
+
+    Meeting that here is useful. The mathematics is telling you something true about
+    the physics.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why should you write Y \\ I rather than inv(Y) * I?',
+      options: [
+        'They are identical; backslash is just shorter',
+        'Backslash solves directly — faster and more numerically accurate',
+        'inv() does not work on complex matrices',
+        'Backslash automatically handles singular matrices',
+      ],
+      answer: 1,
+      explain:
+        'Backslash picks an appropriate factorisation and solves directly, doing less arithmetic and accumulating less rounding error. On an ill-conditioned Jacobian the difference is real.',
+    },
+    {
+      q: 'A is 3x4 and B is 4x2. What is the size of A*B?',
+      options: ['3x2', '4x4', '3x4', 'It is an error'],
+      answer: 0,
+      explain:
+        'Inner dimensions (4 and 4) must agree and vanish; the outer dimensions (3 and 2) survive. So 3×4 times 4×2 gives 3×2.',
+    },
+    {
+      q: 'With no shunt elements, what should each row of a Y-bus sum to?',
+      options: ['One', 'Zero', 'The diagonal element', 'It depends on the system size'],
+      answer: 1,
+      explain:
+        'The diagonal is the sum of admittances at that bus, and the off-diagonals are their negatives — so they cancel exactly. It makes a cheap and effective unit test.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A matrix describes how a **whole system** couples together, and `*` is matrix
+  multiplication because that coupling is the default question. `I = Y*V` and
+  `V = Y\I` are the two operations that most of power system analysis is built on.
+</KeyIdea>
+
+## Further reading
+
+- `doc mldivide` — what backslash actually does, algorithm by algorithm
+- Cleve Moler, *Numerical Computing with MATLAB*, Chapter 2 — free online, and the
+  best explanation of linear systems in MATLAB there is
+- Next: **indexing** — reaching into a matrix to read and change parts of it

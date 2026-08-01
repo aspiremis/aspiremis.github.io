@@ -1,0 +1,45 @@
+---
+/**
+ * Wraps a fenced code block to give it a filename header and a download
+ * button. Use it when the code is something you'd actually save and run;
+ * plain fenced blocks (snippets, output) don't need it.
+ *
+ *   <CodeFile name="per_unit.m">
+ *   ```matlab
+ *   V_base = 132e3;
+ *   ```
+ *   </CodeFile>
+ */
+interface Props {
+  name: string;
+  caption?: string;
+}
+
+const { name, caption } = Astro.props;
+---
+
+<figure class="not-prose my-6" data-code-file={name}>
+  <figcaption
+    class="flex items-center gap-2 rounded-t-card border border-b-0 border-line bg-bg-subtle px-4 py-2 font-mono text-[11px] text-subtle"
+  >
+    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" />
+    </svg>
+    {name}
+    {caption && <span class="ml-auto font-sans normal-case tracking-normal">{caption}</span>}
+  </figcaption>
+
+  <div class="code-file-body">
+    <slot />
+  </div>
+</figure>
+
+<style>
+  /* Square off the top corners so the block reads as one unit with its
+     filename header. */
+  .code-file-body :global(pre) {
+    margin: 0 !important;
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+  }
+</style>

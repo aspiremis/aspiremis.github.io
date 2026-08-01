@@ -1,0 +1,318 @@
+---
+title: Vectors
+track: matlab
+module: foundations
+order: 4
+description: Holding many numbers under one name, why the colon operator matters more than it looks, and the difference between a row and a column.
+objectives:
+  - Create vectors by listing, by colon, and by linspace
+  - Explain why row and column orientation matters
+  - Use element-wise arithmetic across a whole vector without a loop
+prerequisites: [variables]
+estimatedMinutes: 30
+difficulty: beginner
+tags: ['matlab', 'vectors', 'vectorisation']
+---
+
+A variable holding one number is useful. A variable holding a whole *set* of
+numbers — twenty-four hourly load values, fourteen bus voltages — is where MATLAB
+starts being worth learning.
+
+## The problem vectors solve
+
+Suppose you have hourly demand for a day and want the peak. Without vectors you'd
+need twenty-four separate variables and twenty-three comparisons. It works, and it
+doesn't scale to a year of data.
+
+<Analogy>
+  A single variable is a **labelled box**. A vector is a **labelled shelf** —
+  one name, many numbered slots, all reachable by position.
+
+  The crucial part isn't the storage. It's that you can say "add 5 to
+  everything on the shelf" as a single instruction, instead of opening each box.
+</Analogy>
+
+## Three ways to make one
+
+<CodeFile name="making_vectors.m">
+```matlab
+% 1. List the values — spaces or commas separate columns
+loads = [42 55 61 58 47];
+
+% 2. The colon operator: start : step : stop
+hours     = 0:23;         % 0 1 2 ... 23        (step defaults to 1)
+even_bus  = 2:2:14;       % 2 4 6 8 10 12 14
+countdown = 10:-1:1;      % 10 9 8 ... 1
+
+% 3. linspace: n points evenly spaced between two ends, inclusive
+angles = linspace(0, 360, 13);   % 13 points, every 30 degrees
+```
+</CodeFile>
+
+**Colon versus linspace** trips people up. Use the colon when you know the *step*;
+use `linspace` when you know how many *points* you want.
+
+```matlab
+0:0.1:1        % step 0.1 — but is the last element exactly 1.0? (floating point)
+linspace(0,1,11)  % 11 points, first exactly 0, last exactly 1. Guaranteed.
+```
+
+For plotting an axis, `linspace` is the safer habit, because it guarantees the
+endpoint.
+
+## Rows and columns are different
+
+This is the part that causes real errors later, so it's worth being precise.
+
+```matlab
+r = [1 2 3];      % 1x3 — a ROW vector.    Space/comma separates columns
+c = [1; 2; 3];    % 3x1 — a COLUMN vector. Semicolon starts a new row
+c2 = [1 2 3]';    % 3x1 — transpose of a row
+```
+
+<Callout type="engineering">
+  In power system equations, quantities are **column** vectors. $I = YV$ only makes
+  sense if $V$ is $n \times 1$: an $n \times n$ matrix times an $n \times 1$ column
+  gives an $n \times 1$ column.
+
+  Hand a row vector to that expression and MATLAB will refuse with a dimension
+  error. That error is doing you a favour — it means the mathematics didn't line
+  up.
+</Callout>
+
+<Callout type="warning" title="' is the complex-conjugate transpose">
+  For real vectors `'` and `.'` do the same thing. For **complex** vectors they do
+  not: `'` transposes *and conjugates*, `.'` transposes only.
+
+  ```matlab
+  v = [1+2i, 3-1i];
+  v'      % 1-2i ; 3+1i   <- conjugated
+  v.'     % 1+2i ; 3-1i   <- not conjugated
+  ```
+
+  With phasors this matters constantly. If you want a plain transpose of complex
+  data, you almost always want `.'`.
+</Callout>
+
+## Arithmetic without loops
+
+Here is the idea that makes MATLAB MATLAB.
+
+<CodeFile name="vector_arithmetic.m">
+```matlab
+loads_kW = [42 55 61 58 47];
+
+loads_MW  = loads_kW / 1000;       % divides EVERY element
+shifted   = loads_kW + 10;         % adds 10 to EVERY element
+doubled   = loads_kW * 2;          % scalar multiply, every element
+
+% Two vectors of the same size, element by element
+V = [230 228 231 229];
+I = [ 10  12  11  13];
+P = V .* I;                        % note the DOT — element-wise
+```
+</CodeFile>
+
+No loop. One line applies to the whole vector. This is called **vectorisation**,
+and it is both faster and easier to read than the equivalent loop.
+
+The `.*` is the operator to be careful with. `V * I` would attempt *matrix*
+multiplication of a 1×4 by a 1×4, which is undefined, and MATLAB will say so. You
+want `V .* I` — multiply corresponding elements.
+
+<Callout type="tip" title="Read the dot as 'element-wise'">
+  `.*`, `./`, `.^` all mean "do this to corresponding elements". Without the dot,
+  `*`, `/` and `^` are matrix operations. Say "dot times" in your head as you type
+  it and this stops being a source of bugs within a week.
+</Callout>
+
+## Functions that reduce a vector
+
+```matlab
+loads = [42 55 61 58 47];
+
+sum(loads)         % 263
+mean(loads)        % 52.6
+max(loads)         % 61
+min(loads)         % 42
+length(loads)      % 5    — number of elements
+numel(loads)       % 5    — same here; differs for matrices
+sort(loads)        % 42 47 55 58 61
+
+[peak, when] = max(loads);   % 61, and its position: 3
+```
+
+That last form is worth noting now: many MATLAB functions return a second output
+if you ask for it. `max` gives you the value *and* where it occurred — which for a
+load curve is exactly the question "what was the peak, and when?"
+
+## Visualising
+
+<CodeFile name="plot_load.m">
+```matlab
+hours = 0:23;
+load_MW = 40 + 15*sin((hours - 6) * pi/12) + 3*rand(1,24);
+
+plot(hours, load_MW, '-o', 'LineWidth', 1.4);
+xlabel('Hour of day');
+ylabel('Demand (MW)');
+title('Daily load curve');
+grid on;
+xlim([0 23]);
+```
+</CodeFile>
+
+`plot(x, y)` needs `x` and `y` to have the same number of elements. When a plot
+fails with a dimension error, check `length` of both — it's almost always an
+off-by-one from a colon expression.
+
+## Common mistakes
+
+<Callout type="warning" title="Forgetting the dot">
+  `V * I` on two same-sized row vectors gives *Incorrect dimensions for matrix
+  multiplication*. You wanted `V .* I`. This is the single most common MATLAB
+  error, and the error message is genuinely telling you what's wrong.
+</Callout>
+
+<Callout type="warning" title="Growing a vector inside a loop">
+  ```matlab
+  for k = 1:10000
+      result(k) = k^2;    % result grows by one element each pass
+  end
+  ```
+  This works and is slow: MATLAB reallocates memory every iteration. Either
+  vectorise it — `result = (1:10000).^2;` — or pre-allocate with
+  `result = zeros(1,10000);` first. The Editor will underline this for you.
+</Callout>
+
+<Callout type="warning" title="Assuming 0:0.1:1 ends at exactly 1">
+  Floating point steps don't always land on the endpoint. Use `linspace` when the
+  final value must be exact.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Sizes and values">
+  Predict the size and contents of each before running.
+
+  ```matlab
+  a = 1:5;
+  b = 0:0.5:2;
+  c = linspace(0, 10, 5);
+  d = (1:3)';
+  ```
+
+  <Solution>
+    - `a` → `1x5`, `[1 2 3 4 5]`
+    - `b` → `1x5`, `[0 0.5 1 1.5 2]`
+    - `c` → `1x5`, `[0 2.5 5 7.5 10]` — five points, so four gaps of 2.5
+    - `d` → `3x1`, a column
+
+    The `c` case is where `linspace` intuition forms: *n* points means *n−1*
+    intervals.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Load factor">
+  Given hourly demand for a day, compute the **load factor** — average demand
+  divided by peak demand — and report it as a percentage.
+
+  ```matlab
+  demand = [38 35 34 33 34 37 45 52 58 61 60 57 ...
+            55 54 56 59 63 68 66 60 54 48 43 40];
+  ```
+
+  <Solution>
+    ```matlab
+    demand = [38 35 34 33 34 37 45 52 58 61 60 57 ...
+              55 54 56 59 63 68 66 60 54 48 43 40];
+
+    average = mean(demand);
+    [peak, peak_hour] = max(demand);
+    load_factor = average / peak;
+
+    fprintf('Average: %.1f MW\n', average);
+    fprintf('Peak:    %.1f MW at hour %d\n', peak, peak_hour - 1);
+    fprintf('Load factor: %.1f%%\n', load_factor * 100);
+    ```
+
+    Average 50.4 MW, peak 68 MW at hour 17, load factor 74.1%.
+
+    Note `peak_hour - 1`: MATLAB indexes from 1, but hours run 0–23, so position 18
+    is hour 17. Off-by-one between array position and physical meaning is a
+    permanent hazard — being explicit about it in the `fprintf` is a good habit.
+
+    Also note `...` — the line continuation operator, for wrapping a long line
+    readably.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="debug" title="Find the bug">
+  This should convert a set of line impedances to admittances, but errors. Why?
+
+  ```matlab
+  Z = [0.05+0.2i, 0.03+0.15i, 0.08+0.3i];
+  Y = 1 / Z;
+  ```
+
+  <Solution>
+    `1 / Z` asks MATLAB to solve a linear system — matrix right division — not to
+    take reciprocals. With a 1×3 it can't do what you meant.
+
+    ```matlab
+    Y = 1 ./ Z;     % element-wise reciprocal
+    ```
+
+    The dot again. The error message mentions matrix dimensions, which is the clue:
+    if you didn't intend a matrix operation, you're missing a dot.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'How many elements does linspace(0, 100, 5) produce?',
+      options: ['4', '5', '20', '100'],
+      answer: 1,
+      explain:
+        'The third argument is the number of points, not the step. Five points: 0, 25, 50, 75, 100 — four intervals between them.',
+    },
+    {
+      q: "For a complex vector v, what is the difference between v' and v.'?",
+      options: [
+        'No difference',
+        "v' also takes the complex conjugate; v.' transposes only",
+        "v.' also conjugates; v' transposes only",
+        "v' only works on real vectors",
+      ],
+      answer: 1,
+      explain:
+        "The apostrophe is the conjugate transpose. With phasors this changes the sign of every angle — usually not what you want, so reach for .' when working with complex data.",
+    },
+    {
+      q: 'Why does [1 2 3] * [4 5 6] fail?',
+      options: [
+        'Vectors cannot be multiplied in MATLAB',
+        'It attempts matrix multiplication of 1x3 by 1x3, which is undefined',
+        'The vectors are different lengths',
+        'You must use the multiply() function',
+      ],
+      answer: 1,
+      explain:
+        'Bare * means matrix multiplication, and 1×3 times 1×3 has incompatible inner dimensions. Use .* for element-wise, or transpose one operand for a dot product.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A vector lets you name many values at once, and **operate on all of them in one
+  expression**. That's vectorisation, and it is the habit that separates MATLAB
+  written well from MATLAB written like C. When you catch yourself about to write a
+  loop, ask whether one line would do.
+</KeyIdea>
+
+## Further reading
+
+- `doc colon` — the colon operator in full
+- `doc linspace`, `doc logspace`
+- Next: **matrices** — what happens when the shelf becomes a grid

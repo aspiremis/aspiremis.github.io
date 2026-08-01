@@ -1,0 +1,341 @@
+---
+title: Element-wise vs Matrix Operations
+track: matlab
+module: foundations
+order: 7
+description: The dot operator — why A*B and A.*B are different, when each is right, and how broadcasting quietly saves you loops.
+objectives:
+  - Choose correctly between * and .* in any expression
+  - Explain what broadcasting does and when it applies
+  - Recognise the error messages that point at a missing dot
+prerequisites: [matrices, indexing]
+estimatedMinutes: 30
+difficulty: beginner
+tags: ['matlab', 'operators', 'broadcasting', 'vectorisation']
+---
+
+This is the lesson that prevents the most common MATLAB bug there is.
+
+You've met the dot already. Now it gets its own lesson, because choosing between
+`*` and `.*` correctly is the difference between code that computes what you meant
+and code that computes something plausible and wrong.
+
+## Two genuinely different questions
+
+<Analogy>
+  You have five feeders, each with a voltage and a current.
+
+  **"What power does each feeder carry?"** — five separate multiplications, one per
+  feeder, five answers. That's **element-wise**: `P = V .* I`.
+
+  **"How does the whole network respond to these injections?"** — every output
+  depends on every input, combined through the network. That's **matrix
+  multiplication**: `I = Y * V`.
+
+  They aren't two syntaxes for one idea. They're two different questions, and the
+  dot is how you say which one you're asking.
+</Analogy>
+
+## The operators
+
+<Compare
+  headings={['Operator', 'Meaning', 'Requires']}
+  rows={[
+    { option: 'A .* B', when: 'Multiply corresponding elements', cost: 'Same size (or broadcastable)', recommended: true },
+    { option: 'A * B', when: 'Matrix product — rows times columns', cost: 'Inner dimensions agree' },
+    { option: 'A ./ B', when: 'Divide corresponding elements', cost: 'Same size' },
+    { option: 'A / B', when: 'Solve X·B = A', cost: 'Dimensions agree' },
+    { option: 'A .^ 2', when: 'Square every element', cost: 'Any size' },
+    { option: 'A ^ 2', when: 'A·A — the matrix squared', cost: 'A must be square' },
+  ]}
+/>
+
+`+` and `-` need no dot: addition is element-wise either way, so there's nothing to
+disambiguate.
+
+<CodeFile name="dot_vs_no_dot.m">
+```matlab
+A = [1 2; 3 4];
+B = [5 6; 7 8];
+
+A .* B      % [ 5 12; 21 32]   — element by element
+A *  B      % [19 22; 43 50]   — matrix product
+
+A .^ 2      % [ 1  4;  9 16]   — each element squared
+A ^  2      % [ 7 10; 15 22]   — A*A
+```
+</CodeFile>
+
+**Both are valid here.** Neither errors. That's the danger — on square matrices of
+the same size, forgetting the dot gives you a wrong number rather than a complaint.
+
+## Where MATLAB does warn you
+
+With vectors, the shapes usually don't line up:
+
+```matlab
+V = [230 228 231];    % 1x3
+I = [ 10  12  11];    % 1x3
+
+V .* I     % [2300 2736 2541]
+V *  I     % Error: Incorrect dimensions for matrix multiplication.
+```
+
+The error message is precise, and it's telling you exactly the right thing. When
+you see *Incorrect dimensions for matrix multiplication*, the fix is almost always a
+missing dot — not a reshape.
+
+<Callout type="tip" title="A rule that works">
+  If the answer should be **the same size as the inputs**, you want the dot.
+
+  If the answer should be **a different shape** — a system response, a projection, a
+  transformation — you want the bare operator.
+</Callout>
+
+## Dot products and outer products
+
+Transposing changes which one you get, and this is worth being deliberate about:
+
+```matlab
+a = [1 2 3];      % 1x3
+b = [4 5 6];      % 1x3
+
+a * b'      % 32          — 1x3 times 3x1 = 1x1. The DOT PRODUCT.
+a' * b      % 3x3 matrix  — 3x1 times 1x3. The OUTER PRODUCT.
+sum(a .* b) % 32          — the same dot product, written element-wise
+dot(a, b)   % 32          — and the built-in
+```
+
+Three ways to write a dot product. `dot(a,b)` is clearest when that's what you
+mean.
+
+## Broadcasting
+
+When operand sizes differ but are *compatible*, MATLAB expands the smaller one
+automatically.
+
+<CodeFile name="broadcasting.m">
+```matlab
+A = [1 2 3;
+     4 5 6];        % 2x3
+
+A + 10              % scalar spreads to every element
+
+col = [10; 20];     % 2x1 — one value per ROW
+A + col             % [11 12 13; 24 25 26]
+
+row = [100 200 300];  % 1x3 — one value per COLUMN
+A .* row              % scales each column
+```
+</CodeFile>
+
+The rule: dimensions must either **match** or be **1**. A 2×1 against a 2×3 works
+because the 1 expands to 3. A 2×1 against a 3×3 doesn't, and errors.
+
+<Callout type="engineering">
+  Normalising a set of bus voltages to per unit is broadcasting:
+
+  ```matlab
+  V_actual = [132.4e3; 131.1e3; 129.8e3];   % 3x1, volts
+  V_base   = 132e3;                          % scalar
+
+  V_pu = V_actual / V_base;                  % 3x1, per unit
+  ```
+
+  And scaling a whole load profile matrix — 365 days by 24 hours — by a per-hour
+  factor is one line: `scaled = daily .* hourly_factor;` with `hourly_factor` as
+  a 1×24 row. No loop over days.
+</Callout>
+
+<Callout type="warning" title="Broadcasting can hide a bug">
+  Because MATLAB expands automatically, an accidental orientation mismatch may
+  *succeed* and give you a matrix where you expected a vector:
+
+  ```matlab
+  a = [1 2 3];      % 1x3 row
+  b = [1; 2; 3];    % 3x1 column
+  a .* b            % 3x3 !  Not the 1x3 you probably wanted
+  ```
+
+  If a result is unexpectedly two-dimensional, check the orientation of your inputs
+  with `size` before anything else.
+</Callout>
+
+## Comparison operators are element-wise too
+
+```matlab
+loads = [42 55 61 58 47];
+
+loads > 50            % [0 1 1 1 0]  — a LOGICAL array, same size
+any(loads > 50)       % 1  — is any element over 50?
+all(loads > 50)       % 0  — are all of them?
+sum(loads > 50)       % 3  — how many? (logicals sum as 1s and 0s)
+```
+
+That `sum(condition)` idiom counts occurrences and is used constantly — "how many
+hours was the voltage out of limits?" is `sum(V < 0.95 | V > 1.05)`.
+
+This is also the foundation of logical indexing, which the Programming module
+covers properly.
+
+## Common mistakes
+
+<Callout type="warning" title="Forgetting the dot on square matrices">
+  The headline mistake. On same-sized square matrices both operators are legal, so
+  there is no error — just a wrong answer. If you're computing element-wise
+  quantities from matrices, check your dots explicitly.
+</Callout>
+
+<Callout type="warning" title="Using ^ instead of .^ on a vector">
+  `v^2` on a 1×5 vector errors, because `^` needs a square matrix. You wanted
+  `v.^2`. Same family of mistake, and here MATLAB does catch it.
+</Callout>
+
+<Callout type="warning" title="Assuming / is element-wise">
+  `A / B` is matrix right division, which solves a linear system. For element-wise
+  division you need `A ./ B`. Dividing a vector by a scalar is a special case that
+  happens to work either way — which lulls people into thinking `/` is always
+  element-wise.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Which of these error?">
+  For `A = [1 2; 3 4]` and `v = [1 2 3]`, predict the outcome of each.
+
+  ```matlab
+  A .* A
+  A * A
+  v .* v
+  v * v
+  v .^ 2
+  v ^ 2
+  ```
+
+  <Solution>
+    - `A .* A` → `[1 4; 9 16]` — element-wise
+    - `A * A` → `[7 10; 15 22]` — matrix product. **Both work, different answers.**
+    - `v .* v` → `[1 4 9]`
+    - `v * v` → **error**. 1×3 times 1×3, inner dimensions 3 and 1 disagree.
+    - `v .^ 2` → `[1 4 9]`
+    - `v ^ 2` → **error**. `^` needs a square matrix.
+
+    The pattern: with vectors, MATLAB usually catches the missing dot. With square
+    matrices, it doesn't.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Three-phase power, per feeder">
+  Five feeders have line-to-line voltages and line currents. Compute the apparent
+  power of each in MVA, using
+
+  $$S = \sqrt{3} \, V_{LL} I_L$$
+
+  ```matlab
+  V_LL = [11.0 10.8 11.2 10.9 11.1] * 1e3;   % volts
+  I_L  = [ 145  162  138  171  150];          % amperes
+  ```
+
+  <Solution>
+    ```matlab
+    V_LL = [11.0 10.8 11.2 10.9 11.1] * 1e3;
+    I_L  = [ 145  162  138  171  150];
+
+    S_MVA = sqrt(3) * V_LL .* I_L / 1e6;      % note the dot
+
+    for k = 1:numel(S_MVA)
+        fprintf('Feeder %d: %.3f MVA\n', k, S_MVA(k));
+    end
+    fprintf('Total: %.3f MVA\n', sum(S_MVA));
+    ```
+
+    Roughly 2.76, 3.03, 2.68, 3.23, 2.88 MVA — total about 14.58 MVA.
+
+    The dot is essential: you want five independent per-feeder answers, so the
+    result must be the same size as the inputs. Without it, `V_LL * I_L` errors —
+    which here is a helpful failure.
+
+    Note also that `sqrt(3) * V_LL` needs no dot: multiplying by a scalar is
+    unambiguous.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="debug" title="Why is the result 24x24?">
+  A student wants to scale 24 hourly loads by 24 hourly price factors and gets a
+  24×24 matrix.
+
+  ```matlab
+  load_MW = [40 38 37 ... ];      % 1x24 row
+  price   = [2.1; 2.0; 1.9; ...]; % 24x1 column
+  cost    = load_MW .* price;
+  ```
+
+  <Solution>
+    Orientation mismatch. A 1×24 row against a 24×1 column broadcasts to
+    **24×24** — every load paired with every price, which is not what was wanted.
+
+    ```matlab
+    cost = load_MW .* price(:)';    % force price to a row
+    % or
+    cost = load_MW(:) .* price(:);  % force both to columns
+    ```
+
+    `x(:)` reshapes anything into a column regardless of its current orientation,
+    and is the standard defensive idiom. Getting into the habit of `(:)` on inputs
+    whose shape you don't control prevents a whole class of silent bug.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'On two same-sized square matrices, what happens if you write A*B when you meant A.*B?',
+      options: [
+        'MATLAB raises a dimension error',
+        'MATLAB warns but continues',
+        'It computes the matrix product silently — a wrong answer with no error',
+        'The results are identical',
+      ],
+      answer: 2,
+      explain:
+        'Both operations are legal on same-sized square matrices, so nothing complains. This is precisely why the mistake is so common and so hard to spot.',
+    },
+    {
+      q: 'What is the result of a 2x1 column .* a 2x3 matrix?',
+      options: [
+        'An error — sizes must match exactly',
+        'A 2x3 matrix, with the column broadcast across all three columns',
+        'A 2x1 column',
+        'A 6x1 vector',
+      ],
+      answer: 1,
+      explain:
+        'Broadcasting expands any dimension of size 1 to match. The 2×1 becomes effectively 2×3, giving a 2×3 result — one value applied per row.',
+    },
+    {
+      q: 'What does sum(V < 0.95) compute for a vector of per-unit voltages?',
+      options: [
+        'The total of all voltages below 0.95',
+        'The number of voltages below 0.95',
+        'A logical true or false',
+        'The lowest voltage',
+      ],
+      answer: 1,
+      explain:
+        'The comparison produces a logical array of 1s and 0s; summing it counts how many were true. This "sum a condition" idiom is how you count limit violations.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  The dot means **element-wise**. Ask yourself whether the answer should be the same
+  size as the inputs — if yes, use the dot. On square matrices MATLAB won't catch a
+  missing one, so this is a habit to build deliberately rather than rely on error
+  messages for.
+</KeyIdea>
+
+## Further reading
+
+- `doc arithmeticoperators` — the complete operator table
+- `doc broadcasting` — MATLAB calls it "implicit expansion"
+- Next: the **module project** — a per-unit converter, using everything so far

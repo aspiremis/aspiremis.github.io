@@ -1,0 +1,94 @@
+---
+import type { TrackTree } from '../../lib/learning';
+import { formatDuration } from '../../lib/learning';
+
+/**
+ * "Continue where you left off."
+ *
+ * Every candidate lesson is rendered server-side and hidden; the client picks
+ * which one to reveal based on localStorage. That keeps the page static and
+ * cacheable while still feeling personal — and if JavaScript never runs, the
+ * whole panel simply stays hidden rather than showing something wrong.
+ */
+interface Props {
+  trees: TrackTree[];
+}
+
+const { trees } = Astro.props;
+
+/** Flat reading order across every track — the sequence progress walks. */
+const ordered = trees.flatMap((tree) =>
+  tree.modules.flatMap((entry) =>
+    entry.lessons.map((lesson) => ({
+      id: lesson.id,
+      title: lesson.data.title,
+      description: lesson.data.description,
+      track: tree.track.data.title,
+      module: entry.module.data.title,
+      minutes: lesson.data.estimatedMinutes,
+    })),
+  ),
+);
+---
+
+{
+  ordered.length > 0 && (
+    <section id="continue-panel" class="hidden" aria-live="polite">
+      <div class="rounded-card border border-accent-border bg-accent-tint p-6 sm:p-8">
+        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-accent">
+          <span data-continue-label>Start here</span>
+        </p>
+
+        {ordered.map((lesson, index) => (
+          <a
+            href={`/learning/${lesson.id}`}
+            class="continue-card mt-3 hidden"
+            data-continue-card={lesson.id}
+            data-continue-index={index}
+          >
+            <span class="block text-h3 font-semibold tracking-tight text-fg">{lesson.title}</span>
+            <span class="mt-1.5 block text-sm leading-relaxed text-muted">{lesson.description}</span>
+            <span class="mt-3 block font-mono text-[11px] text-subtle">
+              {lesson.track} · {lesson.module} · {formatDuration(lesson.minutes)}
+            </span>
+          </a>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+<style>
+  .continue-card.is-active { display: block; }
+</style>
+
+<script>
+  function pickContinue() {
+    const panel = document.getElementById('continue-panel');
+    if (!panel) return;
+
+    const cards = [...panel.querySelectorAll<HTMLElement>('[data-continue-card]')];
+    if (!cards.length) return;
+
+    const store = window.learnProgress;
+    const label = panel.querySelector<HTMLElement>('[data-continue-label]');
+
+    // The first lesson in reading order that isn't done. If everything is
+    // done, fall back to the last one rather than hiding the panel entirely.
+    let target = cards.find((card) => !store?.isDone(card.dataset.continueCard!));
+    const finished = !target;
+    if (!target) target = cards[cards.length - 1]!;
+
+    const anyDone = cards.some((card) => store?.isDone(card.dataset.continueCard!));
+    if (label) {
+      label.textContent = finished ? 'All caught up' : anyDone ? 'Continue where you left off' : 'Start here';
+    }
+
+    cards.forEach((card) => card.classList.toggle('is-active', card === target));
+    panel.classList.remove('hidden');
+  }
+
+  pickContinue();
+  document.addEventListener('learn:progress', pickContinue);
+  document.addEventListener('astro:page-load', pickContinue);
+</script>

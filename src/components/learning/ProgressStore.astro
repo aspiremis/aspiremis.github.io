@@ -1,0 +1,126 @@
+---
+/**
+ * Completion tracking for the Learning Hub.
+ *
+ * A static site has no accounts and no backend, so progress lives in
+ * localStorage. Every page server-renders at zero and hydrates afterwards,
+ * which keeps CLS at zero and means the pages are still perfectly readable
+ * with JavaScript disabled — you just don't get ticks.
+ *
+ * Include once per page that shows progress. It exposes `window.learnProgress`
+ * and dispatches `learn:progress` whenever state changes, so components can
+ * stay dumb and just listen.
+ *
+ * Deliberate limitation: this is per-browser. Clearing site data resets it, and
+ * it does not sync across devices — that would need an account and a server.
+ * Export/import (in the hub's Progress panel) is the escape hatch.
+ */
+---
+
+<script is:inline>
+  (() => {
+    const KEY = 'learn-progress:v1';
+
+    /** @returns {Record<string, {done: boolean, at: number}>} */
+    function read() {
+      try {
+        return JSON.parse(localStorage.getItem(KEY) || '{}');
+      } catch {
+        // Corrupt or unavailable (private mode) — behave as "nothing done"
+        // rather than throwing and taking the rest of the page down.
+        return {};
+      }
+    }
+
+    function write(state) {
+      try {
+        localStorage.setItem(KEY, JSON.stringify(state));
+      } catch {
+        /* Quota or private mode — progress simply won't persist. */
+      }
+      document.dispatchEvent(new CustomEvent('learn:progress', { detail: state }));
+    }
+
+    const store = {
+      all: read,
+      isDone: (id) => read()[id]?.done === true,
+      set(id, done) {
+        const state = read();
+        if (done) state[id] = { done: true, at: Date.now() };
+        else delete state[id];
+        write(state);
+        return done;
+      },
+      toggle(id) {
+        return store.set(id, !store.isDone(id));
+      },
+      /** Completed count for a given list of lesson ids. */
+      countDone(ids) {
+        const state = read();
+        return ids.reduce((n, id) => n + (state[id]?.done ? 1 : 0), 0);
+      },
+      /** Most recently completed lesson id, for "continue where you left off". */
+      lastTouched() {
+        const state = read();
+        let best = null;
+        for (const [id, value] of Object.entries(state)) {
+          if (value?.done && (!best || value.at > best.at)) best = { id, at: value.at };
+        }
+        return best;
+      },
+      reset() {
+        write({});
+      },
+      export: () => JSON.stringify(read(), null, 2),
+      import(json) {
+        const parsed = JSON.parse(json);
+        if (typeof parsed !== 'object' || parsed === null) throw new Error('Not a progress file');
+        write(parsed);
+      },
+    };
+
+    window.learnProgress = store;
+
+    /**
+     * Paints every progress-aware element on the page.
+     *
+     * Elements opt in with data attributes rather than being wired
+     * individually, so a new component gets progress for free:
+     *   [data-lesson-tick="<id>"]      → gets .is-done when complete
+     *   [data-progress-group="a,b,c"]  → fills its bar / count / percent
+     */
+    function paint() {
+      const state = read();
+
+      document.querySelectorAll('[data-lesson-tick]').forEach((el) => {
+        el.classList.toggle('is-done', state[el.dataset.lessonTick]?.done === true);
+      });
+
+      document.querySelectorAll('[data-progress-group]').forEach((el) => {
+        const ids = el.dataset.progressGroup.split(',').filter(Boolean);
+        const done = ids.reduce((n, id) => n + (state[id]?.done ? 1 : 0), 0);
+        const total = ids.length;
+        const pct = total ? Math.round((done / total) * 100) : 0;
+
+        el.querySelectorAll('[data-progress-bar]').forEach((bar) => {
+          bar.style.width = pct + '%';
+        });
+        el.querySelectorAll('[data-progress-ring]').forEach((ring) => {
+          const c = Number(ring.dataset.circumference || 0);
+          ring.style.strokeDashoffset = String(c - (c * pct) / 100);
+        });
+        el.querySelectorAll('[data-progress-done]').forEach((n) => (n.textContent = String(done)));
+        el.querySelectorAll('[data-progress-total]').forEach((n) => (n.textContent = String(total)));
+        el.querySelectorAll('[data-progress-percent]').forEach((n) => (n.textContent = pct + '%'));
+
+        const meter = el.querySelector('[role="progressbar"]');
+        if (meter) meter.setAttribute('aria-valuenow', String(pct));
+        el.classList.toggle('is-complete', total > 0 && done === total);
+      });
+    }
+
+    document.addEventListener('learn:progress', paint);
+    document.addEventListener('astro:page-load', paint);
+    paint();
+  })();
+</script>

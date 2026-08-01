@@ -1,0 +1,77 @@
+---
+import { getCollection, render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+import LessonLayout from '../../../layouts/LessonLayout.astro';
+import Callout from '../../../components/learning/Callout.astro';
+import Analogy from '../../../components/learning/Analogy.astro';
+import KeyIdea from '../../../components/learning/KeyIdea.astro';
+import Exercise from '../../../components/learning/Exercise.astro';
+import Solution from '../../../components/learning/Solution.astro';
+import Quiz from '../../../components/learning/Quiz.astro';
+import CodeFile from '../../../components/learning/CodeFile.astro';
+import Compare from '../../../components/learning/Compare.astro';
+
+import {
+  getLessons,
+  getTrackTree,
+  getLessonNeighbours,
+  resolvePrerequisites,
+  findModule,
+} from '../../../lib/learning';
+import type { Lesson, Track, Module } from '../../../lib/learning';
+
+interface Props {
+  lesson: Lesson;
+  track: Track;
+  module: Module;
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const [lessons, tracks] = await Promise.all([getLessons(), getCollection('tracks')]);
+
+  const paths = await Promise.all(
+    lessons.map(async (lesson) => {
+      const tree = await getTrackTree(lesson.data.track);
+      const track = tracks.find((t) => t.id === lesson.data.track)!;
+      const module = tree ? findModule(tree, lesson.data.module) : undefined;
+
+      // Lesson ids are `<track>/<slug>`; the route splits them back apart.
+      const [, ...rest] = lesson.id.split('/');
+      return {
+        params: { track: lesson.data.track, lesson: rest.join('/') },
+        props: { lesson, track, module: module! },
+      };
+    }),
+  );
+
+  return paths;
+};
+
+const { lesson, track, module } = Astro.props;
+const { Content, headings } = await render(lesson);
+
+const [{ previous, next }, prerequisites] = await Promise.all([
+  getLessonNeighbours(lesson),
+  resolvePrerequisites(lesson),
+]);
+
+/**
+ * Components are handed to MDX rather than imported in every lesson file.
+ * Lessons stay clean prose with no import boilerplate at the top, and adding a
+ * new component to the whole Hub is a one-line change here.
+ */
+const components = { Callout, Analogy, KeyIdea, Exercise, Solution, Quiz, CodeFile, Compare };
+---
+
+<LessonLayout
+  lesson={lesson}
+  track={track}
+  module={module}
+  headings={headings}
+  previous={previous}
+  next={next}
+  prerequisites={prerequisites}
+>
+  <Content components={components} />
+</LessonLayout>

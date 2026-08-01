@@ -1,0 +1,89 @@
+---
+/**
+ * Boxed asides inside lesson prose.
+ *
+ * `engineering` is the one that earns its keep: it's where a programming
+ * concept gets tied back to a power-system problem, which is the whole reason
+ * this Hub exists rather than linking to a generic MATLAB course.
+ */
+interface Props {
+  type?: 'tip' | 'warning' | 'engineering' | 'note';
+  title?: string;
+}
+
+const { type = 'note', title } = Astro.props;
+
+const STYLES = {
+  note: {
+    box: 'border-line bg-bg-subtle',
+    accent: 'text-subtle',
+    label: 'Note',
+  },
+  tip: {
+    box: 'border-emerald-600/25 bg-emerald-500/[0.06]',
+    accent: 'text-emerald-700 dark:text-emerald-400',
+    label: 'Tip',
+  },
+  warning: {
+    box: 'border-amber-600/30 bg-amber-500/[0.07]',
+    accent: 'text-amber-700 dark:text-amber-400',
+    label: 'Watch out',
+  },
+  engineering: {
+    box: 'border-accent-border bg-accent-tint',
+    accent: 'text-accent',
+    label: 'In engineering',
+  },
+} as const;
+
+const style = STYLES[type];
+---
+
+<aside class:list={['not-prose my-7 rounded-card border p-5', style.box]}>
+  <p class:list={['flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em]', style.accent]}>
+    {
+      type === 'engineering' && (
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M13 2 3 14h8l-1 8 10-12h-8z" />
+        </svg>
+      )
+    }
+    {
+      type === 'warning' && (
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 9v5M12 17.5v.5" /><path d="M10.3 3.9 2.4 17.4A2 2 0 0 0 4.1 20.4h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+        </svg>
+      )
+    }
+    {
+      type === 'tip' && (
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" />
+        </svg>
+      )
+    }
+    {title ?? style.label}
+  </p>
+
+  <div class="callout-body mt-2.5 text-[15px] leading-relaxed text-muted">
+    <slot />
+  </div>
+</aside>
+
+<style>
+  /* Restore prose rhythm inside the box without re-inheriting its max-width. */
+  .callout-body :global(p) { margin: 0.5rem 0; }
+  .callout-body :global(p:first-child) { margin-top: 0; }
+  .callout-body :global(p:last-child) { margin-bottom: 0; }
+  .callout-body :global(ul),
+  .callout-body :global(ol) { margin: 0.5rem 0; padding-left: 1.25rem; }
+  .callout-body :global(li) { margin: 0.25rem 0; }
+  .callout-body :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+</style>

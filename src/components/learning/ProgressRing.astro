@@ -1,0 +1,69 @@
+---
+/**
+ * Circular completion indicator.
+ *
+ * Renders at 0% on the server and is filled in by ProgressStore once
+ * localStorage is read. The SVG geometry is fixed either way, so nothing
+ * reflows when the real value arrives — CLS stays at zero.
+ */
+interface Props {
+  /** Lesson ids this ring summarises. */
+  lessons: string[];
+  size?: number;
+  stroke?: number;
+  label: string;
+  /** Show "n/total" beneath the percentage. */
+  showCount?: boolean;
+}
+
+const { lessons, size = 96, stroke = 6, label, showCount = true } = Astro.props;
+
+const radius = (size - stroke) / 2;
+const circumference = 2 * Math.PI * radius;
+---
+
+<div
+  class="inline-flex flex-col items-center"
+  data-progress-group={lessons.join(',')}
+>
+  <div class="relative" style={`width:${size}px;height:${size}px`}>
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      class="-rotate-90"
+      role="progressbar"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+      aria-label={label}
+    >
+      <circle
+        cx={size / 2} cy={size / 2} r={radius}
+        fill="none" stroke="var(--border)" stroke-width={stroke}
+      />
+      <circle
+        cx={size / 2} cy={size / 2} r={radius}
+        fill="none" stroke="var(--accent)" stroke-width={stroke}
+        stroke-linecap="round"
+        stroke-dasharray={circumference}
+        stroke-dashoffset={circumference}
+        data-progress-ring
+        data-circumference={circumference}
+        style="transition: stroke-dashoffset .8s cubic-bezier(.22,1,.36,1)"
+      />
+    </svg>
+
+    <div class="absolute inset-0 grid place-items-center">
+      <span class="font-mono text-sm font-semibold text-fg" data-progress-percent>0%</span>
+    </div>
+  </div>
+
+  {
+    showCount && (
+      <p class="mt-2 font-mono text-[11px] text-subtle">
+        <span data-progress-done>0</span>/<span data-progress-total>{lessons.length}</span> lessons
+      </p>
+    )
+  }
+</div>

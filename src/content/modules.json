@@ -1,0 +1,162 @@
+[
+  {
+    "id": "matlab-foundations",
+    "track": "matlab",
+    "slug": "foundations",
+    "title": "Foundations",
+    "description": "What MATLAB is for, and the four ideas — variables, vectors, matrices, indexing — that everything else is built from.",
+    "order": 1,
+    "project": {
+      "title": "Per-unit base converter",
+      "description": "A working tool that converts impedances between base MVA and kV, validated against a hand calculation. Uses every idea in this module and nothing beyond it.",
+      "capstone": false
+    }
+  },
+  {
+    "id": "matlab-programming",
+    "track": "matlab",
+    "slug": "programming",
+    "title": "Programming",
+    "description": "Scripts, functions, control flow and debugging — the point at which you stop typing commands and start building things that can be re-run.",
+    "order": 2,
+    "project": {
+      "title": "Symmetrical fault current calculator",
+      "description": "Takes a system base, a Thevenin impedance and a fault location, returns fault current and MVA. Structured as real functions with input validation.",
+      "capstone": false
+    }
+  },
+  {
+    "id": "matlab-data-visualisation",
+    "track": "matlab",
+    "slug": "data-visualisation",
+    "title": "Data and Visualisation",
+    "description": "Reading real measurement files, and turning numbers into figures good enough for a report or a paper.",
+    "order": 3,
+    "project": {
+      "title": "Daily load curve analyser",
+      "description": "Reads a year of half-hourly load data, finds peak and minimum demand days, computes load factor, and produces a publication-quality figure.",
+      "capstone": false
+    }
+  },
+  {
+    "id": "matlab-numerical-methods",
+    "track": "matlab",
+    "slug": "numerical-methods",
+    "title": "Numerical Methods",
+    "description": "Why the computer's answer differs from the maths answer, and how the solvers you'll rely on actually work.",
+    "order": 4,
+    "project": {
+      "title": "Newton-Raphson from scratch",
+      "description": "Implement the root-finding method by hand, watch it converge quadratically, and break it deliberately to see when it doesn't.",
+      "capstone": false
+    }
+  },
+  {
+    "id": "matlab-toolboxes",
+    "track": "matlab",
+    "slug": "toolboxes",
+    "title": "Engineering Toolboxes",
+    "description": "Symbolic Math, Optimization, Control System, Signal Processing, Simulink and Simscape Electrical — what each is for and when to reach for it.",
+    "order": 5,
+    "project": {
+      "title": "Transmission line parameter calculator",
+      "description": "Derive ABCD parameters symbolically, then compute them numerically for a real line and compare short, medium and long line models.",
+      "capstone": false
+    }
+  },
+  {
+    "id": "matlab-power-systems",
+    "track": "matlab",
+    "slug": "power-systems",
+    "title": "Power System Applications",
+    "description": "The payoff: Y-bus, load flow, symmetrical components, fault analysis and harmonics, written from first principles.",
+    "order": 6,
+    "project": {
+      "title": "Complete load-flow tool",
+      "description": "Newton-Raphson load flow with a simple GUI, validated against published IEEE 14-bus results. The point at which the coursework stops being intimidating.",
+      "capstone": true
+    }
+  },
+
+  {
+    "id": "python-foundations",
+    "track": "python",
+    "slug": "foundations",
+    "title": "Python Foundations",
+    "description": "The language itself — types, collections, control flow, functions and the module system — for someone who already thinks in MATLAB.",
+    "order": 1,
+    "project": {
+      "title": "Unit conversion library",
+      "description": "A properly packaged module of electrical unit conversions, with tests. Your first thing that is code rather than a script.",
+      "capstone": false
+    }
+  },
+  {
+    "id": "python-numpy",
+    "track": "python",
+    "slug": "numpy",
+    "title": "NumPy",
+    "description": "Arrays, broadcasting, and the mental shift from MATLAB's matrix-first world to NumPy's array-first one.",
+    "order": 2,
+    "project": {
+      "title": "Y-bus builder, vectorised",
+      "description": "Build an admittance matrix with no Python-level loops, then compare its speed against the loop version.",
+      "capstone": false
+    }
+  },
+  {
+    "id": "python-pandas",
+    "track": "python",
+    "slug": "pandas",
+    "title": "pandas",
+    "description": "Time series done properly — indexing, resampling, timezones and the gap-handling that measurement data always needs.",
+    "order": 3,
+    "project": {
+      "title": "Feeder measurement cleaner",
+      "description": "Take a messy year of SCADA-style data with gaps and duplicates, and produce a clean hourly series you'd be willing to publish from.",
+      "capstone": false
+    }
+  },
+  {
+    "id": "python-matplotlib",
+    "track": "python",
+    "slug": "matplotlib",
+    "title": "Matplotlib",
+    "description": "Figures for reports and papers, including the conventions specific to power systems — voltage profiles, duration curves, phasor diagrams.",
+    "order": 4
+  },
+  {
+    "id": "python-scipy",
+    "track": "python",
+    "slug": "scipy",
+    "title": "Scientific Computing",
+    "description": "SciPy's sparse matrices, linear solvers, optimisation and signal processing — the engine room for real studies.",
+    "order": 5,
+    "project": {
+      "title": "Sparse load flow",
+      "description": "Rebuild the load-flow solver using scipy.sparse and measure how the advantage grows with system size.",
+      "capstone": false
+    }
+  },
+  {
+    "id": "python-power-systems",
+    "track": "python",
+    "slug": "power-systems",
+    "title": "Power System Applications",
+    "description": "pandapower and OpenDSS driven from Python, and the reproducibility discipline that makes a study trustworthy.",
+    "order": 6,
+    "project": {
+      "title": "Automated hosting capacity study",
+      "description": "Drive OpenDSS across hundreds of scenarios from Python, and report a penetration-violation curve rather than a single number.",
+      "capstone": true
+    }
+  },
+  {
+    "id": "python-from-matlab",
+    "track": "python",
+    "slug": "from-matlab",
+    "title": "From MATLAB to Python",
+    "description": "A direct translation guide, written to be read last — once both languages are familiar enough for the differences to be interesting.",
+    "order": 7
+  }
+]

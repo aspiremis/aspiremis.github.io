@@ -1,0 +1,251 @@
+---
+title: Why MATLAB Exists
+track: matlab
+module: foundations
+order: 1
+description: What problem MATLAB was invented to solve, why engineers still use it, and the situations where it is the wrong choice.
+objectives:
+  - Explain what MATLAB was built to do and why that mattered in 1980
+  - Recognise the kinds of problems MATLAB is genuinely good at
+  - Name at least two situations where you should reach for something else
+estimatedMinutes: 15
+difficulty: beginner
+tags: ['matlab', 'fundamentals', 'history']
+---
+
+Before learning any of the syntax, it's worth knowing what this language is *for*.
+That sounds like a detour. It isn't — almost every confusing thing about MATLAB
+becomes obvious once you know what problem it was built to solve.
+
+## The problem it was invented for
+
+In the 1970s, if you wanted to solve a system of linear equations on a computer,
+you wrote Fortran. Not a line or two of Fortran — you declared arrays, wrote loops,
+and called routines from a library called LINPACK with argument lists like:
+
+```text
+CALL SGEFA(A, LDA, N, IPVT, INFO)
+CALL SGESL(A, LDA, N, IPVT, B, 0)
+```
+
+Then you compiled it, linked it, ran it, and if you'd made a mistake you started
+again. Solving $Ax = b$ — one line of mathematics — took a working morning.
+
+Cleve Moler was teaching numerical analysis at the University of New Mexico and
+wanted his students to use those libraries **without learning Fortran first**. So
+he wrote an interactive calculator that let them type matrix operations directly
+and see results immediately. He called it MATLAB, short for **Matrix Laboratory**.
+
+That original program had no programming language at all. No loops, no functions,
+no scripts. It was a place to type matrix expressions and get answers.
+
+<Analogy>
+  It's the difference between **writing a letter to a library** asking them to look
+  something up and post the answer back, and **standing in the library** pulling
+  books off the shelf yourself.
+
+  Fortran was the letter. MATLAB was walking in.
+</Analogy>
+
+## What that history left behind
+
+Nearly everything that surprises newcomers is a fingerprint of that origin.
+
+**Everything is a matrix.** In most languages a number is a number, and you build
+arrays out of numbers. In MATLAB it's the reverse: a matrix is the fundamental
+thing, and a single number is just a 1×1 matrix. This is why `size(5)` answers
+`1 1` rather than raising an error.
+
+**Multiplication means matrix multiplication.** `A * B` is the matrix product, not
+element-by-element. That is the *mathematically* natural default in a matrix
+laboratory, even though it surprises anyone arriving from Python or C. Element-wise
+multiplication needs a separate operator, `A .* B`, and forgetting the dot is the
+single most common beginner error in the language.
+
+**Indexing starts at 1.** Not because of a quirk of implementation, but because
+mathematicians write $a_1$ for the first element of a vector. MATLAB was designed
+to match textbooks, not memory addresses.
+
+<Callout type="engineering">
+  This matters immediately in power systems. A Y-bus matrix, a Jacobian, a
+  sequence-component transformation — all of them are matrix expressions in your
+  textbooks. In MATLAB they stay matrix expressions. In a language that treats
+  arrays as lists of numbers, you spend your effort translating.
+</Callout>
+
+## Why engineers still use it in 2026
+
+MATLAB is not the fastest language, it isn't free, and it isn't the most popular.
+Three things keep it dominant in engineering education and industry:
+
+**The toolboxes are validated.** When you call a Control System Toolbox function,
+you are calling code that has been tested against known results for decades and is
+accepted in regulatory and safety contexts. That trust is genuinely hard to
+replicate.
+
+**Simulink has no real equivalent.** Drawing a power electronic converter as a block
+diagram and simulating it is something the open-source world still does not match
+for breadth of component models.
+
+**It is the lingua franca of engineering papers.** When a paper says "the algorithm
+was implemented in MATLAB," you can usually reproduce it. That network effect is
+self-sustaining.
+
+## Where it's the wrong tool
+
+Being honest about this now will save you effort later.
+
+<Compare
+  rows={[
+    {
+      option: 'MATLAB',
+      when: 'Matrix-heavy numerical work, control design, Simulink modelling, anything where a validated toolbox exists',
+      cost: 'Licence required',
+      recommended: true,
+    },
+    {
+      option: 'Python',
+      when: 'Data pipelines, machine learning, web APIs, automating other tools, anything you want to share freely',
+      cost: 'Free',
+    },
+    {
+      option: 'C / C++',
+      when: 'Real-time embedded control, code that runs on a relay or a controller',
+      cost: 'Slow to write',
+    },
+    {
+      option: 'Spreadsheet',
+      when: 'A one-off calculation you will never repeat',
+      cost: 'Unreproducible',
+    },
+  ]}
+/>
+
+The specific weaknesses worth knowing:
+
+- **Loops are slow.** MATLAB is interpreted, and a tight `for` loop over a million
+  elements is dramatically slower than the equivalent vectorised expression. This
+  shapes how you write MATLAB — you'll meet it properly in the Programming module.
+- **The licence follows the institution.** Your IIT Bhubaneswar licence is
+  excellent while you're here. It will not follow you to a job that hasn't bought
+  one, which is a real argument for learning Python too.
+- **It's not a general-purpose language.** Building a web service or a data
+  pipeline in MATLAB is possible and almost always a mistake.
+
+<Callout type="tip" title="Learn both, in order">
+  This Hub teaches MATLAB first because your coursework assumes it *now*, then
+  Python because your research career will want it. The second language is far
+  easier than the first — most of what you're about to learn is ideas, not syntax,
+  and ideas transfer.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Treating MATLAB as 'Python with different punctuation'">
+  Learners who arrive with some Python often write MATLAB as loops over indices,
+  because that's what feels natural. The code works, runs slowly, and misses the
+  entire point of the language. MATLAB rewards thinking in whole arrays, and that
+  shift in thinking is the actual skill.
+</Callout>
+
+<Callout type="warning" title="Believing you must memorise functions">
+  MATLAB ships thousands of functions. Nobody knows them all. What experienced
+  users have is a *sense of what probably exists*, plus fluency with `help`,
+  `doc` and `lookfor`. Aim for that, not recall.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="read" title="Predict without running">
+  Given that MATLAB treats everything as a matrix, what do you expect each of these
+  to produce? Reason it out before you have MATLAB open.
+
+  ```matlab
+  size(7)
+  size([1 2 3])
+  size([1 2 3]')
+  ```
+
+  <Solution>
+    - `size(7)` → `1 1`. The number 7 is a 1×1 matrix.
+    - `size([1 2 3])` → `1 3`. One row, three columns — a **row** vector.
+    - `size([1 2 3]')` → `3 1`. The `'` transposes it into a **column** vector.
+
+    The third one matters more than it looks. In power system work, voltages and
+    currents are almost always column vectors, because that's how they appear in
+    $I = Y V$.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Make the case">
+  You need to run 300 OpenDSS simulations, collect the results, and produce a
+  summary figure. Which language would you choose, and what is the single strongest
+  argument against your choice?
+
+  <Solution>
+    **Python** is the better fit — OpenDSS has a well-supported Python interface,
+    and driving hundreds of scenarios is scripting and data handling rather than
+    matrix mathematics.
+
+    The strongest argument against: if the rest of your analysis pipeline is already
+    in MATLAB, splitting a project across two languages adds friction that can
+    outweigh the better fit. Consistency has real value.
+
+    Notice that the honest answer is "it depends on context," not "Python is
+    better." That's the habit worth building.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why does MATLAB index from 1 instead of 0?',
+      options: [
+        'A limitation of the original Fortran implementation',
+        'To match how mathematics textbooks number elements',
+        'To make loops faster',
+        'It was an arbitrary choice with no reasoning',
+      ],
+      answer: 1,
+      explain:
+        'MATLAB was built for people reading mathematics, where the first element of a vector is a₁. Matching the textbook was the whole point — it was designed as a teaching tool.',
+    },
+    {
+      q: 'What does the * operator do in MATLAB?',
+      options: [
+        'Element-by-element multiplication',
+        'Matrix multiplication',
+        'It depends on the size of the operands',
+        'The same thing as .*',
+      ],
+      answer: 1,
+      explain:
+        'In a matrix laboratory, matrix multiplication is the natural default. Element-wise multiplication is the special case and needs the dot: .* — forgetting it is the most common beginner error in the language.',
+    },
+    {
+      q: 'Which of these is the weakest reason to choose MATLAB for a project?',
+      options: [
+        'You need Simulink to model a converter',
+        'A validated Control System Toolbox function does exactly what you need',
+        'You want to build a web dashboard to share results',
+        'Your analysis is dominated by matrix algebra',
+      ],
+      answer: 2,
+      explain:
+        'Web services are firmly outside what MATLAB is for. The other three play directly to its strengths — and knowing where the boundary sits is part of using it well.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  MATLAB is a **matrix laboratory**. Everything is a matrix, `*` means matrix
+  multiplication, and indexing starts at 1 — not as quirks, but as direct
+  consequences of what it was built for. Hold that idea and most of the language
+  stops being surprising.
+</KeyIdea>
+
+## Further reading
+
+- Cleve Moler, *[The Origins of MATLAB](https://www.mathworks.com/company/technical-articles/the-origins-of-matlab.html)* — a short first-hand account, worth fifteen minutes
+- `help` and `doc` in MATLAB itself: `doc matlab` opens the full documentation offline
+- The next lesson gets MATLAB installed through your institute and gives you a tour of the interface

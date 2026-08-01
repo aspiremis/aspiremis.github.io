@@ -1,0 +1,68 @@
+---
+/**
+ * A numbered exercise with a collapsible solution.
+ *
+ * Uses native <details> so the solution is genuinely hidden until asked for,
+ * works without JavaScript, and is keyboard-operable for free. `kind` labels
+ * what sort of thinking is being asked for — predicting output is a different
+ * skill from debugging, and saying so helps.
+ */
+interface Props {
+  n: number | string;
+  kind?: 'practice' | 'predict' | 'debug' | 'read' | 'derive';
+  title?: string;
+}
+
+const { n, kind = 'practice', title } = Astro.props;
+
+const KINDS = {
+  practice: 'Practice',
+  predict: 'Predict the output',
+  debug: 'Find the bug',
+  read: 'Read the code',
+  derive: 'Derive it',
+} as const;
+---
+
+<section class="not-prose my-6 rounded-card border border-line bg-surface p-5">
+  <div class="flex flex-wrap items-center gap-2.5">
+    <span
+      class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent font-mono text-[11px] font-bold text-accent-contrast"
+      aria-hidden="true">{n}</span>
+    <span class="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">
+      {KINDS[kind]}
+    </span>
+    {title && <span class="text-sm font-medium text-fg">— {title}</span>}
+  </div>
+
+  <div class="exercise-body mt-3 text-[15px] leading-relaxed text-muted">
+    <slot />
+  </div>
+</section>
+
+<style>
+  .exercise-body :global(p) { margin: 0.6rem 0; }
+  .exercise-body :global(p:first-child) { margin-top: 0; }
+  .exercise-body :global(ul), .exercise-body :global(ol) {
+    margin: 0.6rem 0; padding-left: 1.3rem;
+  }
+  .exercise-body :global(li) { margin: 0.3rem 0; }
+  .exercise-body :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+  .exercise-body :global(pre) {
+    background: var(--bg-subtle) !important;
+    border: 1px solid var(--border);
+    border-radius: 0.625rem;
+    padding: 1rem;
+    margin: 0.75rem 0;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+</style>

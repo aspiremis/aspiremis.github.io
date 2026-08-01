@@ -1,0 +1,314 @@
+---
+title: Indexing
+track: matlab
+module: foundations
+order: 6
+description: Reaching into arrays to read and change parts of them — single elements, whole rows, ranges, and the end keyword.
+objectives:
+  - Read and write individual elements, rows, columns and sub-blocks
+  - Use the colon and end keywords to slice without hard-coded sizes
+  - Delete and append elements safely
+prerequisites: [matrices]
+estimatedMinutes: 30
+difficulty: beginner
+tags: ['matlab', 'indexing', 'slicing']
+---
+
+Creating arrays is half of it. Getting things back out — and changing them in place
+— is the other half, and it's used in essentially every line of real MATLAB you'll
+write.
+
+## Positions start at 1
+
+<Analogy>
+  A matrix is a **grid of numbered pigeonholes**. `A(2,3)` means row 2, column 3 —
+  the same order you'd read a matrix subscript $a_{23}$ in a textbook.
+
+  Row first, then column. Always. If you remember "RC — like Row-Column" you'll
+  never transpose them by accident.
+</Analogy>
+
+```matlab
+A = [10 20 30;
+     40 50 60;
+     70 80 90];
+
+A(2,3)      % 60   — row 2, column 3
+A(1,1)      % 10
+A(3,2)      % 80
+```
+
+Indexing is 1-based, as promised in the first lesson: `A(1,1)` is the top-left, not
+`A(0,0)`.
+
+## Slicing with the colon
+
+Alone, `:` means "everything in this dimension".
+
+<CodeFile name="slicing.m">
+```matlab
+A = [10 20 30; 40 50 60; 70 80 90];
+
+A(2, :)        % entire row 2       -> 40 50 60
+A(:, 3)        % entire column 3    -> 30; 60; 90
+A(1:2, :)      % first two rows
+A(:, [1 3])    % columns 1 and 3 only
+A(2:3, 1:2)    % a 2x2 sub-block
+A(:)           % EVERYTHING as one long column (column-major order)
+```
+</CodeFile>
+
+That last one is worth pausing on. `A(:)` flattens the matrix into a single column,
+reading **down each column in turn** — 10, 40, 70, 20, 50, 80, 30, 60, 90. MATLAB
+stores arrays column-major, and this ordering surfaces whenever you reshape or use
+linear indexing.
+
+## The `end` keyword
+
+`end` inside an index means "the last position in this dimension".
+
+```matlab
+A(end, :)          % last row, whatever the size
+A(:, end)          % last column
+A(end, end)        % bottom-right element
+A(end-1, :)        % second-to-last row
+v(2:end)           % everything from the 2nd element onward
+```
+
+Use `end` rather than hard-coding numbers. Code written as `A(3,:)` breaks the day
+your system grows to four buses; `A(end,:)` doesn't.
+
+## Assigning into a slice
+
+Indexing works on the left of `=` too.
+
+<CodeFile name="assignment.m">
+```matlab
+A = zeros(3,3);
+
+A(2,2) = 5;              % one element
+A(1,:) = [1 2 3];        % a whole row at once
+A(:,3) = 7;              % scalar spread down a column
+A(1:2, 1:2) = eye(2);    % a block
+
+% Growing: assigning past the end extends the array, zero-filling
+B = [1 2 3];
+B(6) = 9;                % B is now [1 2 3 0 0 9]
+```
+</CodeFile>
+
+That auto-growing behaviour is convenient and occasionally a trap — a typo in an
+index silently creates a bigger array instead of erroring.
+
+<Callout type="engineering">
+  Building a Y-bus is exactly this, done in a loop over branches:
+
+  ```matlab
+  Y = zeros(n, n);
+  for k = 1:size(branch, 1)
+      f = branch(k, 1);           % from-bus
+      t = branch(k, 2);           % to-bus
+      y = 1 / (branch(k,3) + 1i*branch(k,4));
+
+      Y(f,f) = Y(f,f) + y;        % accumulate on the diagonals
+      Y(t,t) = Y(t,t) + y;
+      Y(f,t) = Y(f,t) - y;        % and subtract off-diagonal
+      Y(t,f) = Y(t,f) - y;
+  end
+  ```
+
+  Four indexed assignments per branch. The whole algorithm is indexing.
+</Callout>
+
+## Linear indexing
+
+A matrix can also be indexed with a single number, counting down columns:
+
+```matlab
+A = [10 20 30; 40 50 60; 70 80 90];
+
+A(4)              % 20 — the 4th element in column-major order
+A(2,1)            % 40
+
+[r, c] = ind2sub(size(A), 4);    % linear index -> row, col
+idx = sub2ind(size(A), 2, 3);    % row, col -> linear index
+```
+
+You'll meet this mostly through functions that *return* linear indices — `find` and
+`max` both do — so knowing `ind2sub` exists saves confusion later.
+
+## Deleting
+
+Assigning the empty matrix `[]` removes elements.
+
+```matlab
+v = [1 2 3 4 5];
+v(2) = [];             % remove 2nd element -> [1 3 4 5]
+
+A(2, :) = [];          % delete row 2 entirely
+A(:, 1) = [];          % delete column 1
+```
+
+You must delete a **whole row or column** of a matrix — `A(2,3) = []` is an error,
+because removing one element would leave a non-rectangular result.
+
+<Callout type="tip" title="Deleting the slack bus row and column">
+  In a load flow, the slack bus is removed from the system of equations. That's
+  literally `Y(slack,:) = []; Y(:,slack) = [];` — a direct use of this, and the step
+  that makes the singular Y-bus from the previous lesson solvable.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Swapping row and column">
+  `A(3,1)` and `A(1,3)` are different elements. On a square matrix both are valid,
+  so you get a wrong answer with no error at all. Row first, always.
+</Callout>
+
+<Callout type="warning" title="Index out of bounds when reading">
+  Reading `A(5,5)` on a 3×3 errors. But *assigning* `A(5,5) = 1` silently grows the
+  matrix to 5×5, zero-filling. Reads are strict, writes are permissive — which means
+  a mistyped index fails loudly on read and quietly on write.
+</Callout>
+
+<Callout type="warning" title="Off-by-one between position and meaning">
+  Hour 0 lives at index 1. Bus 1 lives at index 1, but bus numbers in a data file
+  might start elsewhere. Whenever array position and physical label differ, write
+  the conversion down explicitly rather than trusting yourself to remember it.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What comes out?">
+  Given
+
+  ```matlab
+  M = [1 2 3 4;
+       5 6 7 8;
+       9 10 11 12];
+  ```
+
+  predict each result.
+
+  ```matlab
+  M(2,3)
+  M(:,2)
+  M(end,:)
+  M(1:2, 3:4)
+  M(5)
+  ```
+
+  <Solution>
+    - `M(2,3)` → `7`
+    - `M(:,2)` → `[2; 6; 10]` — a 3×1 column
+    - `M(end,:)` → `[9 10 11 12]`
+    - `M(1:2, 3:4)` → `[3 4; 7 8]`
+    - `M(5)` → `6`. Linear indexing goes down columns: 1, 5, 9, 2, **6** — the
+      fifth element.
+
+    That last one catches everybody once. Column-major order is not an
+    implementation detail you can ignore; it surfaces through `find`, `reshape` and
+    `A(:)`.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Extract a sub-network">
+  You have a 6×6 Y-bus and want the sub-matrix for buses 2, 4 and 5 only.
+
+  <Solution>
+    ```matlab
+    keep = [2 4 5];
+    Y_reduced = Y(keep, keep);
+    ```
+
+    Indexing with a vector in both positions selects the intersection of those rows
+    and columns — a 3×3.
+
+    Worth being precise about what this is *not*: it's a plain extraction, not a
+    Kron reduction. A proper network reduction also folds in the eliminated buses'
+    effect on the ones you keep. Knowing the difference before using it in anger
+    matters.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="debug" title="Why is the matrix the wrong size?">
+  A student builds a Y-bus for a 4-bus system and finds `size(Y)` is `5 5`.
+
+  ```matlab
+  Y = zeros(4,4);
+  branches = [1 2; 2 3; 3 4; 4 5];
+  for k = 1:4
+      f = branches(k,1);  t = branches(k,2);
+      Y(f,t) = Y(f,t) - 1;
+  end
+  ```
+
+  <Solution>
+    The branch list contains a connection `4 5`, referring to a bus 5 that doesn't
+    exist in a 4-bus system. When the loop reaches it, `Y(4,5) = ...` **grows** the
+    matrix to 5×5 instead of erroring, because writes are permissive.
+
+    The real bug is in the data, not the code. Two defences worth building in:
+
+    ```matlab
+    n = 4;
+    assert(max(branches(:)) <= n, 'Branch list references a bus outside the system');
+    ```
+
+    and checking `size(Y)` after construction. Silent growth is exactly the kind of
+    bug that produces plausible-but-wrong results.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does A(:, 2) return?',
+      options: [
+        'The second row',
+        'The second column',
+        'The element at position 2',
+        'Every element except the second',
+      ],
+      answer: 1,
+      explain:
+        'The colon means "all rows", and 2 selects column 2 — so you get the whole second column. Row index first, column second.',
+    },
+    {
+      q: 'On a 3x3 matrix A, what does A(4) give?',
+      options: [
+        'An error — you need two indices',
+        'The element at row 4',
+        'The 4th element in column-major order',
+        'The 4th element reading across rows',
+      ],
+      answer: 2,
+      explain:
+        'Linear indexing counts down each column in turn. For a 3×3, element 4 is row 1, column 2 — MATLAB stores arrays column-major.',
+    },
+    {
+      q: 'What happens if you assign A(10,10) = 1 on a 3x3 matrix?',
+      options: [
+        'An index-out-of-bounds error',
+        'The matrix grows to 10x10, zero-filled',
+        'It wraps around to A(1,1)',
+        'It assigns to the nearest valid element',
+      ],
+      answer: 1,
+      explain:
+        'Writes grow arrays automatically; only reads are bounds-checked. Convenient, and a good reason to validate index data before looping over it.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Indexing is **row first, column second, starting at 1**. `:` means "all of this
+  dimension" and `end` means "the last one" — use both instead of hard-coded sizes,
+  and your code survives the system growing.
+</KeyIdea>
+
+## Further reading
+
+- `doc indexing` — MATLAB's own guide, including logical indexing (covered in the
+  Programming module)
+- Next: **array operations** — the dot, and the single most common MATLAB error

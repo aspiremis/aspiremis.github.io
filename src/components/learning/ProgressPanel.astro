@@ -1,0 +1,110 @@
+---
+/**
+ * Export / import / reset for progress.
+ *
+ * localStorage is per-browser, so this is the escape hatch: move progress
+ * between a laptop and a lab machine, or keep a backup before clearing site
+ * data. Being upfront about the limitation is better than letting someone
+ * discover it by losing six months of ticks.
+ */
+---
+
+<section
+  class="rounded-card border border-dashed border-line-strong bg-bg-subtle/50 p-6 sm:p-8"
+  aria-labelledby="progress-panel-heading"
+>
+  <h2 id="progress-panel-heading" class="text-sm font-semibold text-fg">
+    Your progress is stored in this browser
+  </h2>
+  <p class="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+    Completed lessons are saved to this browser's local storage — no account, nothing
+    sent anywhere. That also means it doesn't follow you to another device, and clearing
+    site data will reset it. Export a copy if that matters.
+  </p>
+
+  <div class="mt-5 flex flex-wrap gap-3">
+    <button
+      type="button"
+      data-progress-export
+      class="inline-flex h-9 items-center rounded-lg border border-line bg-surface px-4 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover"
+    >
+      Export
+    </button>
+
+    <label
+      class="inline-flex h-9 cursor-pointer items-center rounded-lg border border-line bg-surface px-4 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover"
+    >
+      Import
+      <input type="file" accept="application/json,.json" class="sr-only" data-progress-import />
+    </label>
+
+    <button
+      type="button"
+      data-progress-reset
+      class="inline-flex h-9 items-center rounded-lg border border-line px-4 text-sm font-medium text-subtle transition-colors hover:border-rose-600/40 hover:text-rose-700 dark:hover:text-rose-400"
+    >
+      Reset
+    </button>
+
+    <p class="self-center text-xs text-subtle" data-progress-status role="status"></p>
+  </div>
+</section>
+
+<script>
+  function wireProgressPanel() {
+    const store = () => window.learnProgress!;
+    const status = document.querySelector<HTMLElement>('[data-progress-status]');
+    const say = (message: string) => {
+      if (!status) return;
+      status.textContent = message;
+      setTimeout(() => (status.textContent = ''), 4000);
+    };
+
+    const exportButton = document.querySelector<HTMLButtonElement>('[data-progress-export]');
+    if (exportButton && !exportButton.dataset.wired) {
+      exportButton.dataset.wired = 'true';
+      exportButton.addEventListener('click', () => {
+        const blob = new Blob([store().export()], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'learning-progress.json';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        say('Downloaded.');
+      });
+    }
+
+    const importInput = document.querySelector<HTMLInputElement>('[data-progress-import]');
+    if (importInput && !importInput.dataset.wired) {
+      importInput.dataset.wired = 'true';
+      importInput.addEventListener('change', async () => {
+        const file = importInput.files?.[0];
+        if (!file) return;
+        try {
+          store().import(await file.text());
+          say('Progress restored.');
+        } catch {
+          say("That file isn't a progress export.");
+        }
+        importInput.value = '';
+      });
+    }
+
+    const resetButton = document.querySelector<HTMLButtonElement>('[data-progress-reset]');
+    if (resetButton && !resetButton.dataset.wired) {
+      resetButton.dataset.wired = 'true';
+      resetButton.addEventListener('click', () => {
+        // Destructive and unrecoverable — always confirm.
+        if (!confirm('Clear all completed lessons? This cannot be undone.')) return;
+        store().reset();
+        say('Progress cleared.');
+      });
+    }
+  }
+
+  wireProgressPanel();
+  document.addEventListener('astro:page-load', wireProgressPanel);
+</script>

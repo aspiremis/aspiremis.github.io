@@ -1,0 +1,65 @@
+---
+/**
+ * "How does this compare with the alternatives?" — one of the questions every
+ * lesson has to answer, so it gets a dedicated component rather than being
+ * left to freeform prose.
+ */
+interface Row {
+  option: string;
+  when: string;
+  cost?: string;
+  /** Marks the choice a beginner should reach for by default. */
+  recommended?: boolean;
+}
+
+interface Props {
+  title?: string;
+  rows: Row[];
+  /** Column headings, if the defaults don't fit. */
+  headings?: [string, string, string];
+}
+
+const {
+  title = 'Compared with the alternatives',
+  rows,
+  headings = ['Approach', 'Use it when', 'Cost'],
+} = Astro.props;
+
+const showCost = rows.some((row) => row.cost);
+---
+
+<div class="not-prose my-8">
+  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">{title}</p>
+
+  <div class="mt-3 overflow-x-auto rounded-card border border-line">
+    <table class="w-full border-collapse text-left text-sm">
+      <thead>
+        <tr class="border-b border-line bg-bg-subtle">
+          <th scope="col" class="px-4 py-2.5 font-medium text-subtle">{headings[0]}</th>
+          <th scope="col" class="px-4 py-2.5 font-medium text-subtle">{headings[1]}</th>
+          {showCost && <th scope="col" class="px-4 py-2.5 font-medium text-subtle">{headings[2]}</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {
+          rows.map((row) => (
+            <tr class="border-b border-line last:border-0">
+              <td class="whitespace-nowrap px-4 py-3 align-top">
+                <span class="font-mono text-[13px] font-medium text-fg">{row.option}</span>
+                {row.recommended && (
+                  <span class="ml-2 rounded-full border border-accent-border bg-accent-tint px-1.5 py-0.5 font-sans text-[10px] font-medium text-accent">
+                    default
+                  </span>
+                )}
+              </td>
+              <td class="px-4 py-3 align-top leading-relaxed text-muted">{row.when}</td>
+              {showCost && (
+                <td class="px-4 py-3 align-top leading-relaxed text-subtle">{row.cost ?? '—'}</td>
+              )}
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
