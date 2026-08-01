@@ -1,0 +1,451 @@
+---
+title: 'Project: Newton-Raphson from Scratch'
+track: matlab
+module: numerical-methods
+order: 31
+description: Implement the method by hand in one dimension, extend it to a system, watch it converge quadratically — then break it deliberately to learn where it fails.
+objectives:
+  - Implement scalar and multivariable Newton-Raphson with proper convergence control
+  - Verify quadratic convergence empirically, and detect a wrong Jacobian from the rate
+  - Provoke and diagnose each of Newton's failure modes
+prerequisites: [root-finding, linear-systems, floating-point]
+estimatedMinutes: 60
+difficulty: advanced
+tags: ['matlab', 'project', 'newton-raphson', 'load-flow']
+---
+
+This is the most important project in the track. The multivariable Newton-Raphson you
+build here **is** the load-flow algorithm — the capstone in Module 6 adds power system
+equations to this skeleton and little else.
+
+Build it carefully now and that capstone becomes straightforward.
+
+## Stage 1 — scalar Newton, with instrumentation
+
+The method is three lines. Everything else is knowing whether to trust it.
+
+<CodeFile name="newton_scalar.m">
+```matlab
+function [root, info] = newton_scalar(f, df, x0, opts)
+%NEWTON_SCALAR Newton-Raphson root finding, with convergence diagnostics.
+%
+%   [ROOT, INFO] = NEWTON_SCALAR(F, DF, X0) finds a root of F starting from
+%   X0. DF is the derivative. INFO records the error history and the
+%   observed convergence order.
+
+    arguments
+        f            function_handle
+        df           function_handle
+        x0     (1,1) double
+        opts.tol     (1,1) double = 1e-12
+        opts.max_iter(1,1) double = 50
+        opts.verbose (1,1) logical = true
+    end
+
+    x = x0;
+    history = zeros(opts.max_iter, 1);
+    info.converged = false;
+
+    for k = 1:opts.max_iter
+        fx = f(x);
+        history(k) = abs(fx);
+
+        if opts.verbose
+            fprintf('  iter %2d: x = %+.12f, |f| = %.4e\n', k-1, x, abs(fx));
+        end
+
+        if abs(fx) < opts.tol
+            info.converged = true;
+            break
+        end
+
+        dfx = df(x);
+        if abs(dfx) < 1e-14
+            error('newton:zeroDerivative', ...
+                  'Derivative vanished at x = %.6g after %d iterations', x, k);
+        end
+
+        step = fx / dfx;
+        x = x - step;
+
+        % Step-size test as well as residual: on a very flat function |f| can
+        % be tiny while x is still moving.
+        if abs(step) < opts.tol * max(1, abs(x))
+            info.converged = true;
+            history(k+1) = abs(f(x));
+            k = k + 1;
+            break
+        end
+    end
+
+    root = x;
+    info.iterations = k;
+    info.history    = history(1:k);
+    info.order      = estimate_order(info.history);
+
+    if ~info.converged
+        warning('Did not converge in %d iterations (|f| = %.3e)', ...
+                opts.max_iter, abs(f(x)));
+    end
+end
+```
+</CodeFile>
+
+## Stage 2 — measure the convergence order
+
+This is the part most implementations skip, and the part that catches bugs.
+
+If the error behaves like $e_{k+1} \approx C\,e_k^{\,p}$, then taking logs:
+
+$$
+p \approx \frac{\ln(e_{k+1}/e_k)}{\ln(e_k/e_{k-1})}
+$$
+
+<CodeFile name="estimate_order.m">
+```matlab
+function p = estimate_order(history)
+%ESTIMATE_ORDER Empirical convergence order from an error sequence.
+%   Returns NaN if there are too few usable iterations.
+%
+%   ~2 => quadratic (Newton with a correct derivative)
+%   ~1 => linear    (wrong derivative, or a repeated root)
+
+    e = history(history > 0);
+    if numel(e) < 4
+        p = NaN;
+        return
+    end
+
+    % Use the last few iterations, where asymptotic behaviour holds, but stop
+    % before the error reaches machine precision and the ratios become noise.
+    usable = e(e > 1e-14);
+    if numel(usable) < 4
+        usable = e(1:min(6, numel(e)));
+    end
+
+    n = numel(usable);
+    ratios = zeros(n-2, 1);
+    for k = 2:n-1
+        ratios(k-1) = log(usable(k+1)/usable(k)) / log(usable(k)/usable(k-1));
+    end
+
+    p = median(ratios);        % median is robust to one bad ratio
+end
+```
+</CodeFile>
+
+<Callout type="engineering">
+  Run this on a correct implementation and you get **p ≈ 2**. Introduce a deliberate
+  error into the derivative and it drops to **p ≈ 1** — while the method still
+  converges.
+
+  That is the entire diagnostic. A load flow with a subtly wrong Jacobian converges,
+  slowly, to an answer that may be slightly off — and nothing errors. The observed
+  order is the cheapest way to catch it.
+</Callout>
+
+## Stage 3 — verify quadratic convergence
+
+```matlab
+%% Cube root of 2: f(x) = x^3 - 2
+f  = @(x) x.^3 - 2;
+df = @(x) 3*x.^2;
+
+fprintf('Correct derivative:\n');
+[root, info] = newton_scalar(f, df, 1.0);
+fprintf('root = %.15f (exact %.15f)\n', root, nthroot(2,3));
+fprintf('iterations = %d, observed order = %.2f\n\n', info.iterations, info.order);
+
+%% Now break the derivative deliberately
+df_wrong = @(x) 3*x.^2 * 1.15;          % 15% too large
+
+fprintf('Derivative 15%% too large:\n');
+[root2, info2] = newton_scalar(f, df_wrong, 1.0);
+fprintf('root = %.15f\n', root2);
+fprintf('iterations = %d, observed order = %.2f\n', info2.iterations, info2.order);
+```
+
+You should see roughly 5 iterations and order ≈ 2 with the correct derivative, versus
+20-plus iterations and order ≈ 1 with the wrong one. **Both reach the right root.**
+Only the rate exposes the bug.
+
+## Stage 4 — the multivariable case
+
+Now the version that matters. For a system $\mathbf{f}(\mathbf{x}) = \mathbf{0}$:
+
+$$
+\mathbf{J}(\mathbf{x}_k)\,\Delta\mathbf{x} = -\mathbf{f}(\mathbf{x}_k), \qquad
+\mathbf{x}_{k+1} = \mathbf{x}_k + \Delta\mathbf{x}
+$$
+
+Note it is written as a **linear solve**, not an inverse — the linear-systems lesson
+applied directly.
+
+<CodeFile name="newton_system.m">
+```matlab
+function [x, info] = newton_system(f, J, x0, opts)
+%NEWTON_SYSTEM Newton-Raphson for a system of nonlinear equations.
+%
+%   F returns an n-by-1 residual vector, J returns the n-by-n Jacobian.
+%   This is the skeleton of a power flow solver.
+
+    arguments
+        f            function_handle
+        J            function_handle
+        x0           (:,1) double
+        opts.tol     (1,1) double = 1e-10
+        opts.max_iter(1,1) double = 30
+        opts.verbose (1,1) logical = true
+    end
+
+    x = x0;
+    n = numel(x0);
+    history   = zeros(opts.max_iter, 1);
+    cond_hist = zeros(opts.max_iter, 1);
+    info.converged = false;
+
+    for k = 1:opts.max_iter
+        fx = f(x);
+        assert(numel(fx) == n, 'f must return an %d-by-1 vector', n);
+
+        mismatch = max(abs(fx));
+        history(k) = mismatch;
+
+        if opts.verbose
+            fprintf('  iter %2d: max|f| = %.4e\n', k-1, mismatch);
+        end
+
+        if mismatch < opts.tol
+            info.converged = true;
+            break
+        end
+
+        Jk = J(x);
+        assert(isequal(size(Jk), [n n]), 'J must return %dx%d', n, n);
+
+        cond_hist(k) = condest(Jk);          % cheap estimate
+        if cond_hist(k) > 1e12
+            warning('Jacobian condition %.2e at iteration %d — near singular', ...
+                    cond_hist(k), k);
+        end
+
+        dx = Jk \ (-fx);                     % backslash, never inv
+        x  = x + dx;
+    end
+
+    info.iterations = k;
+    info.history    = history(1:k);
+    info.cond       = cond_hist(1:k);
+    info.order      = estimate_order(info.history);
+
+    if ~info.converged
+        warning('Did not converge in %d iterations (max|f| = %.3e)', ...
+                opts.max_iter, max(abs(f(x))));
+    end
+end
+```
+</CodeFile>
+
+Three things here are exactly what a load flow needs: the **condition monitoring**
+(a singular Jacobian means voltage collapse), the **backslash solve**, and the
+**convergence history** you can plot.
+
+## Stage 5 — test it on a real two-bus system
+
+<CodeFile name="two_bus_test.m">
+```matlab
+%% Two-bus power flow: slack at bus 1, PQ load at bus 2
+% Unknowns: x = [delta2; V2]
+clear; clc;
+
+G = 1.176;  B = -4.706;        % Y-bus entries for z = 0.05 + j0.20 pu
+V1 = 1.0;   d1 = 0;
+P2 = -0.8;  Q2 = -0.4;         % load: negative injection
+
+% Residual: scheduled minus calculated injection at bus 2
+f = @(x) [ P2 - ( V1*x(2)*(G*cos(x(1)-d1) + B*sin(x(1)-d1)) + x(2)^2*(-G) );
+           Q2 - ( V1*x(2)*(G*sin(x(1)-d1) - B*cos(x(1)-d1)) + x(2)^2*( B) ) ];
+
+% Analytic Jacobian
+J = @(x) [ V1*x(2)*(-G*sin(x(1)) + B*cos(x(1))), ...
+          -(V1*(G*cos(x(1)) + B*sin(x(1))) - 2*x(2)*G);
+          -V1*x(2)*( G*cos(x(1)) + B*sin(x(1))), ...
+          -(V1*(G*sin(x(1)) - B*cos(x(1))) + 2*x(2)*B) ];
+
+x0 = [0; 1.0];                 % flat start
+[x, info] = newton_system(f, J, x0);
+
+fprintf('\nBus 2: V = %.6f pu, delta = %.4f deg\n', x(2), rad2deg(x(1)));
+fprintf('Converged in %d iterations, observed order %.2f\n', ...
+        info.iterations, info.order);
+
+%% Convergence plot
+figure;
+semilogy(0:numel(info.history)-1, info.history, '-o', 'LineWidth', 1.4);
+yline(1e-10, '--', 'Tolerance');
+xlabel('Iteration'); ylabel('Max mismatch (pu)');
+title(sprintf('Newton-Raphson convergence (order %.2f)', info.order));
+grid on;
+```
+</CodeFile>
+
+<Callout type="tip" title="Check the Jacobian numerically before trusting it">
+  Hand-derived Jacobians are the main source of bugs in a from-scratch load flow.
+  Verify by finite difference:
+
+  ```matlab
+  function check_jacobian(f, J, x, h)
+      if nargin < 4, h = 1e-6; end
+      n = numel(x);
+      J_num = zeros(n);
+      for k = 1:n
+          e = zeros(n,1); e(k) = h;
+          J_num(:,k) = (f(x+e) - f(x-e)) / (2*h);
+      end
+      rel = norm(J(x) - J_num, 'fro') / max(norm(J_num,'fro'), eps);
+      fprintf('Jacobian relative error: %.3e %s\n', rel, ...
+              string(rel < 1e-6) + " (want < 1e-6)");
+  end
+  ```
+
+  Two minutes, and it removes the single most likely cause of a slow-converging
+  solver.
+</Callout>
+
+## Stage 6 — break it deliberately
+
+Provoking each failure mode teaches more than any amount of successful running.
+
+<Exercise n={1} kind="practice" title="Failure 1 — divergence from a poor start">
+  Run `newton_scalar(@atan, @(x) 1./(1+x.^2), x0)` for `x0 = 0.5`, `1.4` and `2.0`.
+  What happens, and why?
+
+  <Solution>
+    - `x0 = 0.5` converges quickly to 0.
+    - `x0 = 1.4` is near the boundary — it may oscillate for several iterations
+      before settling.
+    - `x0 = 2.0` **diverges**. Each tangent line crosses the axis further from the
+      root than the last, so the iterates grow without bound.
+
+    `atan` flattens as $|x|$ grows, so the tangent at a distant point is nearly
+    horizontal and its zero crossing is far away — on the wrong side, further out.
+
+    This is why load flow starts **flat** ($V = 1.0$, $\delta = 0$). For a healthy
+    system that is close to the solution. On a heavily stressed system it may not be,
+    which is one reason a load flow can fail to converge on a case that has a perfectly
+    valid answer.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Failure 2 — a repeated root">
+  Run Newton on $f(x) = (x-1)^2$, whose root at $x = 1$ is repeated. Measure the
+  observed order.
+
+  <Solution>
+    ```matlab
+    f  = @(x) (x-1).^2;
+    df = @(x) 2*(x-1);
+    [root, info] = newton_scalar(f, df, 2.0, tol=1e-12, verbose=false);
+    fprintf('root %.10f, %d iterations, order %.2f\n', ...
+            root, info.iterations, info.order);
+    ```
+
+    Observed order ≈ **1**, and it takes far more iterations. At a repeated root the
+    derivative vanishes *at the root itself*, so the quadratic argument breaks down.
+
+    The important lesson: **order ≈ 1 does not always mean a wrong Jacobian.** It can
+    also mean a degenerate root. In power flow, a Jacobian that becomes singular at the
+    solution is precisely what happens at the voltage-collapse point — so linear
+    convergence there is physics, not a bug.
+
+    Distinguishing the two: check the Jacobian numerically. If it's correct and
+    convergence is still linear, look at the problem, not the code.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="Failure 3 — an ill-conditioned Jacobian">
+  Increase the load in the two-bus test until the solver struggles. What do you
+  observe in `info.cond`?
+
+  <Solution>
+    ```matlab
+    loads = 0.8 : 0.2 : 2.4;
+    for P = loads
+        f_P = @(x) [ -P - (...);  ... ];        % as before, with P2 = -P
+        try
+            [x, info] = newton_system(f_P, J, [0; 1.0], verbose=false);
+            fprintf('P = %.1f: V = %.4f, %2d iters, cond = %.2e\n', ...
+                    P, x(2), info.iterations, max(info.cond));
+        catch err
+            fprintf('P = %.1f: FAILED (%s)\n', P, err.message);
+        end
+    end
+    ```
+
+    As loading rises: the solution voltage falls, iterations increase, and
+    `cond(J)` **grows sharply**. Beyond a critical loading the solver fails to
+    converge at all.
+
+    That critical point is the **nose of the P–V curve** — the maximum power the line
+    can deliver. Beyond it no real solution exists, and the Jacobian is singular
+    exactly there because the two roots from the root-finding lesson have merged.
+
+    So a load flow that won't converge may be reporting a genuine operating limit
+    rather than a numerical failure. Distinguishing "my code is wrong" from "this
+    system cannot be operated at this loading" is a real engineering skill, and the
+    condition number is the evidence.
+  </Solution>
+</Exercise>
+
+## Stage 7 — make it robust
+
+Two standard improvements, both used in production load flow software.
+
+**Damping.** Limit the step to prevent wild overshoot from a poor start:
+
+```matlab
+max_step = 0.2;
+if norm(dx, inf) > max_step
+    dx = dx * (max_step / norm(dx, inf));
+end
+x = x + dx;
+```
+
+**Line search.** Accept the full step only if it actually reduces the residual:
+
+```matlab
+alpha = 1.0;
+f_old = norm(fx);
+while alpha > 1/64
+    if norm(f(x + alpha*dx)) < f_old, break; end
+    alpha = alpha / 2;
+end
+x = x + alpha*dx;
+```
+
+Both sacrifice a little of the quadratic convergence near the solution in exchange for
+much better behaviour far from it. That trade is why commercial solvers converge on
+cases a textbook implementation cannot.
+
+## What you built
+
+- Scalar and multivariable Newton-Raphson with proper convergence control
+- An empirical convergence-order estimator that detects a wrong Jacobian
+- A numerical Jacobian check
+- Condition monitoring that distinguishes numerical failure from a physical limit
+- Demonstrations of every one of Newton's failure modes
+
+<KeyIdea>
+  The method is three lines. **Everything that matters is the instrumentation** — the
+  convergence order that reveals a wrong Jacobian, the condition number that tells you
+  whether you're at a physical limit, and the honest reporting of non-convergence.
+  Module 6 adds power system equations to this skeleton; the hard part is already done.
+</KeyIdea>
+
+## Further reading
+
+- Cleve Moler, *Numerical Computing with MATLAB*, Chapter 4
+- Grainger & Stevenson, Chapter 9 — the power flow Jacobian derived term by term
+- Your own [note on the load flow Jacobian](/notes/newton-raphson-jacobian)
+- Next module: **Engineering Toolboxes** — Symbolic Math, Optimization, Control System,
+  Simulink and Simscape Electrical

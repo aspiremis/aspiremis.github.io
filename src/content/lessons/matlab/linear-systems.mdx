@@ -1,0 +1,342 @@
+---
+title: Linear Systems and the Backslash Operator
+track: matlab
+module: numerical-methods
+order: 25
+description: What backslash actually does, why conditioning decides whether you can trust the answer, and the difference between a small residual and a correct solution.
+objectives:
+  - Explain what algorithm backslash selects and why it beats inv
+  - Interpret a condition number and estimate how many digits you have lost
+  - Distinguish residual from error, and know why a small residual is not proof
+prerequisites: [floating-point]
+estimatedMinutes: 35
+difficulty: intermediate
+tags: ['matlab', 'linear-algebra', 'conditioning', 'load-flow']
+---
+
+Solving $Ax = b$ is the single most common operation in computational power
+engineering. Every load flow iteration is one. Every state estimate is one.
+
+MATLAB does it with one character, and that character hides a great deal.
+
+## What backslash actually does
+
+```matlab
+x = A \ b;
+```
+
+This does **not** compute $A^{-1}$ and multiply. It inspects the matrix and dispatches
+to an appropriate algorithm:
+
+<Compare
+  headings={['If A is…', 'Backslash uses', 'Roughly']}
+  rows={[
+    { option: 'Triangular', when: 'Forward or back substitution', cost: 'O(n²)', recommended: true },
+    { option: 'Symmetric positive definite', when: 'Cholesky factorisation', cost: 'O(n³/3) — half the work of LU' },
+    { option: 'General square', when: 'LU with partial pivoting', cost: 'O(2n³/3)' },
+    { option: 'Sparse', when: 'Sparse LU with fill-reducing reordering', cost: 'Far less than n³' },
+    { option: 'Rectangular', when: 'QR — least squares solution', cost: 'Solves the over/under-determined case' },
+  ]}
+/>
+
+You get the right algorithm without asking. That dispatch is most of why backslash is
+the right default.
+
+## Why not `inv(A)*b`
+
+```matlab
+x = inv(A) * b;      % don't
+x = A \ b;           % do
+```
+
+Three reasons, in increasing order of importance:
+
+**More arithmetic.** Computing a full inverse costs roughly three times an LU solve,
+then you still have to multiply.
+
+**More rounding.** Every extra operation rounds. The inverse accumulates error that a
+direct solve never incurs.
+
+**It answers the wrong question.** You almost never want $A^{-1}$. You want the $x$
+that satisfies $Ax = b$. Computing an intermediate object you don't need, and that is
+harder to compute accurately, is a detour.
+
+<Callout type="engineering">
+  There is one legitimate use in power systems: the **Z-bus** matrix genuinely is
+  $Y^{-1}$, and some fault-analysis methods want the matrix itself because they
+  index into it repeatedly. That's the exception. For load flow, always backslash.
+</Callout>
+
+## Conditioning
+
+Some systems amplify errors. The condition number quantifies how much.
+
+$$
+\kappa(A) = \|A\| \cdot \|A^{-1}\|
+$$
+
+```matlab
+cond(A)        % 2-norm condition number
+rcond(A)       % reciprocal estimate — cheap, used in MATLAB's own warnings
+```
+
+The rule of thumb worth memorising:
+
+> If $\kappa(A) \approx 10^k$, expect to lose about **k significant digits**.
+
+Starting from 16 digits in a `double`:
+
+| $\kappa(A)$ | Digits lost | Digits remaining | Verdict |
+|---|---|---|---|
+| 10¹ | 1 | 15 | Excellent |
+| 10⁴ | 4 | 12 | Fine |
+| 10⁸ | 8 | 8 | Getting uncomfortable |
+| 10¹² | 12 | 4 | Barely usable |
+| 10¹⁶ | 16 | 0 | Numerically singular |
+
+<Callout type="warning" title="Warning: Matrix is close to singular or badly scaled">
+  MATLAB is telling you the condition number is enormous. It still returns an answer,
+  and the answer may be meaningless. **Never ignore this warning** — investigate what
+  in the physics is producing it.
+</Callout>
+
+<Callout type="engineering">
+  In power systems, a badly conditioned Jacobian usually means something physical:
+
+  - **Near voltage collapse.** As loading approaches the nose of the P–V curve, the
+    Jacobian becomes singular. That's the mathematics correctly reporting that the
+    operating point is at a stability limit.
+  - **An islanded bus.** A bus with no path to the slack makes the system singular.
+  - **A missing slack bus.** With no reference, voltages are only defined up to a
+    constant, and the Y-bus is singular by construction.
+
+  A conditioning warning is often a *result*, not a bug. It's telling you something
+  about the network.
+</Callout>
+
+## Residual is not error
+
+This distinction catches people, and it matters.
+
+```matlab
+x = A \ b;
+residual = norm(A*x - b);        % how well the equation is satisfied
+```
+
+A tiny residual does **not** guarantee $x$ is close to the true solution. For an
+ill-conditioned matrix, a badly wrong $x$ can still produce a very small $A x - b$.
+
+```matlab
+% Deliberately ill-conditioned
+A = [1      1;
+     1  1.0000001];
+b = [2; 2.0000001];
+
+x = A \ b;
+fprintf('residual: %.3e,  cond: %.3e\n', norm(A*x - b), cond(A));
+
+b2 = b + [0; 1e-9];              % perturb b by a billionth
+x2 = A \ b2;
+fprintf('change in b: 1e-9  ->  change in x: %.3e\n', norm(x2 - x));
+```
+
+A perturbation of 10⁻⁹ in the data produces a change in the answer many orders of
+magnitude larger. Both solutions have tiny residuals. Only one can be right.
+
+**Backslash guarantees a small residual. It cannot guarantee a small error.** Bridging
+the gap is exactly what the condition number tells you.
+
+## Reusing a factorisation
+
+Solving with the same matrix and many right-hand sides — common in contingency
+analysis — should factor once.
+
+```matlab
+% Wasteful: refactorises every time
+for k = 1:100
+    x(:,k) = A \ B(:,k);
+end
+
+% Factor once, substitute many times
+dA = decomposition(A);           % chooses and stores the right factorisation
+for k = 1:100
+    x(:,k) = dA \ B(:,k);
+end
+```
+
+`decomposition` keeps the LU (or Cholesky, or QR) and reuses it. For a hundred solves
+on a large matrix that is close to a hundredfold saving on the factorisation cost.
+
+## Least squares
+
+When $A$ is rectangular — more equations than unknowns — backslash quietly gives you
+the least-squares solution.
+
+```matlab
+% Fit V = a + b*I to measurements: 20 readings, 2 unknowns
+A = [ones(20,1), I_measured];
+p = A \ V_measured;              % [a; b], minimising the sum of squared residuals
+```
+
+This is how state estimation works: more measurements than states, solved in the
+least-squares sense so that measurement noise averages out rather than being fitted
+exactly.
+
+## Common mistakes
+
+<Callout type="warning" title="Using inv()">
+  Slower and less accurate. Use backslash.
+</Callout>
+
+<Callout type="warning" title="Ignoring the singularity warning">
+  It means the result may be numerically meaningless. Check `cond`, and ask what in
+  the network is producing it.
+</Callout>
+
+<Callout type="warning" title="Trusting a small residual">
+  Check `cond(A)` too. Small residual plus large condition number means you cannot
+  claim accuracy.
+</Callout>
+
+<Callout type="warning" title="Refactorising inside a loop">
+  Same matrix, many right-hand sides — use `decomposition`.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="How many digits survive?">
+  A Jacobian has `cond(J) = 3.7e9`. Roughly how many significant digits can you trust
+  in the solution, and what should you do about it?
+
+  <Solution>
+    $\log_{10}(3.7 \times 10^9) \approx 9.6$, so expect to lose about **10 digits**.
+    Starting from ~16, you have roughly **6 significant digits** left.
+
+    For a load flow in per unit that is still usable — 6 digits is far beyond
+    measurement accuracy. But it does mean:
+
+    - A convergence tolerance of 10⁻¹² is unachievable; the arithmetic can't resolve
+      it. 10⁻⁸ is realistic.
+    - The conditioning is worth investigating. A Jacobian at 10⁹ often means the
+      operating point is heavily loaded and approaching a stability limit — which is
+      a *finding*, not a nuisance.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Solve and assess">
+  Write a function that solves $Ax = b$ and returns the solution along with an honest
+  assessment of how much to trust it.
+
+  <Solution>
+    ```matlab
+    function [x, info] = solve_system(A, b)
+    %SOLVE_SYSTEM Solve A*x = b with a conditioning assessment.
+
+        arguments
+            A double
+            b double
+        end
+        assert(size(A,1) == numel(b), 'Dimension mismatch between A and b');
+
+        info.cond     = cond(A);
+        info.digits_lost = log10(info.cond);
+
+        if info.cond > 1e12
+            warning('cond(A) = %.2e — solution may be meaningless', info.cond);
+        end
+
+        x = A \ b;
+
+        info.residual = norm(A*x - b) / max(norm(b), eps);
+        info.trustworthy = info.cond < 1e10 && info.residual < 1e-10;
+
+        fprintf('cond = %.2e (~%.0f digits lost), relative residual = %.2e\n', ...
+                info.cond, info.digits_lost, info.residual);
+    end
+    ```
+
+    Reporting **both** numbers is the point. The residual alone would say "excellent"
+    on an ill-conditioned system where the answer is worthless.
+
+    Note `cond` costs an SVD, which is expensive on large matrices. For production
+    code use `rcond` or `condest`, which estimate cheaply.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="debug" title="Why is the load flow answer nonsense?">
+  A student's 5-bus load flow returns voltages like `1e14` with a singularity warning.
+
+  <Solution>
+    Almost certainly **no slack bus**, or a bus with no connection to the rest of the
+    network.
+
+    Without a reference, the Y-bus is singular: adding a constant to every voltage
+    angle gives an equally valid solution, so there is no unique answer. The physics
+    is under-determined, and the mathematics says so.
+
+    Diagnose:
+
+    ```matlab
+    fprintf('cond(Y) = %.3e\n', cond(Y));
+    fprintf('rank(Y) = %d of %d\n', rank(Y), size(Y,1));
+
+    % An isolated bus shows as a zero row and column
+    isolated = find(all(abs(Y) < 1e-12, 2));
+    if ~isempty(isolated)
+        fprintf('Isolated bus(es): %s\n', mat2str(isolated'));
+    end
+    ```
+
+    The fix is in the *model*, not the solver: designate a slack bus and remove its
+    row and column, or connect the orphaned bus. This is the same singular-Y-bus you
+    met in the Foundations matrices lesson, now with the diagnosis attached.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'A matrix has cond(A) = 1e10. Roughly how many significant digits remain?',
+      options: ['16', '10', '6', '0'],
+      answer: 2,
+      explain:
+        'You lose about log10(cond) ≈ 10 digits from the ~16 a double provides, leaving about 6. Enough for engineering work in per unit, but it caps how tight a tolerance you can meaningfully demand.',
+    },
+    {
+      q: 'What does a very small residual ||Ax - b|| prove?',
+      options: [
+        'The solution is accurate',
+        'That the equation is well satisfied — but not that x is close to the true solution',
+        'The matrix is well conditioned',
+        'The algorithm converged',
+      ],
+      answer: 1,
+      explain:
+        'Backslash guarantees a small residual. On an ill-conditioned system a badly wrong x can still satisfy the equation almost exactly. The condition number is what bridges residual and error.',
+    },
+    {
+      q: 'When is inv(A) genuinely the right thing to compute in power systems?',
+      options: [
+        'Whenever solving a load flow',
+        'When you need the Z-bus matrix itself, for repeated indexing in fault studies',
+        'When the matrix is sparse',
+        'Never, under any circumstances',
+      ],
+      answer: 1,
+      explain:
+        'Z-bus really is the inverse of Y-bus, and some fault methods index into it repeatedly. That is the exception; for solving a system, backslash always.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  `A \ b` picks the right algorithm and gives a **small residual**. Whether that
+  residual means a **small error** depends on the condition number — and in power
+  systems, bad conditioning is usually the network telling you something.
+</KeyIdea>
+
+## Further reading
+
+- `doc mldivide` — the full algorithm dispatch table
+- `doc decomposition`, `doc cond`, `doc condest`
+- Next: **sparse matrices** — why a 3000-bus load flow is even possible

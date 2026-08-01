@@ -1,0 +1,334 @@
+---
+title: Sparse Matrices
+track: matlab
+module: numerical-methods
+order: 26
+description: Why power system matrices are almost entirely zeros, how MATLAB exploits that, and the ordering decision that makes a 3000-bus load flow possible.
+objectives:
+  - Create and inspect sparse matrices, and know when sparsity pays off
+  - Explain fill-in and why reordering matters
+  - Build a Y-bus efficiently using triplet form
+prerequisites: [linear-systems]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'sparse-matrices', 'ybus', 'performance']
+---
+
+A 3000-bus power system has a 3000×3000 Y-bus. Stored densely that's 9 million
+complex numbers — 144 MB — and factorising it costs on the order of 10¹⁰ operations.
+
+Real systems solve in milliseconds. The reason is that almost every entry is zero.
+
+## Why power system matrices are sparse
+
+$Y_{ik}$ is nonzero only if buses $i$ and $k$ are **directly connected by a branch**.
+A bus in a real network connects to a handful of neighbours — typically two to four —
+regardless of how large the system is.
+
+<Analogy>
+  A Y-bus is a **road map**, not a distance table.
+
+  A distance table between 3000 towns has 9 million entries, because every pair has a
+  distance. A road map only records the roads that exist — a few thousand — because a
+  town has a handful of roads, whether the country has 3000 towns or 300,000.
+</Analogy>
+
+So a 3000-bus system might have 3000 diagonal entries plus about 8000 off-diagonal
+ones: roughly **11,000 nonzeros out of 9,000,000**. That's 0.12% density.
+
+## Creating sparse matrices
+
+```matlab
+S = sparse(A);              % convert an existing dense matrix
+S = sparse(m, n);           % empty m x n sparse
+S = spalloc(n, n, nz);      % pre-allocate space for nz nonzeros
+Is = speye(n);              % sparse identity
+```
+
+The efficient way to build one is **triplet form** — three vectors of row indices,
+column indices and values, assembled in a single call:
+
+<CodeFile name="ybus_sparse.m" caption="Y-bus assembly for a large system">
+```matlab
+function Y = build_ybus_sparse(n_bus, branch)
+%BUILD_YBUS_SPARSE Assemble a sparse admittance matrix from branch data.
+%   BRANCH columns: [from, to, R, X, B_shunt]
+
+    f = branch(:,1);
+    t = branch(:,2);
+    y = 1 ./ (branch(:,3) + 1i*branch(:,4));
+    b = 1i * branch(:,5) / 2;                  % half line charging each end
+
+    % Each branch contributes four entries. Build them all at once.
+    rows = [f;        t;        f;   t  ];
+    cols = [f;        t;        t;   f  ];
+    vals = [y + b;    y + b;   -y;  -y  ];
+
+    % sparse() SUMS duplicate (row, col) pairs — exactly the accumulation
+    % the stamping rule requires, with no loop.
+    Y = sparse(rows, cols, vals, n_bus, n_bus);
+end
+```
+</CodeFile>
+
+<Callout type="tip" title="sparse() sums duplicates — that IS the stamping rule">
+  If the same `(i,j)` appears several times in the triplet lists, `sparse` adds the
+  values. Two parallel lines between the same buses accumulate correctly with no
+  special handling, and the whole assembly becomes one vectorised call.
+
+  This is the elegant version of the loop from the indexing lesson. Both are correct;
+  the loop is easier to check by hand, this one is faster on large systems.
+</Callout>
+
+## Inspecting
+
+```matlab
+nnz(Y)                     % number of nonzeros
+nzmax(Y)                   % allocated capacity
+density = nnz(Y) / numel(Y)
+issparse(Y)                % true/false
+whos Y                     % compare the memory against a dense equivalent
+
+spy(Y);                    % visualise the sparsity pattern
+title(sprintf('%d nonzeros, %.3f%% density', nnz(Y), 100*density));
+```
+
+`spy` is genuinely useful. The picture of a Y-bus shows the network's structure —
+a radial feeder gives a near-tridiagonal band; a meshed transmission network gives
+scattered off-diagonal points. An unexpected pattern usually means the bus numbering
+or the branch data is wrong.
+
+## Fill-in, and why ordering matters
+
+Here is the subtlety that makes or breaks large-scale solving.
+
+When you factorise a sparse matrix into $LU$, the factors are usually **less sparse
+than the original**. Zeros become nonzero during elimination. That's called
+**fill-in**, and how much of it you get depends entirely on the order in which you
+eliminate the rows.
+
+<Analogy>
+  Imagine untangling a knot. Pull the strands in a sensible order and it comes apart
+  easily. Pull in a bad order and it tightens into a worse tangle.
+
+  Fill-in is the tangle. The elimination order is which strand you pull first.
+</Analogy>
+
+The classic bad case is a **star**: one hub connected to everything else. Eliminate
+the hub first and every pair of spokes becomes connected — the factor is completely
+dense. Eliminate the spokes first and there is no fill-in at all.
+
+```matlab
+n = 500;
+% Star: bus 1 connected to all others
+S = speye(n);
+S(1, 2:n) = 1;  S(2:n, 1) = 1;  S(1,1) = n;
+
+[L1, U1] = lu(S);                         % natural ordering — heavy fill-in
+p = symamd(S);                            % approximate minimum degree ordering
+[L2, U2] = lu(S(p,p));                    % reordered
+
+fprintf('natural  ordering: %d nonzeros in L+U\n', nnz(L1) + nnz(U1));
+fprintf('reordered        : %d nonzeros in L+U\n', nnz(L2) + nnz(U2));
+```
+
+<Callout type="engineering">
+  MATLAB's backslash applies a fill-reducing reordering automatically for sparse
+  matrices, so you get the benefit without asking. But knowing it exists explains
+  something you'll otherwise find mysterious: **two networks of identical size can
+  solve at very different speeds**, purely because of how their topology reorders.
+
+  It's also why professional load-flow software spends effort on bus ordering. On a
+  large system, ordering is worth more than almost any other optimisation.
+</Callout>
+
+The orderings available:
+
+```matlab
+p = symamd(S);      % symmetric approximate minimum degree — for symmetric matrices
+p = colamd(S);      % column AMD — for unsymmetric
+p = dissect(S);     % nested dissection — often best on very large systems
+p = symrcm(S);      % reverse Cuthill-McKee — minimises bandwidth
+```
+
+## When sparse is worth it
+
+Sparse storage has overhead: it keeps indices as well as values, so each nonzero
+costs more than a dense element.
+
+<Compare
+  headings={['Density', 'Storage', 'Verdict']}
+  rows={[
+    { option: 'Below ~1%', when: 'Power system Y-bus, Jacobian', cost: 'Sparse, always', recommended: true },
+    { option: '1–10%', when: 'Small networks, some optimisation problems', cost: 'Sparse usually still wins' },
+    { option: 'Above ~25%', when: 'Small dense blocks', cost: 'Dense is faster — sparse overhead dominates' },
+  ]}
+/>
+
+<Callout type="warning" title="Sparsity is contagious in the wrong direction">
+  Most operations preserve sparsity. A few destroy it and silently produce a dense
+  matrix that may not fit in memory:
+
+  ```matlab
+  Y_dense = full(Y);        % explicit — fine, you asked
+  Z = inv(Y);               % the inverse of a sparse matrix is usually DENSE
+  Y + 1                     % adding a scalar to every entry fills every zero
+  ```
+
+  On a 3000-bus system `inv(Y)` tries to build a dense 3000×3000 complex matrix.
+  This is another reason Z-bus methods don't scale, and backslash does.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Building dense then converting">
+  `Y = zeros(3000); ... ; Y = sparse(Y);` allocates 144 MB first. Build sparse from
+  the start, ideally with triplets.
+</Callout>
+
+<Callout type="warning" title="Growing a sparse matrix element by element">
+  `S(i,j) = v` inside a loop reallocates the internal structure each time — worse for
+  sparse than for dense. Accumulate triplets, then call `sparse` once.
+</Callout>
+
+<Callout type="warning" title="inv() on a sparse matrix">
+  Usually dense, usually enormous. Use backslash.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="How sparse?">
+  A 118-bus system has 179 branches. How many nonzeros does the Y-bus have, and what
+  is its density?
+
+  <Solution>
+    - **Diagonal:** 118 entries (every bus has a self-admittance).
+    - **Off-diagonal:** 2 per branch, since both $(i,j)$ and $(j,i)$ are stamped —
+      358.
+    - **Total:** 476 nonzeros.
+    - **Density:** 476 / 118² = 476 / 13,924 ≈ **3.4%**.
+
+    So 96.6% of the matrix is zero, on a system most people would call small. At 3000
+    buses the density falls below 0.15%, which is why sparsity matters more the
+    larger the system gets.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Measure the benefit">
+  Build the same random network Y-bus dense and sparse, and compare memory and solve
+  time.
+
+  <Solution>
+    ```matlab
+    rng(42);
+    n = 2000;
+    n_branch = 3 * n;
+
+    f = randi(n, n_branch, 1);
+    t = randi(n, n_branch, 1);
+    keep = f ~= t;                          % drop self-loops
+    f = f(keep); t = t(keep);
+    y = 1 ./ (0.01 + 0.05i) * ones(numel(f), 1);
+
+    Y_sp = sparse([f;t;f;t], [f;t;t;f], [y;y;-y;-y], n, n);
+    Y_de = full(Y_sp);
+
+    b = ones(n,1);
+
+    fprintf('sparse: %6.2f MB, %d nonzeros (%.3f%%)\n', ...
+            nnz(Y_sp)*16/1e6, nnz(Y_sp), 100*nnz(Y_sp)/numel(Y_sp));
+    fprintf('dense : %6.2f MB\n', numel(Y_de)*16/1e6);
+
+    tic; x1 = Y_sp \ b; t_sp = toc;
+    tic; x2 = Y_de \ b; t_de = toc;
+
+    fprintf('sparse solve: %.4f s\n', t_sp);
+    fprintf('dense  solve: %.4f s  (%.0fx slower)\n', t_de, t_de/t_sp);
+    fprintf('same answer: %d\n', norm(x1-x2)/norm(x1) < 1e-10);
+    ```
+
+    Expect roughly two orders of magnitude in memory and a large factor in time — and
+    the answers agree, which is the point. Sparsity is not an approximation; it is the
+    same solution computed without touching the zeros.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="read" title="Why does one 500-bus system solve faster than another?">
+  Two systems have the same number of buses and branches, but one solves noticeably
+  faster. What is the likely explanation?
+
+  <Solution>
+    **Topology, through fill-in.**
+
+    A radial or lightly meshed network reorders well — elimination produces almost no
+    fill-in, so the LU factors stay sparse and the solve is cheap.
+
+    A heavily meshed network, or one with a few very high-degree buses, generates
+    much more fill-in whatever the ordering. The factors are denser, so the solve
+    costs more even though the original matrix has the same number of nonzeros.
+
+    You can see it directly:
+
+    ```matlab
+    [L, U, P, Q] = lu(Y);
+    fprintf('fill ratio: %.1fx\n', (nnz(L) + nnz(U)) / nnz(Y));
+    ```
+
+    A ratio near 1 means almost no fill-in. A ratio of 20 means the factors are twenty
+    times denser than the matrix, and that is where the time goes.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why is a power system Y-bus sparse?',
+      options: [
+        'Because most admittances are very small',
+        'Because Y(i,k) is nonzero only where buses i and k are directly connected',
+        'Because MATLAB compresses large matrices',
+        'Because impedances are stored in per unit',
+      ],
+      answer: 1,
+      explain:
+        'The Y-bus is the network graph with electrical weights. A bus connects to a handful of neighbours no matter how large the system, so the fraction of nonzeros falls as the system grows.',
+    },
+    {
+      q: 'What is fill-in?',
+      options: [
+        'Adding buses to complete a network model',
+        'Zeros in the matrix becoming nonzero during LU factorisation',
+        'Padding a sparse matrix to a fixed size',
+        'Interpolating missing measurement data',
+      ],
+      answer: 1,
+      explain:
+        'Elimination creates new nonzeros in the factors. How many depends on the elimination order, which is why fill-reducing reorderings exist and why identical-size systems can solve at very different speeds.',
+    },
+    {
+      q: 'Why avoid inv() on a sparse matrix?',
+      options: [
+        'MATLAB does not support it',
+        'The inverse of a sparse matrix is generally dense, and may not fit in memory',
+        'It returns the wrong answer',
+        'It only works on symmetric matrices',
+      ],
+      answer: 1,
+      explain:
+        'Sparsity is a property of the matrix, not its inverse. Inverting a 3000-bus Y-bus attempts a dense 3000×3000 complex matrix — one of the reasons Z-bus methods scale poorly.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Power system matrices are **graphs, not tables** — nonzero only where a branch
+  exists. Build them sparse from triplets, let backslash handle the reordering, and
+  never form an explicit inverse.
+</KeyIdea>
+
+## Further reading
+
+- `doc sparse`, `doc spy`, `doc symamd`
+- Tim Davis, *Direct Methods for Sparse Linear Systems* — the definitive treatment,
+  and Davis wrote the solvers MATLAB actually uses
+- Next: **root finding** — solving the nonlinear equations that load flow really is

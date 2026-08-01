@@ -1,0 +1,322 @@
+---
+title: Numerical Integration
+track: matlab
+module: numerical-methods
+order: 29
+description: Turning a power curve into energy — trapz for data, integral for functions, and why RMS is an integral in disguise.
+objectives:
+  - Integrate sampled data with trapz and cumtrapz, handling units correctly
+  - Integrate a function with integral, and know when adaptive quadrature matters
+  - Compute RMS and harmonic quantities as integrals
+prerequisites: [interpolation-and-fitting]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'integration', 'energy', 'rms']
+---
+
+Power integrated over time is energy. Current squared integrated over a cycle gives
+RMS. Almost every quantity a meter reports is an integral of something instantaneous.
+
+There are two distinct cases: you have **samples**, or you have a **function**.
+
+## Data: `trapz`
+
+The trapezoidal rule joins consecutive samples with straight lines and sums the areas.
+
+```matlab
+hours = 0:23;                                  % hours
+P_MW  = [38 35 34 33 34 37 45 52 58 61 60 57 ...
+         55 54 56 59 63 68 66 60 54 48 43 40];
+
+energy_MWh = trapz(hours, P_MW);
+fprintf('Daily energy: %.1f MWh\n', energy_MWh);
+```
+
+<Callout type="warning" title="trapz(y) assumes unit spacing">
+  `trapz(P_MW)` — with no x — treats the spacing as 1. That's only right if your
+  samples really are one unit apart.
+
+  For half-hourly data, `trapz(P)` gives an answer **twice** the true energy, because
+  each interval is 0.5 h not 1 h. Always pass the x vector, or multiply by the true
+  interval:
+
+  ```matlab
+  energy = trapz(P) * 0.5;          % half-hourly samples
+  energy = trapz(t_hours, P);       % or pass the time vector — safer
+  ```
+
+  This is one of the most common unit errors in energy analysis, and it produces an
+  answer that is wrong by a clean factor of two, which is exactly the kind of error
+  that looks plausible.
+</Callout>
+
+## Running totals: `cumtrapz`
+
+For cumulative energy through the day:
+
+```matlab
+cumulative_MWh = cumtrapz(hours, P_MW);
+
+plot(hours, cumulative_MWh, 'LineWidth', 1.4);
+xlabel('Hour of day');
+ylabel('Cumulative energy (MWh)');
+grid on;
+```
+
+This is what an energy meter integrates. The final value equals `trapz` of the whole
+series, and the curve shows when consumption accumulated.
+
+## Accuracy
+
+The trapezoidal rule has error $O(h^2)$ — halve the spacing and the error falls by
+four. That's usually plenty for measurement data, which has its own uncertainty far
+larger than the integration error.
+
+Where it does matter:
+
+```matlab
+x = linspace(0, pi, 11);
+y = sin(x);
+
+exact = 2;
+fprintf('trapz  (11 pts): %.6f  error %.2e\n', trapz(x,y), abs(trapz(x,y)-exact));
+
+% Simpson's rule — O(h^4) — for smooth functions, when you have the samples
+% at an odd number of evenly spaced points
+n = numel(x);
+w = ones(1,n); w(2:2:end-1) = 4; w(3:2:end-2) = 2;
+h = x(2)-x(1);
+simpson = h/3 * sum(w .* y);
+fprintf('simpson(11 pts): %.6f  error %.2e\n', simpson, abs(simpson-exact));
+```
+
+Simpson's is dramatically more accurate on smooth data for the same samples. It also
+requires even spacing and an odd number of points, which measurement data rarely
+gives you — which is why `trapz` is the practical default.
+
+<Callout type="tip" title="Trapezoid is the honest choice for measured data">
+  A higher-order rule assumes the function between samples is smooth. Measured demand
+  is not smooth — it's a step-ish, noisy signal. Fitting a higher-order curve through
+  noisy samples imposes structure the data doesn't have, so the extra accuracy is
+  illusory.
+</Callout>
+
+## Functions: `integral`
+
+When you have a function rather than samples, MATLAB does adaptive quadrature — it
+refines automatically where the integrand is difficult.
+
+```matlab
+f = @(x) exp(-x.^2);
+Q = integral(f, 0, Inf);                       % handles infinite limits
+fprintf('%.10f vs sqrt(pi)/2 = %.10f\n', Q, sqrt(pi)/2);
+
+Q = integral(f, 0, 1, 'RelTol', 1e-12, 'AbsTol', 1e-14);
+
+% 2D and 3D versions exist
+Q2 = integral2(@(x,y) x.*y, 0, 1, 0, 1);
+```
+
+`integral` is nearly always the right choice for a function: it's accurate, it
+handles singularities and infinite limits, and it tells you if it can't reach the
+tolerance.
+
+<Compare
+  headings={['You have', 'Use', 'Note']}
+  rows={[
+    { option: 'Sampled measurements', when: 'trapz / cumtrapz', cost: 'Pass the x vector, always', recommended: true },
+    { option: 'An analytic function', when: 'integral', cost: 'Adaptive, handles Inf limits' },
+    { option: 'Smooth evenly-spaced samples', when: "Simpson's rule", cost: 'Higher order, needs odd count' },
+    { option: 'A function you can differentiate symbolically', when: 'Symbolic Toolbox int()', cost: 'Exact when it exists' },
+  ]}
+/>
+
+## RMS is an integral
+
+The definition every power engineer uses:
+
+$$
+V_{rms} = \sqrt{\frac{1}{T}\int_0^T v(t)^2 \, dt}
+$$
+
+<CodeFile name="rms_from_samples.m">
+```matlab
+% One cycle of 50 Hz, sampled at 10 kHz
+fs = 10000;
+f0 = 50;
+t  = (0 : 1/fs : 1/f0 - 1/fs)';        % exactly one cycle
+v  = 325 * sin(2*pi*f0*t);             % 230 V rms nominal, so peak = 325 V
+
+% From the definition, as an integral
+T = t(end) + 1/fs;
+V_rms_integral = sqrt(trapz(t, v.^2) / T);
+
+% The discrete shortcut, valid for an integer number of cycles
+V_rms_discrete = sqrt(mean(v.^2));
+
+fprintf('integral form: %.4f V\n', V_rms_integral);
+fprintf('discrete form: %.4f V\n', V_rms_discrete);
+fprintf('theoretical  : %.4f V\n', 325/sqrt(2));
+```
+</CodeFile>
+
+<Callout type="warning" title="RMS over a non-integer number of cycles is wrong">
+  `sqrt(mean(v.^2))` is only correct over a **whole number of cycles**. Over 1.5
+  cycles the partial cycle biases the result.
+
+  This is a real measurement issue: a power quality analyser must synchronise its
+  window to the fundamental, and PLL loss of lock is a genuine source of erroneous
+  readings.
+</Callout>
+
+<Callout type="engineering">
+  Harmonic quantities are the same integral applied per component. Total harmonic
+  distortion:
+
+  $$\text{THD} = \frac{\sqrt{\sum_{h=2}^{\infty} V_h^2}}{V_1}$$
+
+  ```matlab
+  V = fft(v) / numel(v) * 2;          % amplitude spectrum
+  V1 = abs(V(2));                     % fundamental (bin 1 is DC)
+  harmonics = abs(V(3:20));           % 2nd through 19th
+  THD = sqrt(sum(harmonics.^2)) / V1 * 100;
+
+  fprintf('THD = %.2f%%\n', THD);
+  ```
+
+  Each $V_h$ is itself an RMS quantity — an integral of that component squared. The
+  chain from "integrate a sampled waveform" to "report THD against IEEE 519" is
+  entirely this lesson.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Forgetting the x vector">
+  `trapz(y)` assumes spacing of 1. For half-hourly data that doubles your energy.
+</Callout>
+
+<Callout type="warning" title="Mixing units">
+  MW integrated over hours gives MWh. MW over *seconds* gives MJ ÷ 3600. State the
+  units of the time vector in a comment.
+</Callout>
+
+<Callout type="warning" title="Integrating through NaN">
+  One missing sample makes `trapz` return NaN for the whole series. Decide explicitly:
+  drop the gaps, interpolate across them, or report the coverage — but decide.
+</Callout>
+
+<Callout type="warning" title="RMS over a partial cycle">
+  Synchronise the window, or the answer is quietly wrong.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What is the energy?">
+  Half-hourly demand of 100 MW constant for 24 hours. What does each return?
+
+  ```matlab
+  P = 100 * ones(1, 48);
+  a = trapz(P)
+  b = trapz(P) * 0.5
+  c = trapz(0:0.5:23.5, P)
+  ```
+
+  <Solution>
+    - `a = 4700`. `trapz` with unit spacing over 48 points gives 47 intervals × 100.
+      **Wrong** — the units are meaningless.
+    - `b = 2350` MWh. Correct scaling by the 0.5 h interval. The true answer is 2400
+      MWh for a full day; trapz gives 2350 because 48 samples span 23.5 hours, not 24
+      — the last half-hour has no closing sample.
+    - `c = 2350` MWh. Same, and explicit about the time base.
+
+    The instructive part is that even the "right" answers give 2350, not 2400. The
+    trapezoidal rule integrates *between* your samples; 48 half-hourly readings cover
+    23.5 hours of intervals. For interval-metered data, where each reading represents
+    a whole half-hour of consumption, `sum(P) * 0.5 = 2400` is actually the correct
+    model — the readings are averages over intervals, not instantaneous samples.
+
+    **Which is right depends on what your data means.** Instantaneous samples →
+    `trapz`. Interval averages → `sum` × interval.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Energy and load factor from a waveform">
+  Given a day of half-hourly demand, compute total energy, the hour of peak, and
+  verify the energy against the average demand.
+
+  <Solution>
+    ```matlab
+    function [E_MWh, peak_hour] = daily_energy(t_hours, P_MW)
+    %DAILY_ENERGY Energy, peak timing, with a consistency check.
+
+        assert(numel(t_hours) == numel(P_MW), 'Vectors must match');
+        assert(~any(isnan(P_MW)), 'Cannot integrate through missing data');
+
+        E_MWh = trapz(t_hours, P_MW);
+
+        [~, idx] = max(P_MW);
+        peak_hour = t_hours(idx);
+
+        % Cross-check: energy should equal mean power x duration
+        duration = t_hours(end) - t_hours(1);
+        E_check  = mean(P_MW) * duration;
+
+        rel_diff = abs(E_MWh - E_check) / E_MWh;
+        assert(rel_diff < 0.02, ...
+               'Energy (%.1f) and mean x duration (%.1f) disagree by %.1f%%', ...
+               E_MWh, E_check, rel_diff*100);
+
+        fprintf('Energy: %.1f MWh, peak %.1f MW at hour %.1f\n', ...
+                E_MWh, max(P_MW), peak_hour);
+    end
+    ```
+
+    The cross-check is worth having. Trapezoidal integration and mean × duration
+    should agree closely for a reasonably sampled series — they differ only by the end
+    corrections. A large disagreement means the time vector is wrong, which is exactly
+    the unit error this lesson warns about.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'You have half-hourly demand in MW. What does trapz(P) give?',
+      options: [
+        'Energy in MWh',
+        'A number twice the energy in MWh, because unit spacing is assumed',
+        'Energy in MJ',
+        'Average demand',
+      ],
+      answer: 1,
+      explain:
+        'Without an x vector, trapz assumes spacing of 1. With half-hour intervals the true spacing is 0.5, so the result is double. Pass the time vector, or multiply by 0.5.',
+    },
+    {
+      q: 'Why must RMS be computed over a whole number of cycles?',
+      options: [
+        'MATLAB requires it',
+        'A partial cycle biases the mean of the squared signal',
+        'The FFT needs a power of two',
+        'It does not matter for sinusoids',
+      ],
+      answer: 1,
+      explain:
+        'The mean of v² over a partial cycle is not the cycle average, so the RMS is skewed. Power quality analysers synchronise their window to the fundamental for exactly this reason.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **`trapz` for samples, `integral` for functions** — and the error that actually
+  bites is units, not accuracy. Always pass the time vector, and know whether your
+  readings are instantaneous samples or interval averages, because that changes which
+  formula is correct.
+</KeyIdea>
+
+## Further reading
+
+- `doc trapz`, `doc cumtrapz`, `doc integral`
+- IEC 61000-4-30 — measurement methods for power quality, including window
+  synchronisation
+- Next: **ODE solvers** — integrating a differential equation forward in time

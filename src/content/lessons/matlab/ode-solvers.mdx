@@ -1,0 +1,356 @@
+---
+title: ODE Solvers
+track: matlab
+module: numerical-methods
+order: 30
+description: Integrating differential equations forward in time — ode45, stiffness, and the swing equation you'll meet in Semester 2.
+objectives:
+  - Express a differential equation in the first-order form a solver requires
+  - Choose between ode45 and a stiff solver, and recognise stiffness
+  - Use event detection to stop or branch on a physical condition
+prerequisites: [numerical-integration]
+estimatedMinutes: 35
+difficulty: advanced
+tags: ['matlab', 'ode', 'dynamics', 'stability']
+---
+
+Everything so far has been steady state. A load flow answers "where does the system
+settle?" This lesson is about "what happens *on the way*" — which is the whole
+subject of power system dynamics and stability.
+
+## The form solvers require
+
+Every MATLAB ODE solver wants the problem as a **system of first-order equations**:
+
+$$
+\frac{d\mathbf{y}}{dt} = f(t, \mathbf{y})
+$$
+
+Any higher-order equation converts by introducing new variables. The swing equation
+is second order:
+
+$$
+\frac{2H}{\omega_s}\frac{d^2\delta}{dt^2} = P_m - P_e
+$$
+
+Let $y_1 = \delta$ and $y_2 = d\delta/dt$. Then:
+
+$$
+\frac{dy_1}{dt} = y_2, \qquad
+\frac{dy_2}{dt} = \frac{\omega_s}{2H}\left(P_m - P_e\right)
+$$
+
+Two first-order equations. That substitution — "introduce the derivative as a new
+state" — converts any order to first order, and it is the only trick you need.
+
+## `ode45`
+
+<CodeFile name="swing_equation.m">
+```matlab
+function dydt = swing(t, y, H, ws, Pm, Pmax, D)
+%SWING Classical swing equation with damping.
+%   y(1) = rotor angle delta (rad)
+%   y(2) = angular velocity deviation (rad/s)
+
+    delta = y(1);
+    omega = y(2);
+
+    Pe = Pmax * sin(delta);              % electrical power output
+
+    dydt = [ omega;
+             (ws/(2*H)) * (Pm - Pe - D*omega) ];
+end
+```
+
+```matlab
+H = 5;  ws = 2*pi*50;  Pm = 0.8;  Pmax = 1.5;  D = 0.05;
+
+delta0 = asin(Pm/Pmax);                  % equilibrium
+y0     = [delta0 + 0.4; 0];              % disturbed by 0.4 rad
+
+tspan = [0 5];
+[t, y] = ode45(@(t,y) swing(t, y, H, ws, Pm, Pmax, D), tspan, y0);
+
+figure;
+tiledlayout(2,1,'TileSpacing','compact');
+nexttile; plot(t, rad2deg(y(:,1)), 'LineWidth', 1.4);
+ylabel('\delta (deg)'); grid on;
+nexttile; plot(t, y(:,2), 'LineWidth', 1.4);
+ylabel('\Delta\omega (rad/s)'); xlabel('Time (s)'); grid on;
+```
+</CodeFile>
+
+The anonymous-function wrapper `@(t,y) swing(t,y,H,ws,...)` is how you pass extra
+parameters. The solver only ever calls `f(t,y)`, so everything else is captured.
+
+<Callout type="engineering">
+  Plotting $\Delta\omega$ against $\delta$ gives the **phase portrait**, and it makes
+  stability visible in a way the time series doesn't:
+
+  ```matlab
+  plot(rad2deg(y(:,1)), y(:,2), 'LineWidth', 1.2);
+  xlabel('\delta (deg)'); ylabel('\Delta\omega (rad/s)');
+  ```
+
+  A spiral inward means a damped, stable machine. A closed orbit means sustained
+  oscillation. A trajectory that escapes means loss of synchronism. Semester 2's
+  equal-area criterion is a statement about the area under this curve.
+</Callout>
+
+## Choosing a solver
+
+<Compare
+  headings={['Solver', 'Use for', 'Note']}
+  rows={[
+    { option: 'ode45', when: 'The default — non-stiff problems, moderate accuracy', cost: 'Runge-Kutta 4/5, adaptive', recommended: true },
+    { option: 'ode15s', when: 'Stiff systems — very different time constants', cost: 'Implicit, handles stiffness' },
+    { option: 'ode23s', when: 'Stiff and crude tolerance acceptable', cost: 'Cheaper per step than ode15s' },
+    { option: 'ode113', when: 'Smooth problems needing high accuracy', cost: 'Multistep, few function evaluations' },
+    { option: 'ode23t', when: 'Moderately stiff, and you want no numerical damping', cost: 'Trapezoidal rule' },
+  ]}
+/>
+
+**Start with `ode45`.** If it is unbearably slow, or takes a vast number of tiny
+steps, the problem is probably stiff.
+
+## Stiffness
+
+<Analogy>
+  A stiff system contains **a hummingbird and a glacier**.
+
+  The fast dynamics settle in microseconds; the slow ones take seconds. An explicit
+  solver must keep stepping at the hummingbird's pace — even long after the
+  hummingbird has stopped moving — because taking a larger step makes it numerically
+  unstable.
+
+  A stiff solver understands the fast mode has already died and steps at the
+  glacier's pace.
+</Analogy>
+
+Power systems are naturally stiff: electromagnetic transients act in microseconds,
+electromechanical swings in hundreds of milliseconds, and governor and AVR responses
+in seconds. Four or five orders of magnitude between the fastest and slowest.
+
+```matlab
+% Symptom: ode45 crawls, taking thousands of steps
+tic; [t1, y1] = ode45(@stiff_system, [0 100], y0); t_45 = toc;
+tic; [t2, y2] = ode15s(@stiff_system, [0 100], y0); t_15s = toc;
+
+fprintf('ode45 : %6d steps, %.3f s\n', numel(t1), t_45);
+fprintf('ode15s: %6d steps, %.3f s\n', numel(t2), t_15s);
+```
+
+Symptoms of stiffness: `ode45` takes an enormous number of steps, runs slowly, or
+warns about the step size falling below the minimum. The fix is to switch solver, not
+to loosen tolerances.
+
+## Tolerances
+
+```matlab
+opts = odeset('RelTol', 1e-8, 'AbsTol', 1e-10);
+[t, y] = ode45(@f, tspan, y0, opts);
+```
+
+`RelTol` defaults to 10⁻³, which is quite loose — fine for a qualitative picture,
+not for a result you'll publish. `AbsTol` matters for states that pass near zero,
+where a relative tolerance is meaningless.
+
+<Callout type="warning" title="Verify by tightening">
+  Solve twice, at your tolerance and one much tighter. If the answers differ
+  materially, your tolerance was too loose.
+
+  ```matlab
+  [t1, y1] = ode45(f, tspan, y0, odeset('RelTol',1e-6));
+  [t2, y2] = ode45(f, tspan, y0, odeset('RelTol',1e-10));
+  y1i = interp1(t1, y1, t2);                  % common time base
+  fprintf('max difference: %.3e\n', max(abs(y1i(:) - y2(:))));
+  ```
+
+  This is the ODE equivalent of validating against a known answer — a convergence
+  study when there's nothing else to check against.
+</Callout>
+
+## Event detection
+
+Stop or branch when a physical condition occurs — a fault clearing, a relay picking
+up, a rotor angle exceeding a limit.
+
+<CodeFile name="pole_slip_event.m">
+```matlab
+function [value, isterminal, direction] = pole_slip(~, y)
+%POLE_SLIP Stop the integration when the rotor angle exceeds 180 degrees.
+
+    value      = y(1) - pi;    % zero-crossing of this triggers the event
+    isterminal = 1;            % 1 = stop integrating
+    direction  = 1;            % only when increasing
+end
+```
+</CodeFile>
+
+```matlab
+opts = odeset('Events', @pole_slip, 'RelTol', 1e-8);
+[t, y, te, ye, ie] = ode45(@(t,y) swing(t,y,H,ws,Pm,Pmax,D), [0 10], y0, opts);
+
+if isempty(te)
+    fprintf('Machine remained in synchronism for the full %.1f s\n', t(end));
+else
+    fprintf('Pole slip at t = %.4f s (delta = %.1f deg)\n', te, rad2deg(ye(1)));
+end
+```
+
+The solver locates the crossing precisely by root finding — the previous lesson,
+applied inside the ODE solver. Detecting critical clearing time in a transient
+stability study is exactly this.
+
+## Common mistakes
+
+<Callout type="warning" title="Not converting to first order">
+  Solvers require dy/dt = f(t,y). A second-order equation must become two first-order
+  ones.
+</Callout>
+
+<Callout type="warning" title="Returning a row vector from the derivative function">
+  It must be a **column**. `dydt = [a; b]` with a semicolon, not `[a b]`. This is the
+  most common ODE error in MATLAB.
+</Callout>
+
+<Callout type="warning" title="Fighting stiffness with tolerance">
+  If ode45 crawls, loosening RelTol gives a fast wrong answer. Switch to ode15s.
+</Callout>
+
+<Callout type="warning" title="Accepting the default tolerance for a published result">
+  RelTol 1e-3 is a sketch. Tighten it and confirm the answer doesn't move.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Convert to first-order form">
+  Write the derivative function for a damped RLC circuit:
+
+  $$L\frac{d^2 i}{dt^2} + R\frac{di}{dt} + \frac{1}{C}i = 0$$
+
+  <Solution>
+    Let $y_1 = i$ and $y_2 = di/dt$:
+
+    $$\frac{dy_1}{dt} = y_2, \qquad \frac{dy_2}{dt} = -\frac{R}{L}y_2 - \frac{1}{LC}y_1$$
+
+    ```matlab
+    function dydt = rlc(~, y, R, L, C)
+    %RLC Series RLC natural response.
+    %   y(1) = current, y(2) = di/dt
+
+        dydt = [ y(2);
+                -(R/L)*y(2) - (1/(L*C))*y(1) ];      % COLUMN vector
+    end
+    ```
+
+    ```matlab
+    R = 10; L = 1e-3; C = 1e-6;
+    [t, y] = ode45(@(t,y) rlc(t,y,R,L,C), [0 2e-3], [0; 1000]);
+    plot(t*1000, y(:,1), 'LineWidth', 1.3);
+    xlabel('Time (ms)'); ylabel('Current (A)'); grid on;
+    ```
+
+    The damping ratio is $\zeta = \frac{R}{2}\sqrt{C/L}$. Here that's 0.158 —
+    underdamped, so expect a decaying oscillation. Predicting the qualitative shape
+    before you run it is the check that you set the problem up right.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="debug" title="Why does ode45 error immediately?">
+  ```matlab
+  function dydt = f(t, y)
+      dydt = [y(2), -y(1)];
+  end
+  ```
+
+  <Solution>
+    The derivative is returned as a **row** vector. MATLAB's solvers require a column.
+
+    ```matlab
+    dydt = [y(2); -y(1)];      % semicolon, not comma
+    ```
+
+    The error message mentions the dimensions not matching the initial condition,
+    which is precise but easy to misread as a problem with `y0`. It's the single most
+    common ODE mistake in MATLAB, and it costs everyone about ten minutes once.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="read" title="Stiff or not?">
+  Which of these are likely stiff?
+
+  1. A rotor swinging after a fault, over 5 seconds
+  2. An RLC circuit with R = 0.01 Ω, L = 1 mH, C = 1 µF, over 10 ms
+  3. A combined model of electromagnetic transients (µs) and governor response (s)
+  4. Daily thermal loading of a transformer over a week
+
+  <Solution>
+    1. **Not stiff.** One dominant time scale, hundreds of milliseconds. `ode45`.
+    2. **Not stiff**, but *fast*. The natural frequency is ~5 kHz, so use a small
+       `tspan` and tight tolerance — `ode45` is fine.
+    3. **Very stiff.** Microseconds against seconds is six orders of magnitude. This
+       is the classic case for `ode15s`, and it is why full electromagnetic-transient
+       and electromechanical studies are usually run in separate tools with different
+       assumptions.
+    4. **Not stiff**, but very slow. Long `tspan`, loose tolerance is fine.
+
+    Stiffness is about the *ratio* of time constants present, not how fast the system
+    is in absolute terms.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What form must a problem be in for MATLAB ODE solvers?',
+      options: [
+        'Any differential equation',
+        'A system of first-order equations, dy/dt = f(t,y)',
+        'A linear system only',
+        'Second-order form',
+      ],
+      answer: 1,
+      explain:
+        'Higher-order equations convert by introducing the derivative as an extra state. The swing equation becomes two first-order equations in angle and speed.',
+    },
+    {
+      q: 'ode45 is taking thousands of tiny steps and running slowly. What should you do?',
+      options: [
+        'Loosen RelTol',
+        'Switch to a stiff solver such as ode15s',
+        'Reduce the time span',
+        'Use a coarser initial condition',
+      ],
+      answer: 1,
+      explain:
+        'That is the signature of stiffness. Loosening the tolerance gives a fast wrong answer; a stiff solver steps at the slow time scale while staying stable.',
+    },
+    {
+      q: 'What must the derivative function return?',
+      options: [
+        'A row vector',
+        'A column vector',
+        'A scalar',
+        'A struct',
+      ],
+      answer: 1,
+      explain:
+        'A column. Returning [a b] instead of [a; b] is the most common ODE error in MATLAB, and the resulting message points at the initial condition rather than the real cause.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Convert to **first-order form**, return a **column vector**, start with **ode45**,
+  and switch to **ode15s** when the problem is stiff. Then verify by tightening the
+  tolerance and confirming the answer doesn't move.
+</KeyIdea>
+
+## Further reading
+
+- `doc ode45`, `doc odeset`, `doc ode15s`
+- Kundur, *Power System Stability and Control*, Chapter 13 — the swing equation in
+  full, and where the classical model stops being adequate
+- Next: the **module project** — Newton-Raphson from scratch, and breaking it
+  deliberately

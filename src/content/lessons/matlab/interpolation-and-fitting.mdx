@@ -1,0 +1,324 @@
+---
+title: Interpolation and Curve Fitting
+track: matlab
+module: numerical-methods
+order: 28
+description: Passing through every point versus finding the trend — two different questions that beginners routinely confuse, with different right answers.
+objectives:
+  - Distinguish interpolation from regression and choose correctly
+  - Use interp1 and spline appropriately, including their failure modes
+  - Fit a model with polyfit and judge whether the fit is justified
+prerequisites: [root-finding]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'interpolation', 'curve-fitting', 'regression']
+---
+
+You have measurements at some points and want values in between. There are two
+completely different situations hiding in that sentence, and treating them the same
+way is one of the most common mistakes in engineering data work.
+
+## The distinction
+
+<Analogy>
+  **Interpolation** assumes your data points are **exactly right**. You're filling in
+  the gaps between known truths — like reading a value between two gridlines on a
+  calibrated chart.
+
+  **Regression** assumes your data points are **noisy measurements of a simpler
+  underlying reality**. You're looking for the trend, and deliberately *not* passing
+  through every point, because some of what you measured was noise.
+
+  Interpolate a manufacturer's lookup table. Regress your own measurements.
+</Analogy>
+
+Get this backwards and you either smooth away real structure, or fit a curve to your
+own measurement noise and then trust it.
+
+<Compare
+  headings={['Situation', 'Use', 'Why']}
+  rows={[
+    { option: 'Manufacturer lookup table', when: 'Interpolation', cost: 'Values are exact by definition', recommended: true },
+    { option: 'Resampling a time series to a common time base', when: 'Interpolation', cost: 'You want the recorded values preserved' },
+    { option: 'Noisy field measurements', when: 'Regression', cost: 'Passing through noise is fitting the error' },
+    { option: 'Deriving a physical relationship', when: 'Regression', cost: 'The model should have physical form' },
+    { option: 'Extrapolating beyond your data', when: 'Neither, with great caution', cost: 'Both are unreliable outside the range' },
+  ]}
+/>
+
+## Interpolation with `interp1`
+
+```matlab
+x = [0 2 4 6 8 10];
+y = [0 3 7 8 9 9.5];
+
+xq = 0:0.1:10;
+
+y_lin    = interp1(x, y, xq, 'linear');    % default
+y_spline = interp1(x, y, xq, 'spline');    % smooth cubic
+y_pchip  = interp1(x, y, xq, 'pchip');     % shape-preserving cubic
+y_near   = interp1(x, y, xq, 'nearest');   % piecewise constant
+```
+
+All four pass through every original point. They differ entirely in what they do
+between.
+
+<Callout type="tip" title="pchip when the data is monotonic">
+  `spline` produces the smoothest curve but can **overshoot** — it may dip below a
+  minimum or rise above a maximum that isn't in your data. `pchip` is
+  shape-preserving: monotonic data stays monotonic.
+
+  For anything physically bounded — an efficiency curve that cannot exceed 1, a
+  demand series that cannot go negative — `pchip` is the safer choice. A spline that
+  dips to −2 MW between two positive readings has invented a value that cannot exist.
+</Callout>
+
+```matlab
+% Extrapolation is off by default — you get NaN outside the range
+interp1(x, y, 12)                          % NaN
+interp1(x, y, 12, 'linear', 'extrap')      % extrapolates, at your own risk
+```
+
+That NaN default is deliberate and good. It refuses to invent data outside the range
+you measured unless you explicitly ask.
+
+## Regression with `polyfit`
+
+```matlab
+p = polyfit(x, y, n);        % least-squares fit of degree n
+y_fit = polyval(p, xq);
+```
+
+<CodeFile name="line_resistance.m" caption="Fitting a physical relationship to measurements">
+```matlab
+% Measured voltage drop against current on a feeder.
+% Theory says dV = I*R, a straight line through the origin.
+I  = [10 25 40 55 70 85 100];                    % amperes
+dV = [2.1 5.4 8.3 11.6 14.5 17.9 20.8];          % volts, with measurement noise
+
+% Degree 1: dV = p(1)*I + p(2)
+p = polyfit(I, dV, 1);
+R_est  = p(1);
+offset = p(2);
+
+y_fit = polyval(p, I);
+residuals = dV - y_fit;
+
+SS_res = sum(residuals.^2);
+SS_tot = sum((dV - mean(dV)).^2);
+R2 = 1 - SS_res/SS_tot;
+
+fprintf('Estimated resistance: %.4f ohms\n', R_est);
+fprintf('Intercept: %.4f V (should be ~0 for a pure resistance)\n', offset);
+fprintf('R-squared: %.5f\n', R2);
+fprintf('RMS residual: %.4f V\n', sqrt(mean(residuals.^2)));
+```
+</CodeFile>
+
+The intercept is the interesting output. Theory says a pure resistance passes through
+the origin, so a large intercept means either a systematic measurement offset or
+something in the circuit the model doesn't capture. **Checking whether the fitted
+parameters are physically sensible is the actual analysis** — R² alone won't tell you.
+
+## Overfitting
+
+<CodeFile name="overfit_demo.m">
+```matlab
+rng(42);
+x = linspace(0, 10, 12);
+y_true = 2 + 0.5*x;
+y = y_true + 0.4*randn(size(x));         % 12 noisy points on a straight line
+
+xq = linspace(0, 10, 300);
+
+figure; hold on;
+scatter(x, y, 40, 'k', 'filled');
+plot(xq, polyval(polyfit(x, y, 1),  xq), 'LineWidth', 1.6);
+plot(xq, polyval(polyfit(x, y, 11), xq), '--', 'LineWidth', 1.3);
+hold off;
+legend({'Data', 'Degree 1', 'Degree 11'}, 'Location', 'northwest');
+ylim([0 12]);
+```
+</CodeFile>
+
+The degree-11 polynomial passes through all twelve points **exactly**. Its residual is
+zero. It is also useless: it oscillates wildly between the points and is nonsense
+anywhere off them.
+
+<Callout type="warning" title="A perfect fit is a warning sign">
+  Any degree-*n* polynomial can pass through *n+1* points exactly. Zero residual on
+  noisy data means you have fitted the noise, not the signal.
+
+  MATLAB warns — `Polynomial is badly conditioned` — for exactly this reason. The
+  fitting problem itself becomes ill-conditioned at high degree, which is the
+  linear-systems lesson showing up again.
+</Callout>
+
+The honest test is **out-of-sample**: fit on part of the data, evaluate on the rest.
+A model that fits its training points perfectly and predicts held-out points badly has
+learned noise.
+
+## Choosing a model form
+
+Prefer a model with physical meaning over a high-degree polynomial.
+
+```matlab
+% Bad: degree-4 polynomial through a decaying signal
+p = polyfit(t, y, 4);
+
+% Better: fit the form the physics implies
+model = @(c, t) c(1) * exp(-t/c(2)) + c(3);
+c0 = [1, 5, 0];
+c  = lsqcurvefit(model, c0, t, y);        % Optimization Toolbox
+```
+
+The exponential has three parameters with meanings — amplitude, time constant, steady
+state. The polynomial has five coefficients that mean nothing, and it extrapolates
+absurdly.
+
+<Callout type="engineering">
+  Typical uses in power systems, and which is right:
+
+  - **Transformer efficiency at part load** — interpolation. It's a lookup table.
+  - **Estimating line parameters from measurements** — regression, degree 1, with the
+    intercept checked against theory.
+  - **Resampling 15-minute SCADA to hourly** — interpolation. `pchip`, so demand
+    can't go negative between readings.
+  - **Load growth over ten years** — regression, and be very careful about
+    extrapolating. A polynomial trend fitted to ten years and extended to twenty is
+    a prediction the data cannot support.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Interpolating noisy data">
+  Forces the curve through every measurement error. Use regression.
+</Callout>
+
+<Callout type="warning" title="Raising the polynomial degree until it fits">
+  It always eventually fits. That is not evidence of anything.
+</Callout>
+
+<Callout type="warning" title="Extrapolating">
+  Both methods are unreliable outside the measured range, and polynomials are
+  spectacularly so. `interp1` returns NaN by default for good reason.
+</Callout>
+
+<Callout type="warning" title="Reporting R² alone">
+  R² always increases with more parameters. Report residual RMS, check whether the
+  fitted parameters are physically plausible, and test out of sample.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="read" title="Interpolate or regress?">
+  1. A transformer datasheet gives efficiency at 25/50/75/100% load; you need 60%.
+  2. Twenty measurements of voltage drop against current, to estimate resistance.
+  3. Converting 15-minute meter data to hourly.
+  4. Ten years of annual peak demand, to estimate next year's.
+
+  <Solution>
+    1. **Interpolate.** Datasheet values are exact. `pchip` — efficiency is bounded
+       and spline could overshoot above 1.0.
+    2. **Regress.** Measurements are noisy; the underlying relationship is a straight
+       line. Degree 1, and check the intercept.
+    3. **Interpolate.** You want to preserve the recorded values, not smooth them.
+    4. **Regress — and be honest about the uncertainty.** Ten points, extrapolating
+       one year out. A linear trend with a stated prediction interval is defensible;
+       a cubic is not.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Fit and validate">
+  Fit a line to noisy voltage-drop data and report whether the fit is trustworthy.
+
+  <Solution>
+    ```matlab
+    function report_fit(I, dV)
+    %REPORT_FIT Fit dV = R*I + c and assess it.
+
+        p = polyfit(I, dV, 1);
+        fitted = polyval(p, I);
+        res = dV - fitted;
+
+        R_est   = p(1);
+        offset  = p(2);
+        rms_res = sqrt(mean(res.^2));
+        R2      = 1 - sum(res.^2) / sum((dV - mean(dV)).^2);
+
+        fprintf('R        = %.4f ohms\n', R_est);
+        fprintf('offset   = %.4f V\n', offset);
+        fprintf('R^2      = %.5f\n', R2);
+        fprintf('RMS res  = %.4f V (%.2f%% of mean dV)\n', ...
+                rms_res, 100*rms_res/mean(dV));
+
+        % Residuals should look like noise. Structure means the model is wrong.
+        if abs(corr(I(:), res(:))) > 0.3
+            warning('Residuals correlate with current — the linear model is missing something');
+        end
+
+        if abs(offset) > 3*rms_res
+            warning('Intercept is large relative to the noise — systematic offset?');
+        end
+    end
+    ```
+
+    The residual check is the one that matters. If residuals still correlate with the
+    input, there is structure the model failed to capture, and no value of R² makes
+    that acceptable. **Plot the residuals** — patterns are obvious visually and
+    invisible in a summary statistic.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'When should you interpolate rather than regress?',
+      options: [
+        'When you have a lot of data',
+        'When the data points are exact — a lookup table or recorded values',
+        'When you want a smooth curve',
+        'Whenever the relationship is nonlinear',
+      ],
+      answer: 1,
+      explain:
+        'Interpolation assumes the points are exactly right and fills the gaps. Regression assumes they are noisy and looks for the trend. The choice depends on the data, not the shape you want.',
+    },
+    {
+      q: 'Why prefer pchip over spline for a demand time series?',
+      options: [
+        'It is faster',
+        'It is shape-preserving, so it will not overshoot into physically impossible values',
+        'It gives a smoother curve',
+        'spline cannot handle unequal spacing',
+      ],
+      answer: 1,
+      explain:
+        'spline can dip below a minimum or rise above a maximum present in the data. For a bounded quantity that means inventing values — negative demand between two positive readings — that cannot exist.',
+    },
+    {
+      q: 'A degree-11 polynomial fits your 12 noisy points exactly. What does that tell you?',
+      options: [
+        'The model is excellent',
+        'That any degree-n polynomial fits n+1 points — you have fitted the noise',
+        'The data has no measurement error',
+        'You should try degree 12',
+      ],
+      answer: 1,
+      explain:
+        'Exact fit on noisy data is a warning, not a success. The curve oscillates wildly between points and predicts nothing. Test out of sample.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Are your data points exact, or noisy?** Exact → interpolate, and use `pchip` for
+  anything physically bounded. Noisy → regress with the **simplest model the physics
+  justifies**, then check that the residuals look like noise rather than structure.
+</KeyIdea>
+
+## Further reading
+
+- `doc interp1`, `doc polyfit`, `doc pchip`
+- `doc lsqcurvefit` — fitting arbitrary model forms
+- Next: **numerical integration** — turning a power curve into energy

@@ -1,0 +1,352 @@
+---
+title: Floating Point, and Why 0.1 + 0.2 ≠ 0.3
+track: matlab
+module: numerical-methods
+order: 24
+description: How the computer actually stores a number, why exact equality fails, and the errors that grow quietly through a long calculation.
+objectives:
+  - Explain why some decimal values cannot be stored exactly
+  - Choose a sensible tolerance instead of testing for equality
+  - Recognise catastrophic cancellation and avoid it
+prerequisites: [project-load-curve]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'floating-point', 'numerical-methods', 'precision']
+---
+
+Type this into MATLAB:
+
+```matlab
+0.1 + 0.2 == 0.3        % false
+0.1 + 0.2 - 0.3         % 5.5511e-17
+```
+
+This is not a MATLAB bug. It is how essentially every computer on earth stores
+numbers, and understanding it is the difference between a solver you trust and one
+that behaves mysteriously.
+
+## Why
+
+<Analogy>
+  Try writing **one third** exactly in decimal. You can't — 0.3333… never
+  terminates. You round somewhere and accept a small error.
+
+  Computers store numbers in **binary**, and in binary it is **0.1** that never
+  terminates: 0.0001100110011… repeating forever. The computer rounds it, exactly as
+  you round a third.
+
+  Nothing is broken. The number you asked for simply isn't representable in the
+  system being used.
+</Analogy>
+
+A `double` uses 64 bits: 1 for sign, 11 for the exponent, 52 for the mantissa. That
+gives about **15–16 significant decimal digits**. Any decimal fraction that isn't a
+sum of powers of two — 0.1, 0.2, 0.3 — is stored as the nearest representable
+neighbour.
+
+```matlab
+fprintf('%.20f\n', 0.1);       % 0.10000000000000000555
+```
+
+## Machine epsilon
+
+The spacing between representable numbers near 1.0:
+
+```matlab
+eps                    % 2.2204e-16
+eps(1)                 % same
+eps(1000)              % 1.1369e-13   — spacing grows with magnitude
+eps(1e6)               % 1.1642e-10
+```
+
+That last point matters. Floating point resolution is **relative**, not absolute.
+Near 1.0 you can distinguish differences of 10⁻¹⁶. Near 10⁶ you cannot resolve
+anything finer than about 10⁻¹⁰.
+
+<Callout type="engineering">
+  This is a direct argument for the per-unit system. Working in per unit keeps every
+  quantity near 1.0, where floating point resolution is finest. Mixing raw volts
+  (10⁵) with per-unit impedances (10⁻²) in the same matrix spans eleven orders of
+  magnitude and throws away precision for free.
+
+  Per unit isn't only notational tidiness — it's numerically better conditioned.
+</Callout>
+
+## Never test for equality
+
+```matlab
+% Wrong
+if computed_value == 0.3
+
+% Right — absolute tolerance, when you know the scale
+if abs(computed_value - 0.3) < 1e-10
+
+% Better — relative tolerance, when the scale varies
+if abs(a - b) <= 1e-9 * max(abs(a), abs(b))
+
+% MATLAB's built-in, which handles both
+if ismembertol(a, b, 1e-9)
+```
+
+Choosing the tolerance is an engineering decision, not a formality:
+
+<Compare
+  headings={['Tolerance', 'Appropriate for', 'Risk']}
+  rows={[
+    { option: '1e-6', when: 'Engineering results in per unit — beyond measurement accuracy anyway', cost: 'Too loose for a convergence test', recommended: true },
+    { option: '1e-8 to 1e-10', when: 'Load flow convergence', cost: 'The usual choice' },
+    { option: '1e-12', when: 'Verifying an identity you believe is exact', cost: 'May never be reached in a long computation' },
+    { option: 'eps (2e-16)', when: 'Essentially never for real computations', cost: 'Unreachable after any arithmetic' },
+  ]}
+/>
+
+A load flow tolerance of 10⁻⁸ pu on power mismatch means the answer is right to about
+10⁻⁶ MW on a 100 MVA base. No measurement on a real system is anywhere near that
+good, so tighter is wasted iteration.
+
+## Catastrophic cancellation
+
+The dangerous one. Subtracting two nearly-equal numbers destroys precision, because
+the leading digits cancel and only the noisy trailing digits survive.
+
+```matlab
+a = 1.0000000001;
+b = 1.0000000000;
+a - b                    % 1.0000e-10, but only ~6 correct digits remain
+```
+
+Both inputs had 16 good digits. The difference has about 6. Ten digits of accuracy
+vanished in one subtraction.
+
+<CodeFile name="cancellation.m" caption="The classic example: a quadratic with widely separated roots">
+```matlab
+a = 1; b = 1e8; c = 1;
+
+% Naive formula — catastrophic cancellation in the small root
+x1_naive = (-b + sqrt(b^2 - 4*a*c)) / (2*a);
+
+% Stable form: compute the well-conditioned root, then use x1*x2 = c/a
+q  = -0.5 * (b + sign(b)*sqrt(b^2 - 4*a*c));
+x1_stable = c / q;
+x2_stable = q / a;
+
+fprintf('naive  small root: %.15e\n', x1_naive);
+fprintf('stable small root: %.15e\n', x1_stable);
+```
+</CodeFile>
+
+When `b² ≫ 4ac`, `sqrt(b² - 4ac)` is almost exactly `b`, so `-b + sqrt(...)` subtracts
+two nearly-equal numbers and the small root loses most of its digits. The stable form
+avoids the subtraction entirely.
+
+<Callout type="warning" title="Where this bites in power systems">
+  Any difference of similar quantities: two bus voltages a few volts apart, power
+  in minus power out on a lightly loaded line, mismatch between calculated and
+  scheduled injection late in a load flow.
+
+  It doesn't produce an error. It produces a result with fewer correct digits than
+  you think it has — which is why a solver can appear to converge to a tolerance it
+  cannot actually resolve.
+</Callout>
+
+## Accumulated error
+
+Each operation rounds. Do enough of them and the rounding accumulates.
+
+```matlab
+total = 0;
+for k = 1:1e6
+    total = total + 0.1;
+end
+fprintf('%.10f  (error %.2e)\n', total, total - 1e5);
+```
+
+The result is not exactly 100000. Summing left to right lets small values get lost
+against a growing total.
+
+```matlab
+sum(0.1 * ones(1, 1e6))     % much more accurate
+```
+
+MATLAB's `sum` uses pairwise summation, which keeps the accumulator and the addends
+similar in magnitude. Another reason to prefer built-ins over hand-rolled loops:
+they're often more *accurate*, not just faster.
+
+## Special values
+
+```matlab
+1/0            % Inf
+-1/0           % -Inf
+0/0            % NaN
+Inf - Inf      % NaN
+
+isnan(x)       % NaN is not equal to anything, including itself
+isinf(x)
+isfinite(x)
+```
+
+**`NaN == NaN` is false.** You must use `isnan`. And NaN propagates — one NaN in a
+matrix makes any sum, mean or product involving it NaN, which is arguably the right
+behaviour: it refuses to give you an answer built on missing data.
+
+```matlab
+NaN == NaN            % false
+isnan(NaN)            % true
+mean([1 2 NaN])       % NaN
+mean([1 2 NaN], 'omitnan')   % 1.5
+```
+
+## Common mistakes
+
+<Callout type="warning" title="== on computed values">
+  The headline. Any value that came out of arithmetic needs a tolerance.
+</Callout>
+
+<Callout type="warning" title="A tolerance that ignores scale">
+  `abs(a-b) < 1e-10` is meaningless if `a` is around 10⁸ — that's tighter than the
+  spacing between representable numbers there. Use a relative tolerance when the
+  magnitude varies.
+</Callout>
+
+<Callout type="warning" title="Mixing units of wildly different magnitude">
+  Volts and per-unit impedances in one matrix wrecks conditioning. Convert to a
+  consistent system first.
+</Callout>
+
+<Callout type="warning" title="Believing every printed digit">
+  MATLAB shows 4 decimals by default and 15 with `format long`. Displaying 15 digits
+  does not mean 15 are correct.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="True or false?">
+  ```matlab
+  0.1 + 0.2 == 0.3
+  0.5 + 0.25 == 0.75
+  1e16 + 1 == 1e16
+  0.1 * 3 == 0.3
+  ```
+
+  <Solution>
+    - `0.1 + 0.2 == 0.3` → **false**. None of the three is exactly representable.
+    - `0.5 + 0.25 == 0.75` → **true**. All are exact powers of two (2⁻¹, 2⁻², and
+      their sum), so binary represents them perfectly.
+    - `1e16 + 1 == 1e16` → **true**. At 10¹⁶ the spacing between representable
+      numbers exceeds 1, so adding 1 changes nothing.
+    - `0.1 * 3 == 0.3` → **false**.
+
+    The second case is the instructive one: floating point isn't randomly wrong. It's
+    exact for binary fractions and inexact for everything else.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Write a tolerant comparison">
+  Write `approx_equal(a, b, rel_tol)` that works correctly whether the values are
+  near 10⁻⁶ or near 10⁶.
+
+  <Solution>
+    ```matlab
+    function tf = approx_equal(a, b, rel_tol)
+    %APPROX_EQUAL Compare with a relative tolerance, falling back to absolute
+    %   near zero (where a relative tolerance is meaningless).
+
+        arguments
+            a       double
+            b       double
+            rel_tol (1,1) double = 1e-9
+        end
+
+        abs_tol = rel_tol * 1e-6;      % floor, for values near zero
+        tf = abs(a - b) <= max(abs_tol, rel_tol .* max(abs(a), abs(b)));
+    end
+    ```
+
+    The absolute floor matters: if both values are 10⁻²⁰, a purely relative tolerance
+    demands agreement to 10⁻²⁹, which no computation will achieve. Real tolerance
+    tests need both.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="debug" title="Why does this loop never end?">
+  ```matlab
+  x = 0;
+  while x ~= 1
+      x = x + 0.1;
+  end
+  ```
+
+  <Solution>
+    Adding 0.1 ten times gives 0.9999999999999999, not 1.0. `x ~= 1` stays true
+    forever.
+
+    ```matlab
+    x = 0;
+    while x < 1 - 1e-9         % tolerance
+        x = x + 0.1;
+    end
+
+    % Better — count integers, don't accumulate floats
+    for k = 1:10
+        x = k * 0.1;
+    end
+    ```
+
+    The second form is the real fix. Whenever you can loop over integers and compute
+    the float, do that rather than accumulating — it avoids the drift entirely.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why is 0.5 + 0.25 == 0.75 true while 0.1 + 0.2 == 0.3 is false?',
+      options: [
+        'MATLAB special-cases simple fractions',
+        '0.5, 0.25 and 0.75 are exact sums of powers of two; 0.1, 0.2 and 0.3 are not',
+        'The first involves fewer decimal places',
+        'It is random which comparisons succeed',
+      ],
+      answer: 1,
+      explain:
+        'Binary floating point represents sums of powers of two exactly. 0.5 = 2⁻¹ and 0.25 = 2⁻², so both and their sum are exact. 0.1 repeats forever in binary.',
+    },
+    {
+      q: 'What is catastrophic cancellation?',
+      options: [
+        'A solver failing to converge',
+        'Subtracting two nearly-equal numbers, destroying most significant digits',
+        'Overflow to Inf',
+        'An error when dividing by zero',
+      ],
+      answer: 1,
+      explain:
+        'The leading digits cancel and only the noisy trailing digits remain. Both inputs may have had 16 good digits and the result only 6 — with no error raised.',
+    },
+    {
+      q: 'Why does the per-unit system help numerically?',
+      options: [
+        'It reduces the number of variables',
+        'It keeps quantities near 1.0, where floating point resolution is finest',
+        'It eliminates complex numbers',
+        'It makes matrices sparse',
+      ],
+      answer: 1,
+      explain:
+        'Floating point precision is relative. Keeping everything near unity avoids mixing magnitudes that span many orders and losing resolution to the exponent.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A `double` holds about **16 significant digits**, and precision is **relative**, not
+  absolute. Never compare computed values with `==`; choose a tolerance that reflects
+  both the scale and what accuracy the problem actually deserves.
+</KeyIdea>
+
+## Further reading
+
+- Cleve Moler, *Numerical Computing with MATLAB*, Chapter 1 — free online
+- David Goldberg, *What Every Computer Scientist Should Know About Floating-Point
+  Arithmetic* — the standard reference, denser but definitive
+- Next: **linear systems** — where these small errors get amplified, or don't
