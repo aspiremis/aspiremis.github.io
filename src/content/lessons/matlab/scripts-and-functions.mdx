@@ -1,0 +1,258 @@
+---
+title: Scripts, Live Scripts and Reproducibility
+track: matlab
+module: programming
+order: 9
+description: Moving out of the Command Window into files you can re-run, and why that single change matters more than any syntax you'll learn.
+objectives:
+  - Write and run a script, and know where MATLAB looks for it
+  - Choose between a plain script and a Live Script for a given task
+  - Structure a script so it produces the same answer every time
+prerequisites: [array-operations]
+estimatedMinutes: 25
+difficulty: beginner
+tags: ['matlab', 'scripts', 'reproducibility']
+---
+
+Everything so far has been typed into the Command Window. That's the right place to
+explore. It is the wrong place to keep anything.
+
+## Why files, not the Command Window
+
+<Analogy>
+  The Command Window is a **conversation**. You ask, MATLAB answers, and when you
+  walk away neither of you remembers what was said.
+
+  A script is a **recipe**. Anyone can follow it — including you, in six months,
+  having forgotten everything — and get the same dish.
+</Analogy>
+
+The practical difference shows up the first time a supervisor asks "how did you get
+that number?" If the answer lives in a script, you re-run it. If it lived in the
+Command Window, you reconstruct it from memory and hope.
+
+## Your first script
+
+New Script in the Editor, save as `feeder_summary.m`, and note the rule: **the
+filename is what you type to run it.** Don't put spaces or start with a digit.
+
+<CodeFile name="feeder_summary.m">
+```matlab
+%% Feeder summary
+% Computes basic statistics for a day of half-hourly demand.
+% Shalini Mishra, August 2026
+
+clear; clc;                      % start from a known state
+
+%% Input data
+demand_MW = [38 35 34 33 34 37 45 52 58 61 60 57 ...
+             55 54 56 59 63 68 66 60 54 48 43 40];
+
+%% Analysis
+average      = mean(demand_MW);
+[peak, idx]  = max(demand_MW);
+peak_hour    = idx - 1;                  % array position 1 == hour 0
+load_factor  = average / peak;
+
+%% Report
+fprintf('Average demand : %.1f MW\n', average);
+fprintf('Peak demand    : %.1f MW at hour %d\n', peak, peak_hour);
+fprintf('Load factor    : %.1f%%\n', load_factor * 100);
+```
+</CodeFile>
+
+Run it by typing `feeder_summary` in the Command Window, or pressing F5 in the
+Editor.
+
+Three habits in there worth adopting from the start:
+
+**`clear; clc;` at the top.** Without it, a variable left over from an earlier run
+can silently feed into this one. You get a plausible answer that you cannot
+reproduce on a fresh MATLAB. This is the single most common source of "it worked
+yesterday".
+
+**`%%` section markers.** Two percent signs start a *code section*. MATLAB draws a
+divider, and Ctrl+Enter runs just that section — invaluable when the data-loading
+step is slow and you're iterating on the analysis.
+
+**A comment saying what the file is for.** Your future self is a different person
+with none of today's context.
+
+<Callout type="warning" title="clear does not reset everything">
+  `clear` removes variables. It does not reset random number generators, close
+  figures, or clear persistent state inside functions. For a genuinely clean start:
+
+  ```matlab
+  clear; clc; close all;
+  rng(42);           % fixed seed — see below
+  ```
+</Callout>
+
+## Reproducibility
+
+A result you can't reproduce isn't a result. Three things make the difference.
+
+**Seed any randomness.** `rng(42)` makes every subsequent `rand` and `randn` call
+deterministic. Without it, a Monte Carlo study gives different numbers every run and
+you cannot investigate a surprising one.
+
+```matlab
+rng(42);                    % same sequence every time
+scenarios = rand(1, 1000);
+```
+
+**Never hard-code a number you computed elsewhere.** If a value came from another
+calculation, compute it in the script. Pasted constants drift out of date silently.
+
+**State units in the variable name or a comment.** `V = 132` is ambiguous.
+`V_kV = 132` is not.
+
+<Callout type="engineering">
+  This is the same discipline as the OpenDSS workflow you'll meet later: recompile
+  from a known state, seed the RNG, record what version of the model you ran. The
+  language changes; the discipline doesn't.
+</Callout>
+
+## Live Scripts
+
+A Live Script (`.mlx`) interleaves code, formatted text, equations and output in one
+document — closer to a lab notebook than a program.
+
+<Compare
+  headings={['Format', 'Use it for', 'Watch out']}
+  rows={[
+    { option: '.m script', when: 'Anything you will run repeatedly, or share as code', cost: 'Plain text — diffs cleanly in git', recommended: true },
+    { option: '.mlx Live Script', when: 'Assignments, derivations, anything you will hand in or present', cost: 'Binary — git cannot show what changed' },
+    { option: 'Command Window', when: 'Exploring, one-off checks', cost: 'Nothing is kept' },
+  ]}
+/>
+
+For coursework submissions, Live Scripts are excellent — you can type the derivation
+in proper mathematics next to the code that implements it, and export the whole
+thing to PDF.
+
+For anything you'll version-control, prefer plain `.m`. A `.mlx` is a binary file,
+so git can tell you *that* it changed but never *what* changed.
+
+## Common mistakes
+
+<Callout type="warning" title="Naming a script the same as a variable or function">
+  Save a script as `sum.m` and you've shadowed MATLAB's `sum`. Worse, a script named
+  `results.m` plus a variable named `results` will confuse MATLAB about which you
+  mean. Give scripts verb-ish names: `analyse_feeder.m`, `build_ybus.m`.
+</Callout>
+
+<Callout type="warning" title="Relying on leftover workspace state">
+  A script that only works because a variable happens to already exist is broken.
+  Test by running `clear` and then the script. If it errors, it was never
+  self-contained.
+</Callout>
+
+<Callout type="warning" title="Putting everything in one enormous script">
+  A 400-line script that loads data, computes, and plots is hard to test and
+  impossible to reuse. Once a chunk does something nameable, it wants to be a
+  function — which is the next lesson.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="Why does this fail on a fresh MATLAB?">
+  A script runs fine for its author but errors for everyone else.
+
+  ```matlab
+  % analysis.m
+  Z_base = V_base^2 / S_base;
+  Z_pu = Z_ohms / Z_base;
+  disp(Z_pu);
+  ```
+
+  <Solution>
+    `V_base`, `S_base` and `Z_ohms` are never defined in the script. They exist in
+    the author's workspace because they typed them in the Command Window earlier.
+
+    On a fresh MATLAB — or after `clear` — the script fails immediately.
+
+    The fix is for the script to be self-contained:
+
+    ```matlab
+    clear; clc;
+
+    V_base  = 132e3;      % V
+    S_base  = 100e6;      % VA
+    Z_ohms  = 45.2;       % ohms
+
+    Z_base = V_base^2 / S_base;
+    Z_pu   = Z_ohms / Z_base;
+    fprintf('Z = %.4f pu\n', Z_pu);
+    ```
+
+    Testing with `clear` before every run catches this class of bug immediately.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Make it reproducible">
+  This Monte Carlo snippet gives a different answer every run. Make it reproducible
+  without removing the randomness.
+
+  ```matlab
+  n = 1000;
+  loads = 50 + 10*randn(1, n);
+  fprintf('Exceeded 70 MW in %d cases\n', sum(loads > 70));
+  ```
+
+  <Solution>
+    ```matlab
+    rng(42);                      % fix the sequence
+    n = 1000;
+    loads = 50 + 10*randn(1, n);
+    fprintf('Exceeded 70 MW in %d cases\n', sum(loads > 70));
+    ```
+
+    The randomness is still there — the sample is still random — but the *same*
+    random sample is drawn each run. That's what lets you investigate an outlier,
+    or let someone else reproduce your figure.
+
+    Record the seed alongside any published result. A study that can't be replayed
+    exactly is a story, not a result.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why start a script with clear; clc;?',
+      options: [
+        'It makes the script run faster',
+        'It ensures the script does not depend on leftover workspace variables',
+        'MATLAB requires it',
+        'It saves memory',
+      ],
+      answer: 1,
+      explain:
+        'Without it, a script can silently use a variable left over from an earlier run, producing an answer you cannot reproduce on a fresh MATLAB. Testing after clear is how you catch it.',
+    },
+    {
+      q: 'When should you prefer a .m script over a .mlx Live Script?',
+      options: [
+        'When you want formatted equations alongside the code',
+        'When the file will be version-controlled and you need readable diffs',
+        'Live Scripts are always better',
+        'When the script is short',
+      ],
+      answer: 1,
+      explain:
+        '.mlx is a binary format, so git can tell you a file changed but not what changed. For anything under version control, plain .m is far easier to review.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A script is a **recipe you can re-run**. Start from a known state, seed anything
+  random, and never depend on what happens to be in the workspace — that discipline
+  is worth more than any syntax in this module.
+</KeyIdea>
+
+## Further reading
+
+- `doc script` and `doc live_script`
+- Next: **functions** — the point at which code becomes reusable

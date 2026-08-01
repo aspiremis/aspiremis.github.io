@@ -1,32 +1,35 @@
 ---
 title: PV Hosting Capacity Toolkit
 summary: >-
-  Automated OpenDSS studies that answer a concrete question for a distribution
+  Planned OpenDSS automation to answer a concrete question for a distribution
   feeder — how much rooftop solar can it absorb before something breaks?
 date: 2026-07-20
-status: active
+status: planned
 tech: ['Python', 'OpenDSS', 'pandas', 'Matplotlib']
 tags: ['hosting-capacity', 'opendss', 'distribution', 'solar-pv', 'simulation']
-github: https://github.com/aspiremis/pv-hosting-capacity
 featured: true
 order: 2
 ---
+
+> **Status: planned.** A design document, not a report. The methodology below is
+> what I intend to implement; there are no results yet. This is also the direction
+> I expect my thesis to grow out of, so the page will be rewritten repeatedly.
 
 ## Overview
 
 "Hosting capacity" is the amount of distributed generation a feeder can accept
 before it violates an operating limit. It sounds like a single number. It isn't —
-it depends on where the PV is placed, what the load is doing at the time, and
-which limit you consider binding.
+it depends on where the PV is placed, what the load is doing at the time, and which
+limit you consider binding.
 
-This toolkit automates the study: it drives OpenDSS from Python, sweeps PV
-penetration across many random siting scenarios, and reports the distribution of
+This toolkit is meant to automate the study: drive OpenDSS from Python, sweep PV
+penetration across many random siting scenarios, and report the *distribution* of
 outcomes rather than one convenient answer.
 
 ## Problem statement
 
-For a given radial distribution feeder, find the maximum aggregate PV capacity
-that can be installed without violating:
+For a given radial distribution feeder, find the maximum aggregate PV capacity that
+can be installed without violating:
 
 - **Voltage** — steady-state voltage outside the ANSI/IS limits, typically
   0.95–1.05 p.u.
@@ -35,35 +38,34 @@ that can be installed without violating:
 - **Reverse power flow** — export through the substation transformer, where the
   utility's protection scheme doesn't allow it
 
-The complication is that the answer depends heavily on *placement*. The same
-total capacity concentrated at the feeder end and spread across the feeder produce
-completely different voltage profiles, because voltage rise scales with the
-product of injected power and upstream impedance:
+The complication is that the answer depends heavily on *placement*. The same total
+capacity concentrated at the feeder end and spread across the feeder produce
+different voltage profiles, because voltage rise scales with the product of injected
+power and upstream impedance:
 
 $$
 \Delta V \approx \frac{R \cdot P_{\text{inj}} + X \cdot Q_{\text{inj}}}{V_{\text{nominal}}}
 $$
 
-On a distribution feeder $R$ is not negligible, so real-power injection alone
-raises voltage — which is exactly the mechanism that limits hosting capacity in
-practice.
+On a distribution feeder $R$ is not negligible, so real-power injection alone raises
+voltage — the mechanism I expect to be the binding constraint in practice.
 
-## Architecture
+## Planned architecture
 
 ```
 feeder/       OpenDSS model loading, validation, base-case snapshot
 scenarios/    stochastic PV siting — Monte Carlo over location & size
-engine/       OpenDSS COM/Direct-DLL driver, batch execution, result capture
+engine/       OpenDSS driver, batch execution, result capture
 limits/       voltage, thermal, regulator and reverse-power checks
 analysis/     hosting-capacity curves, violation attribution, plots
 ```
 
-The design decision that mattered: **scenario generation is separate from the
-simulation engine.** It means I can swap a uniform-random siting model for a
-rooftop-area-weighted one without touching the OpenDSS driver, and I can replay
-an exact scenario set for reproducibility.
+The design decision I care about: **scenario generation stays separate from the
+simulation engine.** That means a uniform-random siting model can be swapped for a
+rooftop-area-weighted one without touching the OpenDSS driver, and an exact scenario
+set can be replayed for reproducibility.
 
-## Implementation
+## Intended approach
 
 Each scenario places PV systems at randomly chosen load buses until a target
 penetration is reached, then solves and checks every limit:
@@ -95,48 +97,38 @@ def run_scenario(feeder, penetration, rng):
     )
 ```
 
-Penetration is defined against total feeder load, not transformer rating — the two
-give noticeably different numbers and papers are not always explicit about which
-they used, which cost me a confusing afternoon when my results wouldn't line up
-with a reference.
+One definition to pin down before generating any numbers: **penetration will be
+defined against total feeder load, not transformer rating.** The two give noticeably
+different figures and papers are not always explicit about which they used. Stating
+it on every result is the only way the numbers mean anything.
 
-## Results
+## What I want the study to report
 
-Run on the **IEEE 33-bus** test feeder, 300 Monte Carlo scenarios per penetration
-level, unity power factor, peak-PV/minimum-load condition:
+Not a single hosting-capacity figure. Specifically:
 
-| Penetration | Scenarios with any violation | First binding limit |
-|---|---|---|
-| 20% | 0% | — |
-| 40% | 4% | Overvoltage, feeder end |
-| 60% | 38% | Overvoltage, feeder end |
-| 80% | 91% | Overvoltage, then thermal |
-| 100% | 100% | Overvoltage + reverse power |
+- The **penetration–violation curve** across scenarios, so the spread from siting is
+  visible rather than averaged away
+- **Which limit binds first**, and at which locations, since that determines what
+  the mitigation actually is
+- **Sensitivity to inverter power factor** — volt-var control is the one genuinely
+  controllable variable, and I expect it to move the answer more than most modelling
+  choices
 
-Three things I did not expect before running it:
+## Validation plan
 
-1. **Overvoltage binds long before thermal limits do.** On this feeder the
-   conductor has plenty of headroom; it is the voltage rise that stops you. That
-   inverts the intuition I had from transmission-side thinking.
-2. **The spread at a given penetration is enormous.** At 60% penetration, siting
-   alone decides whether the feeder is fine or badly out of limits. A single
-   deterministic "hosting capacity" number hides this completely.
-3. **Unity power factor is a choice, not a constraint.** A quick sensitivity run
-   with inverters at 0.95 leading pushed the 50%-violation point up by roughly
-   15 percentage points — volt-var control is doing real work.
+Run first on the **IEEE 33-bus** test feeder, and reproduce a published
+hosting-capacity result before attempting anything new. Reproducing someone else's
+number is the only way to know the pipeline is right.
 
-## Future improvements
+## Scope beyond the first version
 
-- Time-series (QSTS) simulation over a full year instead of the worst-case
-  snapshot — the snapshot is conservative and I want to quantify by how much
+- Time-series (QSTS) simulation over a full year instead of a worst-case snapshot —
+  the snapshot is conservative by construction and I want to quantify by how much
 - Volt-var and volt-watt inverter control curves per IEEE 1547-2018
-- Rooftop-area-weighted siting using building footprint data, instead of uniform
-  random placement
-- Extend to a real Indian distribution feeder rather than only IEEE test systems
-- Export a one-page utility-readable report per feeder
+- Rooftop-area-weighted siting using building footprint data
+- Extension to a real Indian distribution feeder rather than only IEEE test systems
 
 ## Code
 
-The repository includes the modified IEEE 33-bus OpenDSS model, the scenario
-definitions used for the table above, and the notebook that generates the
-hosting-capacity curves.
+Not public yet. It will be linked here once the toolkit runs end to end on a test
+feeder, along with the OpenDSS model and scenario definitions.

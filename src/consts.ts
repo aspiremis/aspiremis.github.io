@@ -26,7 +26,7 @@ export const PROFILE = {
   startedAt: '2026-07',
   /** Rolling "what I'm on right now" line, surfaced on the home hero. */
   currentFocus:
-    'Building a load-flow solver from first principles and studying how much rooftop PV a distribution feeder can actually absorb.',
+    'Learning MATLAB properly from first principles, and scoping a load-flow solver I want to write from scratch rather than call.',
 } as const;
 
 export const SOCIALS = [

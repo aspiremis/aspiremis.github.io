@@ -1,0 +1,291 @@
+---
+title: Cells, Structs and Tables
+track: matlab
+module: programming
+order: 14
+description: For data that isn't a rectangle of numbers — mixed types, named fields, and the container that finally makes real datasets pleasant.
+objectives:
+  - Choose between a cell array, a struct and a table for a given dataset
+  - Access and build each of the three correctly
+  - Use struct arrays to hold a list of similar objects, like network branches
+prerequisites: [logical-indexing]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'data-structures', 'tables', 'structs']
+---
+
+Matrices are rectangles of numbers. Real data rarely is: a bus has a *number*, a
+*name*, a *type* and a *voltage*, and those aren't all the same kind of thing.
+
+MATLAB has three containers for this. Knowing which to reach for saves a lot of
+fighting.
+
+## Cell arrays — mixed contents, positional
+
+Braces instead of brackets. Each cell holds anything at all.
+
+```matlab
+c = {1, 'Bus 14', [1 2 3], true};
+
+c{2}          % 'Bus 14'   — braces get the CONTENTS
+c(2)          % {'Bus 14'} — parentheses get a 1x1 CELL
+```
+
+That distinction catches everyone. `{}` reaches inside; `()` slices the container.
+
+```matlab
+names = {'Slack', 'Generator', 'Load'};
+for k = 1:numel(names)
+    fprintf('%d: %s\n', k, names{k});     % braces
+end
+```
+
+Cells are the right choice for **lists of strings of differing length**, which
+`char` matrices handle badly. For most other purposes, one of the next two is
+clearer.
+
+## Structs — named fields
+
+A struct groups related values under names rather than positions.
+
+<CodeFile name="struct_basics.m">
+```matlab
+bus.number  = 14;
+bus.name    = 'Load bus';
+bus.type    = 'PQ';
+bus.V_pu    = 1.02;
+bus.P_MW    = 12.5;
+
+bus.V_pu                       % 1.02
+fieldnames(bus)                % list the field names
+isfield(bus, 'Q_MVAr')         % false
+
+% Or build it in one call
+bus = struct('number', 14, 'name', 'Load bus', 'V_pu', 1.02);
+```
+</CodeFile>
+
+<Analogy>
+  A matrix row is a **numbered pigeonhole** — you have to remember that column 3 is
+  voltage.
+
+  A struct is a **labelled folder**. `bus.V_pu` says what it is. Six months later
+  that difference is the whole ballgame.
+</Analogy>
+
+### Struct arrays
+
+The pattern that matters for network data: a list of similar things, each with the
+same fields.
+
+<CodeFile name="branch_array.m">
+```matlab
+branch(1).from = 1;  branch(1).to = 2;  branch(1).R = 0.02;  branch(1).X = 0.06;
+branch(2).from = 1;  branch(2).to = 3;  branch(2).R = 0.08;  branch(2).X = 0.24;
+branch(3).from = 2;  branch(3).to = 3;  branch(3).R = 0.06;  branch(3).X = 0.18;
+
+numel(branch)                  % 3
+
+% Build a Y-bus by walking the list — the field names document themselves
+n = 3;
+Y = zeros(n, n);
+for k = 1:numel(branch)
+    f = branch(k).from;
+    t = branch(k).to;
+    y = 1 / (branch(k).R + 1i*branch(k).X);
+
+    Y(f,f) = Y(f,f) + y;
+    Y(t,t) = Y(t,t) + y;
+    Y(f,t) = Y(f,t) - y;
+    Y(t,f) = Y(t,f) - y;
+end
+```
+</CodeFile>
+
+Compare that loop with the matrix version from the indexing lesson, where you had to
+remember that column 3 was resistance. `branch(k).R` cannot be misread.
+
+The square-bracket trick extracts one field across the whole array:
+
+```matlab
+all_R = [branch.R];              % [0.02 0.08 0.06] — a numeric vector
+from_buses = [branch.from];      % [1 1 2]
+```
+
+## Tables — the one you'll use most
+
+A `table` is a spreadsheet: named columns, mixed types, rows that stay together.
+
+<CodeFile name="table_basics.m">
+```matlab
+bus_no  = [1; 2; 3; 4];
+name    = ["Slack"; "Gen A"; "Load 1"; "Load 2"];
+V_pu    = [1.00; 1.02; 0.98; 0.94];
+P_MW    = [0; -25; 15; 22];
+
+buses = table(bus_no, name, V_pu, P_MW);
+
+buses                              % prints as a formatted table
+buses.V_pu                         % a column, by name
+buses(buses.V_pu < 0.95, :)        % logical indexing on rows — Load 2
+height(buses)                      % 4
+summary(buses)                     % per-column statistics
+```
+</CodeFile>
+
+Three reasons tables win for real data:
+
+**Rows stay together.** Sort by voltage and every column follows. With parallel
+arrays, one forgotten `sort` and your names no longer match your voltages — a silent
+corruption that's very hard to spot.
+
+**Reading files gives you one.** `readtable('feeder.csv')` handles headers, mixed
+types and missing values, and hands back something already usable.
+
+**Logical indexing still works.** `buses(buses.V_pu < 0.95, :)` reads almost exactly
+as the question.
+
+```matlab
+buses = sortrows(buses, 'V_pu');              % everything moves together
+buses.V_kV = buses.V_pu * 132;                % add a computed column
+violations = buses(buses.V_pu < 0.95, :);
+```
+
+## Choosing between them
+
+<Compare
+  headings={['Container', 'Use it when', 'Access']}
+  rows={[
+    { option: 'matrix', when: 'Everything is a number and the shape is rectangular', cost: 'A(2,3)', recommended: true },
+    { option: 'table', when: 'Rows of records with named, mixed-type columns', cost: 'T.name, T(rows,:)' },
+    { option: 'struct', when: 'One thing with named properties, or a list of them', cost: 's.field' },
+    { option: 'cell', when: 'Genuinely ragged contents — strings of differing length', cost: 'c{k}' },
+  ]}
+/>
+
+Rule of thumb: **matrix if it's numbers, table if it's data with columns, struct if
+it's an object, cell only when nothing else fits.**
+
+<Callout type="engineering">
+  A realistic load-flow input is a struct of tables:
+
+  ```matlab
+  system.name    = 'IEEE 14-bus';
+  system.S_base  = 100;                        % MVA
+  system.buses   = readtable('ieee14_bus.csv');
+  system.branches = readtable('ieee14_branch.csv');
+  ```
+
+  One variable holds the whole case, every part is named, and it can be passed to a
+  solver as a single argument. `load_flow(system)` beats a function taking nine
+  positional arrays.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Confusing c{k} and c(k)">
+  Braces get the contents, parentheses get a sub-cell. `c(2) + 1` errors because you
+  can't add a number to a cell; `c{2} + 1` works.
+</Callout>
+
+<Callout type="warning" title="Growing a struct array in a loop without pre-allocating">
+  Same problem as growing a matrix. Pre-allocate:
+  `branch(n) = struct('from',[],'to',[],'R',[],'X',[]);`
+</Callout>
+
+<Callout type="warning" title="Parallel arrays instead of a table">
+  Keeping `bus_no`, `V_pu` and `name` as three separate vectors works right up until
+  you sort one of them. Then they silently disagree, and every result afterwards is
+  wrong with no error. Use a table.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Braces or parentheses?">
+  ```matlab
+  c = {10, 'hello', [1 2 3]};
+  class(c(1))
+  class(c{1})
+  c{3}(2)
+  ```
+
+  <Solution>
+    - `class(c(1))` → `cell`. Parentheses slice the container.
+    - `class(c{1})` → `double`. Braces reach the contents.
+    - `c{3}(2)` → `2`. Get the array out with braces, then index it normally.
+
+    That chained form — `c{3}(2)` — is worth recognising: braces to get out of the
+    cell, parentheses to index what you found.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Build a bus table and filter it">
+  Build a table of five buses with number, name, voltage and load. Report the buses
+  below 0.95 pu, sorted worst first.
+
+  <Solution>
+    ```matlab
+    bus_no = [1; 2; 3; 4; 5];
+    name   = ["Slack"; "Gen A"; "Load 1"; "Load 2"; "Load 3"];
+    V_pu   = [1.00; 1.02; 0.98; 0.94; 0.91];
+    P_MW   = [0; -25; 15; 22; 18];
+
+    buses = table(bus_no, name, V_pu, P_MW);
+
+    low = buses(buses.V_pu < 0.95, :);
+    low = sortrows(low, 'V_pu');            % worst first
+
+    if isempty(low)
+        disp('All buses within limits.');
+    else
+        fprintf('%d bus(es) below 0.95 pu:\n', height(low));
+        disp(low);
+    end
+    ```
+
+    Two buses, 5 then 4. Note `isempty` on the filtered table — a filter that matches
+    nothing returns an empty table rather than erroring, and handling that case is
+    the difference between a script and a tool.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the main risk of storing related data in parallel arrays instead of a table?',
+      options: [
+        'Parallel arrays use more memory',
+        'Sorting or filtering one array leaves the others misaligned, silently',
+        'Parallel arrays cannot hold strings',
+        'They are slower to index',
+      ],
+      answer: 1,
+      explain:
+        'A table keeps rows together through sorts and filters. With separate vectors, one forgotten sort silently pairs the wrong name with the wrong voltage, and nothing errors.',
+    },
+    {
+      q: 'What is the difference between c{2} and c(2) for a cell array c?',
+      options: [
+        'No difference',
+        'c{2} returns the contents; c(2) returns a 1x1 cell containing them',
+        'c(2) returns the contents; c{2} returns a cell',
+        'c{2} only works on the first element',
+      ],
+      answer: 1,
+      explain:
+        'Braces reach inside the cell, parentheses slice the container. This is the single most common source of confusion with cell arrays.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Matrix** for numbers, **table** for data with named columns, **struct** for one
+  object or a list of them, **cell** only when nothing else fits. Choosing right
+  makes the code read like the problem.
+</KeyIdea>
+
+## Further reading
+
+- `doc table`, `doc struct`, `doc cell`
+- `doc readtable` — how real data gets in
+- Next: **debugging** — what to do when it doesn't work

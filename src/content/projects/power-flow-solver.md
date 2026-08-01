@@ -1,27 +1,31 @@
 ---
 title: Power Flow Solver from First Principles
 summary: >-
-  A load-flow engine written from scratch — Gauss-Seidel, Newton-Raphson and fast
-  decoupled — validated against published IEEE test system results.
+  A planned load-flow engine written from scratch — Gauss-Seidel, Newton-Raphson
+  and fast decoupled — to be validated against published IEEE test system results.
 date: 2026-07-12
-status: active
+status: planned
 tech: ['Python', 'NumPy', 'SciPy', 'Matplotlib']
 tags: ['power-flow', 'newton-raphson', 'numerical-methods', 'ieee-test-systems']
-github: https://github.com/aspiremis/power-flow-solver
 featured: true
 order: 1
 ---
 
+> **Status: planned.** This page is a design document, not a report. It describes
+> what I intend to build and why. There are no results here yet, and there won't be
+> until the code exists and has been validated — at which point this page gets
+> rewritten with real numbers.
+
 ## Overview
 
 Every power system course starts with load flow, and almost every student ends up
-running it through a package that hides the interesting part. This project is the
-opposite: a small, readable Python implementation of the three classical load-flow
-methods, built so that each step of the algorithm is visible and checkable.
+running it through a package that hides the interesting part. I want the opposite:
+a small, readable Python implementation of the three classical load-flow methods,
+built so that each step of the algorithm is visible and checkable.
 
 It is deliberately not trying to compete with pandapower or PSS®E. It is trying to
-be the thing I read when I need to remember *why* the Jacobian has the structure
-it does.
+become the thing I read when I need to remember *why* the Jacobian has the
+structure it does.
 
 ## Problem statement
 
@@ -35,8 +39,8 @@ S_i = P_i + jQ_i = V_i \sum_{k=1}^{N} Y_{ik}^{*} V_k^{*}
 $$
 
 Splitting into real and imaginary parts with $V_i = |V_i|\angle\delta_i$ and
-$Y_{ik} = G_{ik} + jB_{ik}$ gives the two mismatch equations the solver actually
-drives to zero:
+$Y_{ik} = G_{ik} + jB_{ik}$ gives the two mismatch equations a solver must drive to
+zero:
 
 $$
 P_i = |V_i| \sum_{k=1}^{N} |V_k| \left( G_{ik}\cos\delta_{ik} + B_{ik}\sin\delta_{ik} \right)
@@ -49,10 +53,9 @@ $$
 These are nonlinear and coupled, which is the entire reason the field has three
 different iterative methods rather than one closed-form answer.
 
-## Architecture
+## Planned architecture
 
-The code separates cleanly into four stages, and I kept them as four modules
-because that boundary is exactly where bugs used to hide:
+Four modules, because that boundary is where I expect bugs to hide:
 
 ```
 network/     bus & branch data, per-unit conversion, validation
@@ -68,12 +71,12 @@ Y_{ii} = y_{i0} + \sum_{k \neq i} y_{ik}, \qquad Y_{ik} = -y_{ik}
 $$
 
 Real networks are sparse — a 300-bus system typically has under 1% of its Y-bus
-populated — so it is assembled directly into `scipy.sparse` rather than built dense
-and converted, which was my first, embarrassingly slow, version.
+populated — so it should be assembled directly into `scipy.sparse` rather than
+built dense and converted.
 
-## Implementation
+## Intended approach
 
-The Newton-Raphson core is the piece worth showing. Each iteration solves the
+The Newton-Raphson core is the piece that matters. Each iteration solves the
 linearised system:
 
 $$
@@ -81,6 +84,8 @@ $$
 \begin{bmatrix} H & N \\ M & L \end{bmatrix}
 \begin{bmatrix} \Delta \delta \\ \Delta |V| / |V| \end{bmatrix}
 $$
+
+Sketched below to fix the structure before writing it properly:
 
 ```python
 def solve(network, tol=1e-8, max_iter=30):
@@ -109,51 +114,42 @@ def solve(network, tol=1e-8, max_iter=30):
     return Solution(v, delta, max_iter, history, converged=False)
 ```
 
-Two decisions in there took me longer than they should have:
+Two decisions I want to get right from the start:
 
 - **Voltage magnitudes update multiplicatively.** The Jacobian is formulated in
-  terms of $\Delta|V|/|V|$ rather than $\Delta|V|$, because it keeps the submatrix
+  terms of $\Delta|V|/|V|$ rather than $\Delta|V|$, which keeps the submatrix
   entries dimensionally consistent and better conditioned. Getting this wrong
-  produces a solver that converges — slowly, and to a slightly wrong answer, which
-  is much worse than one that fails loudly.
-- **The Jacobian is rebuilt every iteration.** Holding it constant is a real
-  optimisation, but it obscures why Newton-Raphson converges quadratically in the
-  first place, so the readable version keeps rebuilding.
+  produces a solver that converges slowly to a slightly wrong answer — a far nastier
+  failure than one that diverges visibly.
+- **Rebuild the Jacobian every iteration.** Holding it constant is a real
+  optimisation, but it obscures why Newton-Raphson converges quadratically, and
+  readability is the point of this project.
 
-## Results
+## How it will be validated
 
-Validated against the published IEEE common data format results. Convergence
-tolerance $10^{-8}$ p.u. on maximum power mismatch, flat start:
+This is the part I care most about, and the reason there are no numbers on this
+page. Before I trust the solver on anything, it has to reproduce **published IEEE
+common data format results** on the 14-, 30-, 57- and 118-bus systems, to a
+tolerance of $10^{-6}$ p.u. on bus voltage magnitude.
 
-| System | Method | Iterations | Max \|V\| error vs. published |
-|---|---|---|---|
-| IEEE 14-bus | Newton-Raphson | 4 | 2.1 × 10⁻⁶ p.u. |
-| IEEE 14-bus | Fast decoupled | 7 | 3.4 × 10⁻⁶ p.u. |
-| IEEE 14-bus | Gauss-Seidel | 128 | 8.9 × 10⁻⁵ p.u. |
-| IEEE 30-bus | Newton-Raphson | 4 | 3.0 × 10⁻⁶ p.u. |
-| IEEE 57-bus | Newton-Raphson | 5 | 4.7 × 10⁻⁶ p.u. |
-| IEEE 118-bus | Newton-Raphson | 5 | 6.2 × 10⁻⁶ p.u. |
+If it can't reproduce a known answer, it has no business producing a new one.
 
-The iteration counts reproduce the textbook expectation almost exactly, which is
-the point — the numbers are a check on my implementation, not a discovery.
+I also intend to provoke the failure case deliberately: applying fast decoupled to
+a distribution feeder with $R/X \approx 1$, where the decoupling assumption breaks
+down. Watching a method fail under conditions you understand teaches more than
+watching it succeed.
 
-The more interesting result is the failure case. Applying fast decoupled to a
-distribution feeder with $R/X \approx 1.2$ took 60+ iterations where it takes 7 on
-a transmission system. The decoupling assumption that $P$ depends mainly on
-$\delta$ and $Q$ mainly on $|V|$ relies on $X \gg R$, and distribution networks
-simply do not satisfy it. That single experiment taught me more about the method
-than the derivation did.
+## Scope beyond the first version
 
-## Future improvements
-
-- Add a backward-forward sweep solver, which is the method that actually suits
-  radial distribution networks
+- A backward-forward sweep solver, which is the method that actually suits radial
+  distribution networks
 - Continuation power flow, to trace the P–V curve up to the nose point
-- Three-phase unbalanced formulation — currently everything is positive-sequence
-- Proper handling of PV-to-PQ bus-type switching when reactive limits bind
-- Package it well enough that someone else can `pip install` it
+- Three-phase unbalanced formulation — the first version is positive-sequence only
+- PV-to-PQ bus-type switching when reactive limits bind
+- Packaging well enough that someone else can `pip install` it
 
 ## Code
 
-The repository is public and includes the IEEE test-case data files and the
-validation notebook that produced the table above.
+The repository isn't public yet. It will be linked here once there is something
+worth reading, along with the validation notebook that reproduces the IEEE
+reference results.

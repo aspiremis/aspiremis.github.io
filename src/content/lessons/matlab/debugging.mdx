@@ -1,0 +1,308 @@
+---
+title: Debugging
+track: matlab
+module: programming
+order: 15
+description: Reading error messages properly, using breakpoints, and the specific problem of code that runs fine and gives the wrong answer.
+objectives:
+  - Read a MATLAB error message and locate the real cause
+  - Use breakpoints and the debugger to inspect a running program
+  - Design checks that catch silently wrong numerical results
+prerequisites: [data-structures]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['matlab', 'debugging', 'testing']
+---
+
+Everything before this taught you to write code. This lesson is about the far larger
+share of your time that goes on working out why it doesn't do what you meant.
+
+There are two kinds of wrong, and they need completely different approaches.
+
+## Kind one: it errors
+
+MATLAB tells you what happened and where. Read the message — it is usually precise.
+
+```text
+Error using  * 
+Incorrect dimensions for matrix multiplication. Check that the number of
+columns in the first matrix matches the number of rows in the second matrix.
+To perform elementwise multiplication, use '.*'.
+
+Error in build_ybus (line 23)
+    Y = A * B;
+```
+
+Three pieces of information: **what** failed (`*`), **why** (inner dimensions), and
+**where** (`build_ybus`, line 23). MATLAB even suggests the fix.
+
+The common ones, and what they actually mean:
+
+<Compare
+  headings={['Message', 'What it usually means', 'First thing to check']}
+  rows={[
+    { option: 'Incorrect dimensions for matrix multiplication', when: 'You wrote * where you meant .*', cost: 'size() both operands' },
+    { option: 'Index exceeds the number of array elements', when: 'Reading past the end, often an off-by-one', cost: 'numel() and your loop bounds' },
+    { option: 'Undefined function or variable', when: 'Typo, or the file is not on the path', cost: 'Spelling; Current Folder' },
+    { option: 'Array indices must be positive integers', when: 'An index is 0, negative, or fractional', cost: 'Whether you meant idx-1 somewhere' },
+    { option: 'Matrix is singular to working precision', when: 'The system genuinely has no unique solution', cost: 'Is a bus isolated? Missing slack?' },
+  ]}
+/>
+
+<Callout type="tip" title="Read the innermost frame, not the outermost">
+  If the error is inside a MathWorks function you didn't write, the bug is almost
+  never in MATLAB — it's in what you passed in. Scan down the stack to the last line
+  that is *your* code, and start there.
+</Callout>
+
+## The debugger
+
+`disp` everywhere works, and is slow. Breakpoints are better.
+
+Click the dash beside a line number in the Editor to set one. Run the script: MATLAB
+stops there with everything still alive, and the Command Window prompt changes to
+`K>>`. You can now type any expression to inspect the state.
+
+```text
+K>> size(Y)
+K>> max(abs(mismatch))
+K>> whos
+```
+
+The controls: **Continue** to the next breakpoint, **Step** over one line, **Step In**
+to enter a function call, **Step Out** to finish the current function.
+
+The one that saves the most time:
+
+```matlab
+dbstop if error
+```
+
+MATLAB now pauses at the moment of any error, with the full workspace intact, rather
+than unwinding and losing it. `dbclear all` turns it off.
+
+<Callout type="tip" title="Conditional breakpoints">
+  Right-click a breakpoint to add a condition — `k == 47` stops only on iteration 47.
+  Essential when a loop fails on one item out of a thousand and stepping through the
+  first forty-six is not a plan.
+</Callout>
+
+## Kind two: it runs and the answer is wrong
+
+This is the dangerous one, and it's the norm in numerical work. No error, no warning,
+plausible-looking numbers, and something subtly incorrect.
+
+<Analogy>
+  A crash is a **blown fuse** — annoying, obvious, and it tells you where to look.
+
+  A silently wrong result is a **miscalibrated meter**. Everything appears to work.
+  You only find out when someone else's reading disagrees with yours, and by then
+  you've built three things on top of it.
+</Analogy>
+
+You cannot debug your way to correctness by inspection. You need something to check
+against.
+
+### Check against a known answer
+
+Every numerical thing you write should be validated against a result you obtained
+independently — a hand calculation, a textbook example, published test-system data.
+
+```matlab
+% Y-bus row sums must be zero with no shunt elements
+assert(max(abs(sum(Y, 2))) < 1e-10, 'Y-bus row sums are non-zero — stamping bug');
+
+% Symmetric with no phase-shifting transformers
+assert(norm(Y - Y.', 'fro') < 1e-10, 'Y-bus is not symmetric');
+
+% Per-unit conversion, checked by hand
+assert(abs(to_system_base(0.10, 50, 132, 100, 132) - 0.20) < 1e-12);
+```
+
+Those three lines are worth more than an hour with the debugger. They run every time,
+they cost nothing, and they fail immediately at the point of the bug rather than three
+steps downstream.
+
+### Check the physics
+
+Numerical results have physical meaning, and physics is a free test.
+
+```matlab
+assert(all(V_pu > 0.5 & V_pu < 1.5), 'Voltages outside any plausible range');
+assert(P_loss >= 0, 'Negative losses — impossible');
+assert(abs(sum(P_gen) - sum(P_load) - P_loss) < 1e-6, 'Power balance violated');
+```
+
+A load flow that reports 3.2 pu at a bus has a bug, not a discovery. Encoding that
+knowledge as an assertion catches it the moment it happens.
+
+### Watch the convergence rate
+
+For Newton-Raphson specifically, the *shape* of the error sequence is diagnostic.
+
+```text
+10⁻¹ → 10⁻³ → 10⁻⁷ → 10⁻¹⁵     quadratic — the Jacobian is right
+10⁻¹ → 10⁻² → 10⁻³ → 10⁻⁴      linear — the Jacobian is wrong
+```
+
+Newton's method roughly *squares* the error each step near the solution. Steady
+decay by a constant factor means your derivative information disagrees with the
+function you're solving — even though the code runs and eventually converges to
+something.
+
+<Callout type="engineering">
+  This is the single most useful diagnostic in the whole module. A load flow with a
+  subtly wrong Jacobian still converges, just slowly, to an answer that may be
+  slightly off. Printing the mismatch each iteration and looking at the *rate* tells
+  you which case you're in, and costs one `fprintf`.
+</Callout>
+
+## A working method
+
+When something is wrong:
+
+1. **Reproduce it reliably.** If it's intermittent, seed the RNG.
+2. **Shrink it.** Does it fail on a 3-bus system? A 2-bus? The smallest failing case
+   is usually small enough to check by hand.
+3. **Check assumptions with `size` and `class`.** A surprising number of bugs are a
+   row where you expected a column.
+4. **Bisect.** Comment out half. Still wrong? The bug is in the other half.
+5. **Compare against something known.** A textbook example, a library, a hand
+   calculation.
+
+Step 2 does most of the work. A bug you can reproduce on a 2-bus system is a bug you
+can find.
+
+## Common mistakes
+
+<Callout type="warning" title="Reading only the last line of the error">
+  The stack trace tells you the path in. The bug is usually at the boundary where
+  your code called something else.
+</Callout>
+
+<Callout type="warning" title="Debugging by changing things at random">
+  Changing code until the error goes away often hides the bug rather than fixing it.
+  Form a hypothesis, test that specific hypothesis, then change one thing.
+</Callout>
+
+<Callout type="warning" title="Trusting a result because it looks reasonable">
+  Plausible is not correct. A voltage profile can look completely normal and be
+  wrong by 2%. Only a check against an independent answer tells you.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="Locate the bug from the message">
+  ```text
+  Index exceeds the number of array elements. Index must not exceed 14.
+
+  Error in build_ybus (line 31)
+      Y(f,t) = Y(f,t) - y;
+  ```
+
+  <Solution>
+    A branch references a bus number greater than 14, in a 14-bus system.
+
+    Note this errors on the *read* of `Y(f,t)` on the right-hand side. Had the line
+    been a pure assignment, MATLAB would have silently grown the matrix instead —
+    exactly the failure from the indexing lesson.
+
+    Find it with:
+
+    ```matlab
+    n = 14;
+    bad = branch(:,1) > n | branch(:,2) > n;
+    disp(find(bad));                        % which rows are wrong
+
+    assert(~any(bad), 'Branch data references buses outside the system');
+    ```
+
+    Validate at the boundary, and the error names the real cause instead of surfacing
+    thirty lines later.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Write the checks for a Y-bus builder">
+  What assertions would you add to catch a stamping bug immediately?
+
+  <Solution>
+    ```matlab
+    function Y = build_ybus(n, branch)
+        % Validate inputs before doing anything
+        assert(size(branch,2) >= 4, 'branch needs [from to R X]');
+        assert(all(branch(:,1) >= 1 & branch(:,1) <= n), 'from-bus out of range');
+        assert(all(branch(:,2) >= 1 & branch(:,2) <= n), 'to-bus out of range');
+        assert(all(branch(:,1) ~= branch(:,2)), 'self-loop in branch data');
+
+        Y = zeros(n,n);
+        % ... stamping loop ...
+
+        % Validate the result
+        assert(isequal(size(Y), [n n]), 'Y-bus grew — an index was out of range');
+        assert(norm(Y - Y.', 'fro') < 1e-10, 'Y-bus is not symmetric');
+        assert(max(abs(sum(Y,2))) < 1e-10, 'row sums non-zero — stamping error');
+    end
+    ```
+
+    Inputs checked at the door, output checked before it leaves. Each assertion
+    encodes something you know must be true, and each one converts a silent wrong
+    answer into an immediate, named failure.
+
+    Note `Y.'` not `Y'` — plain transpose, since conjugating a complex Y-bus would
+    make a correct matrix look asymmetric.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'A Newton-Raphson solver converges, but the error falls by a constant factor each iteration rather than squaring. What does that suggest?',
+      options: [
+        'The tolerance is set too tight',
+        'The Jacobian is wrong — the derivative disagrees with the function',
+        'The system is too large',
+        'Nothing — that is normal behaviour',
+      ],
+      answer: 1,
+      explain:
+        'Newton\'s method converges quadratically when the derivative information is correct. Linear decay means the Jacobian does not match the function being solved — and the code still runs, which is what makes it dangerous.',
+    },
+    {
+      q: 'What does dbstop if error do?',
+      options: [
+        'Stops the script from erroring',
+        'Pauses execution at the moment of an error with the workspace intact',
+        'Logs errors to a file',
+        'Converts errors to warnings',
+      ],
+      answer: 1,
+      explain:
+        'It halts at the point of failure instead of unwinding, so you can inspect every variable as it was when things went wrong. The single most useful debugging command in MATLAB.',
+    },
+    {
+      q: 'Why are assertions more valuable than the debugger for numerical code?',
+      options: [
+        'They run faster',
+        'They catch silently wrong results automatically, every run',
+        'The debugger does not work on numerical code',
+        'They replace the need for tests',
+      ],
+      answer: 1,
+      explain:
+        'The debugger helps when you already know something is wrong. Assertions tell you that something is wrong — including on the runs where the numbers look perfectly plausible.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  An error tells you where to look. A **silently wrong answer** doesn't — so encode
+  what you know must be true as assertions, and check every numerical result against
+  something you obtained independently. That habit finds more bugs than the debugger
+  ever will.
+</KeyIdea>
+
+## Further reading
+
+- `doc debug`, `doc dbstop`, `doc assert`
+- `doc matlab.unittest` — proper test frameworks, once your code is worth testing
+- Next: the **module project** — a fault current calculator built with everything here

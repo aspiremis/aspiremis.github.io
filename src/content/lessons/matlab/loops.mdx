@@ -1,0 +1,334 @@
+---
+title: Loops, and When Not to Use Them
+track: matlab
+module: programming
+order: 12
+description: for and while, pre-allocation, break and continue — and why the best MATLAB loop is often the one you didn't write.
+objectives:
+  - Write for and while loops correctly, including pre-allocation
+  - Choose between a loop and a vectorised expression on the right grounds
+  - Recognise the iterations that genuinely cannot be vectorised
+prerequisites: [conditionals]
+estimatedMinutes: 35
+difficulty: beginner
+tags: ['matlab', 'loops', 'performance', 'vectorisation']
+---
+
+Loops are how most languages repeat work. In MATLAB they're a tool of second resort —
+not because loops are wrong, but because the language offers something better for the
+common case.
+
+Knowing which case you're in is the skill.
+
+## `for` — a known number of repetitions
+
+```matlab
+for k = 1:5
+    fprintf('Iteration %d\n', k);
+end
+```
+
+The loop variable takes each value of the expression in turn. It can be any vector:
+
+```matlab
+for v = [0.95 1.00 1.05]        % iterate over values, not indices
+    fprintf('%.2f pu\n', v);
+end
+
+for bus = [3 7 11]               % only the buses you care about
+    fprintf('Checking bus %d\n', bus);
+end
+```
+
+<Callout type="warning" title="Never use i or j as the loop variable">
+  Both are the imaginary unit. In power system code, where complex impedances are
+  everywhere, `for i = 1:n` is a genuine hazard. Use `k`, `idx`, `bus`, `br`.
+</Callout>
+
+## Pre-allocation
+
+This is the single biggest performance mistake beginners make.
+
+```matlab
+% Slow — the array is resized on every pass
+for k = 1:10000
+    result(k) = k^2;
+end
+
+% Fast — memory allocated once
+result = zeros(1, 10000);
+for k = 1:10000
+    result(k) = k^2;
+end
+```
+
+Growing an array forces MATLAB to allocate new memory and copy everything across on
+each iteration. The Editor underlines this and tells you so — heed it.
+
+## `while` — an unknown number of repetitions
+
+Use `while` when you don't know how many passes it will take, which is exactly the
+situation for an iterative solver.
+
+<CodeFile name="newton_sketch.m" caption="The shape of every iterative solver you'll write">
+```matlab
+tol      = 1e-8;
+max_iter = 30;
+
+iter      = 0;
+mismatch  = inf;                  % guarantee at least one pass
+converged = false;
+
+while mismatch > tol && iter < max_iter
+    iter = iter + 1;
+
+    % ... compute a correction and update the solution ...
+    mismatch = max(abs(residual));
+
+    fprintf('Iter %2d: mismatch = %.3e\n', iter, mismatch);
+end
+
+converged = mismatch <= tol;
+
+if ~converged
+    warning('Did not converge in %d iterations (mismatch %.3e)', iter, mismatch);
+end
+```
+</CodeFile>
+
+Three non-negotiables in there:
+
+**An iteration cap.** `iter < max_iter` guarantees termination. A `while` with no
+cap on a problem that doesn't converge runs forever.
+
+**Initialise the condition variable.** `mismatch = inf` ensures the loop body runs at
+least once.
+
+**Report non-convergence.** Returning the last iterate without saying it failed is
+how a wrong answer ends up in a report. This is the same discipline as checking
+OpenDSS's `converged` flag.
+
+## `break` and `continue`
+
+```matlab
+for k = 1:n
+    if data(k) < 0
+        continue;          % skip to the next iteration
+    end
+    if data(k) > threshold
+        break;             % leave the loop entirely
+    end
+    process(data(k));
+end
+```
+
+`break` exits only the innermost loop. In nested loops you need a flag or a function
+to escape both.
+
+## When to vectorise instead
+
+<Analogy>
+  A loop is **posting a hundred letters one at a time**, walking to the postbox for
+  each.
+
+  Vectorising is **taking the whole stack in one trip**. Same letters, one journey.
+
+  If each letter's content depends on the reply to the previous one, you have no
+  choice but to make the trips. Otherwise, take the stack.
+</Analogy>
+
+```matlab
+% Loop
+P = zeros(1, n);
+for k = 1:n
+    P(k) = V(k) * I(k);
+end
+
+% Vectorised — same result, one line, faster, easier to read
+P = V .* I;
+```
+
+<Compare
+  headings={['Situation', 'Use', 'Why']}
+  rows={[
+    { option: 'Same operation on every element', when: 'Vectorise', cost: 'Faster and shorter', recommended: true },
+    { option: 'Each step needs the previous result', when: 'Loop', cost: 'Genuinely sequential — cannot vectorise' },
+    { option: 'Iterating until a condition is met', when: 'while loop', cost: 'Count is unknown in advance' },
+    { option: 'Calling a function that is not vectorised', when: 'Loop', cost: 'e.g. driving OpenDSS scenario by scenario' },
+    { option: 'Building a sparse matrix branch by branch', when: 'Loop', cost: 'Clearer than the vectorised form' },
+  ]}
+/>
+
+<Callout type="engineering">
+  Two loops you should keep in power system code:
+
+  **The solver iteration** — Newton-Raphson step *k+1* depends entirely on step *k*.
+  This is irreducibly sequential.
+
+  **Y-bus assembly** — technically vectorisable with `sparse(i, j, v, n, n)`, but the
+  branch-by-branch loop maps directly onto the stamping rule in your textbook. Here
+  clarity beats the microseconds, because this code has to be checkable by hand.
+
+  Optimise the inner loops that dominate runtime. Leave the ones that dominate
+  understanding.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Not pre-allocating">
+  The Editor warns you. It is right.
+</Callout>
+
+<Callout type="warning" title="A while loop with no iteration cap">
+  If the convergence condition is never met — bad data, a bug, a genuinely divergent
+  problem — the loop never ends. Always cap it, and always report when the cap is hit.
+</Callout>
+
+<Callout type="warning" title="Modifying the loop variable inside the loop">
+  ```matlab
+  for k = 1:10
+      k = k + 1;     % has no effect on the iteration
+  end
+  ```
+  MATLAB reassigns `k` at the top of each pass. If you need that kind of control,
+  use `while`.
+</Callout>
+
+<Callout type="warning" title="Looping to do something a built-in already does">
+  Finding a maximum, summing, counting matches — all have built-ins that are faster
+  and clearer. Before writing a loop, ask whether `sum`, `max`, `cumsum`, `find`,
+  `sort` or `histcounts` already does it.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Vectorise this">
+  Rewrite without a loop.
+
+  ```matlab
+  n = numel(V);
+  S = zeros(1, n);
+  for k = 1:n
+      S(k) = sqrt(3) * V(k) * I(k) / 1e6;
+  end
+  ```
+
+  <Solution>
+    ```matlab
+    S = sqrt(3) * V .* I / 1e6;
+    ```
+
+    Every element is treated identically with no dependence between iterations —
+    the textbook case for vectorising. Shorter, faster, and the expression now looks
+    like the formula it implements.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="debug" title="Why does this run forever?">
+  ```matlab
+  mismatch = 1.0;
+  tol = 1e-6;
+  while mismatch > tol
+      correction = compute_correction();
+      apply(correction);
+  end
+  ```
+
+  <Solution>
+    `mismatch` is never updated inside the loop. It stays 1.0, the condition stays
+    true, and the loop runs until you interrupt it with Ctrl+C.
+
+    ```matlab
+    mismatch = 1.0;
+    tol      = 1e-6;
+    iter     = 0;
+    max_iter = 50;
+
+    while mismatch > tol && iter < max_iter
+        iter = iter + 1;
+        correction = compute_correction();
+        apply(correction);
+        mismatch = max(abs(residual()));    % <- update the condition variable
+    end
+
+    if mismatch > tol
+        warning('Failed to converge: mismatch %.2e after %d iterations', mismatch, iter);
+    end
+    ```
+
+    Two fixes, and both matter: update the variable the condition tests, and cap the
+    iterations so a bug can't hang your session.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="read" title="Which of these should stay a loop?">
+  1. Converting 500 impedances to a common base
+  2. Newton-Raphson iterating until the mismatch is below tolerance
+  3. Summing the elements of a 10 000-element vector
+  4. Running OpenDSS 300 times with different PV placements
+
+  <Solution>
+    - **1 — vectorise.** Independent, identical operation on every element.
+    - **2 — loop.** Each iteration depends on the last. Irreducibly sequential.
+    - **3 — neither.** Use `sum(v)`. A built-in beats both.
+    - **4 — loop.** OpenDSS is driven one scenario at a time; the loop is imposed by
+      the external tool, not by MATLAB.
+
+    The question is never "loops are bad" — it's whether the iterations are
+    independent, and whether something already exists that does the job.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why pre-allocate an array before filling it in a loop?',
+      options: [
+        'MATLAB requires arrays to be declared first',
+        'Growing an array reallocates memory and copies it on every iteration',
+        'It makes the code shorter',
+        'Pre-allocation improves numerical accuracy',
+      ],
+      answer: 1,
+      explain:
+        'Each growth allocates fresh memory and copies everything across. On ten thousand iterations that dominates the runtime — which is why the Editor underlines it.',
+    },
+    {
+      q: 'Which of these genuinely cannot be vectorised?',
+      options: [
+        'Multiplying every element of V by every element of I',
+        'A Newton-Raphson iteration where each step depends on the previous one',
+        'Converting a list of impedances to a common base',
+        'Summing a long vector',
+      ],
+      answer: 1,
+      explain:
+        'Sequential dependence is the one thing vectorisation cannot remove. The others are all independent per-element operations, or already have a built-in.',
+    },
+    {
+      q: 'What must every while loop have?',
+      options: [
+        'A break statement',
+        'A termination guarantee — usually an iteration cap alongside the condition',
+        'At least two conditions',
+        'A pre-allocated result array',
+      ],
+      answer: 1,
+      explain:
+        'Without a cap, a condition that is never satisfied runs forever. Pair it with a warning when the cap is reached, so a non-converged result cannot be mistaken for a converged one.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Ask **"does each iteration depend on the last?"** If no, vectorise or use a
+  built-in. If yes — solver iterations, sequential state — a loop is correct and you
+  should write one without apology. Cap every `while`, and always report
+  non-convergence.
+</KeyIdea>
+
+## Further reading
+
+- `doc for`, `doc while`, `doc break`
+- `doc vectorization` — MATLAB's own guide, with timings
+- Next: **logical indexing** — selecting data by condition instead of position

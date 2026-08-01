@@ -1,0 +1,339 @@
+---
+title: Functions and Scope
+track: matlab
+module: programming
+order: 10
+description: Packaging a calculation so it can be called from anywhere, and understanding why what happens inside a function stays inside it.
+objectives:
+  - Write a function with inputs, outputs and a help block
+  - Explain what scope means and why it prevents whole classes of bug
+  - Return multiple outputs and validate inputs
+prerequisites: [scripts-and-functions]
+estimatedMinutes: 35
+difficulty: beginner
+tags: ['matlab', 'functions', 'scope']
+---
+
+A script runs top to bottom and does one thing. A function is a *named operation*
+you can call with different inputs, from anywhere, as many times as you like.
+
+This is the lesson where your per-unit converter stops being a script you edit and
+becomes a tool you use.
+
+## The shape of a function
+
+<CodeFile name="to_system_base.m" caption="Save as to_system_base.m — filename must match">
+```matlab
+function Z_new = to_system_base(Z_old, S_old, V_old, S_base, V_base)
+%TO_SYSTEM_BASE Convert a per-unit impedance to a new base.
+%
+%   Z_NEW = TO_SYSTEM_BASE(Z_OLD, S_OLD, V_OLD, S_BASE, V_BASE) converts the
+%   per-unit impedance Z_OLD, expressed on the equipment base (S_OLD, V_OLD),
+%   onto the system base (S_BASE, V_BASE).
+%
+%   Units must be consistent — MVA with MVA, kV with kV.
+%
+%   Example:
+%       to_system_base(0.10, 50, 132, 100, 132)   % returns 0.20
+
+    Z_new = Z_old .* (S_base ./ S_old) .* (V_old ./ V_base).^2;
+end
+```
+</CodeFile>
+
+Four things to notice.
+
+**`function output = name(inputs)`** is the signature. The name here must match the
+filename — `to_system_base.m`.
+
+**The comment block right after the signature is the help text.** Type
+`help to_system_base` and MATLAB prints it. This is not decoration; it is how you
+and anyone else discovers what the function expects. Write it before the body.
+
+**Indentation and `end`.** The `end` is optional for a file containing a single
+function, but include it — it becomes mandatory once a file holds several.
+
+**The dots are still there.** Because the body is vectorised, this function works on
+a single value *or* a whole column of equipment, with no change.
+
+## Calling it
+
+```matlab
+to_system_base(0.10, 50, 132, 100, 132)          % 0.2000
+
+Z_old = [0.10; 0.08; 0.12];
+S_old = [  50;   75;   25];
+V_old = [ 132;  132;   33];
+to_system_base(Z_old, S_old, V_old, 100, 132)    % all three at once
+```
+
+That's the payoff. One definition, used everywhere, and if you find a bug you fix it
+in one place.
+
+## Scope
+
+<Analogy>
+  A function is a **sealed room**. You pass things in through a hatch, and something
+  comes back out. Whatever happens inside — variables created, values changed —
+  vanishes when the function returns.
+
+  Your workspace can't see into the room, and the room can't see your workspace.
+</Analogy>
+
+This is the property that makes functions safe.
+
+```matlab
+x = 10;
+result = my_function(5);
+% x is still 10, no matter what my_function called its variables
+```
+
+If a function creates a variable called `x` internally, it is a *different* `x`.
+Nothing you do inside can corrupt the caller's workspace. That guarantee is why you
+can use a function written by someone else without reading it.
+
+<Callout type="warning" title="Functions cannot see your workspace either">
+  The seal works both ways. This fails:
+
+  ```matlab
+  S_base = 100;                 % in the workspace
+  function z = convert(Z_old)
+      z = Z_old * S_base;       % ERROR: S_base is undefined in here
+  end
+  ```
+
+  Everything a function needs must come in through its arguments. That feels
+  restrictive at first and is exactly what makes functions trustworthy.
+</Callout>
+
+## Multiple outputs
+
+MATLAB functions can return several values, and the caller decides how many to take.
+
+<CodeFile name="fault_current.m">
+```matlab
+function [I_fault, S_fault, I_pu] = fault_current(V_pu, Z_pu, S_base, V_base)
+%FAULT_CURRENT Symmetrical three-phase fault current at a bus.
+%
+%   [I_FAULT, S_FAULT, I_PU] = FAULT_CURRENT(V_PU, Z_PU, S_BASE, V_BASE)
+%   returns fault current in amperes, fault level in MVA, and fault current
+%   in per unit. S_BASE in MVA, V_BASE in kV (line-to-line).
+
+    I_pu     = V_pu / Z_pu;                        % per unit
+    I_base   = S_base * 1e6 / (sqrt(3) * V_base * 1e3);   % amperes
+    I_fault  = abs(I_pu) * I_base;
+    S_fault  = abs(I_pu) * S_base;                 % MVA
+end
+```
+</CodeFile>
+
+```matlab
+I = fault_current(1.0, 0.15, 100, 132);              % just the first output
+[I, S] = fault_current(1.0, 0.15, 100, 132);         % first two
+[I, S, Ipu] = fault_current(1.0, 0.15, 100, 132);    % all three
+```
+
+Order matters — put the output people will most often want first, so the common case
+is the short call.
+
+<Callout type="engineering">
+  `[peak, idx] = max(demand)` follows exactly this convention, and so does
+  `[V, converged] = load_flow(...)`. Returning the answer *and* a flag saying whether
+  to trust it is a pattern worth copying: it makes it hard for a caller to use a
+  non-converged result by accident.
+</Callout>
+
+## Validating inputs
+
+A function that fails clearly is worth far more than one that returns nonsense.
+
+```matlab
+function Z_new = to_system_base(Z_old, S_old, V_old, S_base, V_base)
+
+    arguments
+        Z_old  (:,1) double {mustBeNonnegative}
+        S_old  (:,1) double {mustBePositive}
+        V_old  (:,1) double {mustBePositive}
+        S_base (1,1) double {mustBePositive}
+        V_base (1,1) double {mustBePositive}
+    end
+
+    Z_new = Z_old .* (S_base ./ S_old) .* (V_old ./ V_base).^2;
+end
+```
+
+The `arguments` block declares the size and type of each input and validates them
+automatically. A zero voltage base is caught at the door with a clear message,
+rather than producing `Inf` that propagates silently through everything downstream.
+
+For quick work, `assert` does the same job with less ceremony:
+
+```matlab
+assert(all(V_old > 0), 'Voltage ratings must be positive');
+```
+
+## Local functions
+
+A script or function file can hold helper functions at the bottom, visible only
+within that file.
+
+```matlab
+% analysis.m
+clear; clc;
+data = load_feeder('ieee33.csv');
+report(data);
+
+function report(d)               % local — only callable inside analysis.m
+    fprintf('%d buses, %.1f MW total load\n', d.n_bus, sum(d.load));
+end
+```
+
+Useful for breaking up a long script without scattering one-line files across your
+folder.
+
+## Common mistakes
+
+<Callout type="warning" title="Filename not matching the function name">
+  If `to_system_base.m` declares `function y = convert(...)`, MATLAB calls it by the
+  *filename*. Confusing at best. Keep them identical.
+</Callout>
+
+<Callout type="warning" title="Expecting a function to modify its input">
+  ```matlab
+  function scale(v)
+      v = v * 2;      % changes the local copy only
+  end
+  ```
+  The caller's variable is untouched — arguments are passed by value. You must
+  return the result: `function v = scale(v)`.
+</Callout>
+
+<Callout type="warning" title="Skipping the help block">
+  It takes two minutes and it is the only documentation the function will ever have.
+  Write it before the body, while you still remember what the arguments mean.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Write a base impedance function">
+  Write `base_impedance(S_base_MVA, V_base_kV)` returning $Z_{base}$ in ohms, with a
+  help block and input validation.
+
+  <Solution>
+    ```matlab
+    function Z_base = base_impedance(S_base_MVA, V_base_kV)
+    %BASE_IMPEDANCE Base impedance in ohms from MVA and kV bases.
+    %
+    %   Z_BASE = BASE_IMPEDANCE(S_BASE_MVA, V_BASE_KV) returns the base
+    %   impedance in ohms. V_BASE_KV is line-to-line.
+    %
+    %   Example:
+    %       base_impedance(100, 132)    % 174.24 ohms
+
+        assert(S_base_MVA > 0, 'S_base must be positive');
+        assert(V_base_kV  > 0, 'V_base must be positive');
+
+        Z_base = V_base_kV^2 / S_base_MVA;
+    end
+    ```
+
+    With kV and MVA the units work out to ohms directly — no conversion factor,
+    which is a small piece of per-unit elegance.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="predict" title="What does this print?">
+  ```matlab
+  x = 5;
+  y = double_it(x);
+  fprintf('%d %d\n', x, y);
+
+  function out = double_it(x)
+      x = x * 2;
+      out = x;
+  end
+  ```
+
+  <Solution>
+    `5 10`
+
+    Inside `double_it`, `x` is a *local copy*. Doubling it changes the copy and
+    produces the return value, but the caller's `x` is untouched.
+
+    If MATLAB passed by reference, the answer would be `10 10` — and every function
+    call would be a potential source of action at a distance. This is the sealed-room
+    property doing its job.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="Turn the project into a function">
+  Convert your per-unit converter from the Foundations project into a function
+  taking an equipment matrix and returning converted impedances.
+
+  <Solution>
+    ```matlab
+    function [Z_new, Z_ohms] = convert_equipment(equipment, S_base, V_base)
+    %CONVERT_EQUIPMENT Convert an equipment list onto a common base.
+    %
+    %   EQUIPMENT is an N-by-3 matrix: [Z_pu, S_rating_MVA, V_rating_kV].
+    %   Returns per-unit impedances on the system base, and ohmic values.
+
+        assert(size(equipment, 2) == 3, ...
+               'equipment must have 3 columns: [Z_pu, S_MVA, V_kV]');
+
+        Z_old = equipment(:, 1);
+        S_old = equipment(:, 2);
+        V_old = equipment(:, 3);
+
+        assert(all(S_old > 0) && all(V_old > 0), ...
+               'Ratings must be positive');
+
+        Z_new  = Z_old .* (S_base ./ S_old) .* (V_old ./ V_base).^2;
+        Z_ohms = Z_new * (V_base^2 / S_base);
+    end
+    ```
+
+    The script became a tool. It validates its input, documents itself, works on any
+    number of items, and can be called from any other script you write this year.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'A function creates a variable named V internally. What happens to a variable named V in your workspace?',
+      options: [
+        'It is overwritten by the function',
+        'Nothing — they are entirely separate variables',
+        'MATLAB raises a name-collision error',
+        'The function cannot use that name',
+      ],
+      answer: 1,
+      explain:
+        "Function scope is sealed. Internal variables are local, and the caller's workspace is untouched — which is exactly what lets you call code you have not read.",
+    },
+    {
+      q: 'Why do many MATLAB functions return a status flag as a second output?',
+      options: [
+        'To make the function look more professional',
+        'So the caller can check whether the result is trustworthy before using it',
+        'MATLAB requires at least two outputs',
+        'To improve performance',
+      ],
+      answer: 1,
+      explain:
+        'Returning [result, converged] makes it hard to use a failed computation by accident. The same idea as checking OpenDSS\'s converged flag rather than trusting the numbers it hands back.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A function is a **sealed room with a labelled hatch**. Everything it needs comes in
+  through arguments, everything it produces goes out through returns, and nothing
+  leaks either way. That seal is what makes code you can trust and reuse.
+</KeyIdea>
+
+## Further reading
+
+- `doc function` and `doc arguments` — the modern validation syntax
+- Next: **conditionals** — making code that decides

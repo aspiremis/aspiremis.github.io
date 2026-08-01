@@ -1,0 +1,291 @@
+---
+title: Conditionals
+track: matlab
+module: programming
+order: 11
+description: Making code decide — if, elseif, switch — and the trap of using if on an array.
+objectives:
+  - Write if/elseif/else and switch blocks correctly
+  - Combine conditions with && and || and know why they differ from & and |
+  - Explain why if on an array almost never does what you expect
+prerequisites: [functions]
+estimatedMinutes: 25
+difficulty: beginner
+tags: ['matlab', 'control-flow', 'conditionals']
+---
+
+Everything so far has run straight through. A conditional lets code take different
+paths depending on what it finds — which is what turns a calculation into a check.
+
+## The basic form
+
+<CodeFile name="voltage_check.m">
+```matlab
+V_pu = 1.07;
+
+if V_pu > 1.05
+    disp('Overvoltage — above statutory limit');
+elseif V_pu < 0.95
+    disp('Undervoltage — below statutory limit');
+else
+    disp('Within limits');
+end
+```
+</CodeFile>
+
+MATLAB tests each condition in order and runs the **first** branch that is true.
+`else` catches everything remaining and is optional.
+
+Order matters. Put the most specific condition first — if you test `V_pu < 1.10`
+before `V_pu < 1.05`, the second can never be reached.
+
+## Comparison and logical operators
+
+```matlab
+==   equal to            ~=   not equal to
+<    less than           >    greater than
+<=   less or equal       >=   greater or equal
+
+&&   AND  (scalars, short-circuits)
+||   OR   (scalars, short-circuits)
+&    AND  (element-wise, on arrays)
+|    OR   (element-wise, on arrays)
+~    NOT
+```
+
+<Callout type="warning" title="== is comparison, = is assignment">
+  `if V = 1.05` is a syntax error in MATLAB (helpfully — in C it would silently
+  assign). You want `if V == 1.05`. Though for floating point, see below.
+</Callout>
+
+## Short-circuit `&&` versus element-wise `&`
+
+This distinction matters more than it looks.
+
+`&&` evaluates left to right and **stops as soon as the answer is decided**. If the
+left side of `&&` is false, the right side is never evaluated at all.
+
+```matlab
+if n > 0 && data(n) > 5      % safe: data(n) only runs if n > 0
+```
+
+Written with `&`, both sides always evaluate, so `data(0)` would error before the
+`if` ever ran. Short-circuiting isn't just an optimisation — it's what lets you
+guard a risky expression with a cheap test.
+
+Use `&&` and `||` in `if` conditions. Use `&` and `|` when combining whole logical
+arrays element-wise, which is the next lesson's territory.
+
+## Comparing floating point numbers
+
+```matlab
+0.1 + 0.2 == 0.3        % false!
+```
+
+Binary floating point cannot represent 0.1 or 0.2 exactly, so the sum is a hair off
+0.3. **Never test computed floating point values for exact equality.**
+
+```matlab
+abs((0.1 + 0.2) - 0.3) < 1e-10       % true — the right way
+```
+
+<Callout type="engineering">
+  This is why every iterative solver has a tolerance rather than a test for zero.
+  A load flow doesn't run until the mismatch *is* zero; it runs until the mismatch
+  is smaller than some $\varepsilon$ you chose:
+
+  ```matlab
+  if max(abs(mismatch)) < tol
+      converged = true;
+      break;
+  end
+  ```
+
+  Choosing that tolerance is a real engineering decision, and it's covered properly
+  in the Numerical Methods module.
+</Callout>
+
+## `switch` for discrete cases
+
+When you're branching on one value against several fixed possibilities, `switch` is
+clearer than a chain of `elseif`.
+
+<CodeFile name="bus_type.m">
+```matlab
+function describe_bus(bus_type)
+    switch lower(bus_type)
+        case 'slack'
+            disp('Slack: |V| and angle both fixed. One per system.');
+        case {'pv', 'generator'}          % several labels, same branch
+            disp('PV: |V| and P fixed, Q and angle unknown.');
+        case 'pq'
+            disp('PQ: P and Q fixed, |V| and angle unknown.');
+        otherwise
+            error('Unknown bus type: %s', bus_type);
+    end
+end
+```
+</CodeFile>
+
+Two things: `case {'pv','generator'}` groups alternatives, and `otherwise` catches
+anything unmatched. Raising an error there — rather than silently doing nothing — is
+almost always right.
+
+## The array trap
+
+This is the mistake worth this whole lesson.
+
+```matlab
+V = [1.02 1.07 0.98];
+
+if V > 1.05
+    disp('Overvoltage!');
+end
+```
+
+Nothing prints. Why?
+
+`V > 1.05` produces `[0 1 0]` — a logical *array*. And **`if` treats an array as
+true only when every element is true**. One element out of limits isn't enough.
+
+What you almost always mean is one of:
+
+```matlab
+if any(V > 1.05)          % is ANY bus over limit?
+if all(V > 1.05)          % are ALL of them?
+n = sum(V > 1.05);        % how many?
+idx = find(V > 1.05);     % which ones?
+```
+
+<Callout type="warning" title="This fails silently">
+  There's no error and no warning — the branch simply doesn't run. A limit check
+  written this way reports "all clear" on a system that is in violation, which is
+  precisely the kind of bug that survives to a report.
+
+  Whenever an `if` condition involves an array, make `any` or `all` explicit.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Unreachable branches from bad ordering">
+  ```matlab
+  if V > 0.95
+      disp('OK');
+  elseif V > 1.05
+      disp('High');       % never reached — anything > 1.05 is also > 0.95
+  end
+  ```
+  Test narrow conditions before broad ones.
+</Callout>
+
+<Callout type="warning" title="Testing floating point equality">
+  `if Z == 0.15` will fail for a `Z` that was computed rather than typed. Compare
+  against a tolerance.
+</Callout>
+
+<Callout type="warning" title="Forgetting the otherwise / else case">
+  If none of your conditions match, nothing happens and the code continues with
+  whatever value was already there. An explicit `otherwise` that errors is usually
+  better than silence.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What prints?">
+  ```matlab
+  V = [0.96 1.01 1.03];
+  if V > 0.95
+      disp('A');
+  end
+  if any(V > 1.02)
+      disp('B');
+  end
+  if all(V > 0.95)
+      disp('C');
+  end
+  ```
+
+  <Solution>
+    `A`, `B` and `C` all print.
+
+    - The first `if` gets `[1 1 1]` — every element true, so the array counts as
+      true. **This one works by accident.** Change the first element to 0.94 and it
+      silently stops printing.
+    - `any(V > 1.02)` is true because 1.03 exceeds it.
+    - `all(V > 0.95)` is true for all three.
+
+    The first case is the dangerous one: code that works on today's data and fails
+    silently on tomorrow's.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Write a limit checker">
+  Write `check_voltages(V_pu)` that prints how many buses are over, under, and
+  within the 0.95–1.05 range, and returns `true` if all are within limits.
+
+  <Solution>
+    ```matlab
+    function ok = check_voltages(V_pu)
+    %CHECK_VOLTAGES Report bus voltages against 0.95-1.05 pu limits.
+
+        over  = V_pu > 1.05;
+        under = V_pu < 0.95;
+        ok    = ~any(over | under);
+
+        fprintf('%d over,  %d under,  %d within limits\n', ...
+                sum(over), sum(under), sum(~over & ~under));
+
+        if ~ok
+            fprintf('Violating buses: %s\n', mat2str(find(over | under)));
+        end
+    end
+    ```
+
+    Note `|` and `&` here, not `||` and `&&` — these are element-wise operations on
+    whole arrays, not scalar conditions. Getting that the wrong way round is the
+    other half of the same confusion.
+
+    `find` returning the offending bus numbers is what makes the output actionable
+    rather than just alarming.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'For V = [1.02 1.07 0.98], what does if V > 1.05 do?',
+      options: [
+        'Runs the branch, because one element exceeds 1.05',
+        'Does not run, because if requires ALL elements to be true',
+        'Raises an error about array conditions',
+        'Runs the branch once per element',
+      ],
+      answer: 1,
+      explain:
+        'if treats an array as true only when every element is true. It fails silently — no error, no warning — which is why a limit check written this way can report all-clear on a system in violation.',
+    },
+    {
+      q: 'Why use && rather than & in an if condition?',
+      options: [
+        'They are identical; && is just newer',
+        '&& short-circuits, so the right side is skipped when the answer is already decided',
+        '& does not work on scalars',
+        '&& is faster on large arrays',
+      ],
+      answer: 1,
+      explain:
+        'Short-circuiting lets you guard a risky expression with a cheap test — if n > 0 && data(n) > 5 never evaluates data(0). With & both sides always run.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  `if` on an array is true only when **every** element is. Any condition involving an
+  array needs an explicit `any` or `all` — otherwise it fails silently, which is far
+  worse than failing loudly.
+</KeyIdea>
+
+## Further reading
+
+- `doc if`, `doc switch`, `doc any`, `doc all`
+- Next: **loops** — and the MATLAB-specific reason to avoid them

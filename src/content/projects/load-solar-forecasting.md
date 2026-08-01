@@ -1,30 +1,33 @@
 ---
 title: Short-Term Load and Solar Forecasting
 summary: >-
-  A careful comparison of classical and deep-learning forecasters for day-ahead
+  A planned comparison of classical and deep-learning forecasters for day-ahead
   load and PV output — including the baselines most papers quietly skip.
 date: 2026-07-26
-status: active
+status: planned
 tech: ['Python', 'scikit-learn', 'pandas', 'PyTorch']
 tags: ['forecasting', 'machine-learning', 'time-series', 'solar-pv']
-github: https://github.com/aspiremis/load-solar-forecasting
 featured: true
 order: 3
 ---
 
+> **Status: planned.** A design document. The experimental protocol below is what I
+> intend to run; no results have been produced yet. The point of writing the
+> protocol first is that it commits me to a fair comparison before I know which
+> model I'd prefer to win.
+
 ## Overview
 
 Short-term forecasting is where machine learning most obviously belongs in power
-systems, and also where it is most often oversold. This project is an attempt to
-do the comparison honestly: same data, same splits, same metrics, and — the part
-that usually goes missing — a seasonal naive baseline that the fancy models have
+systems, and also where it is most often oversold. This project is an attempt to do
+the comparison honestly: same data, same splits, same metrics, and — the part that
+usually goes missing — a seasonal naive baseline that the sophisticated models have
 to actually beat.
 
 ## Problem statement
 
-Given historical load, PV generation and weather, produce a 24-hour-ahead
-forecast at hourly resolution, and quantify how much each modelling choice
-actually buys.
+Given historical load, PV generation and weather, produce a 24-hour-ahead forecast
+at hourly resolution, and quantify how much each modelling choice actually buys.
 
 Two properties make this harder than a generic regression problem:
 
@@ -36,7 +39,9 @@ Two properties make this harder than a generic regression problem:
   2 a.m. is not making a small error; it is revealing that it never learned the
   structure at all.
 
-Error is reported as MAPE for load and, for PV, as nRMSE against installed
+## Metrics, decided in advance
+
+Error will be reported as MAPE for load and, for PV, as nRMSE against installed
 capacity — because MAPE is undefined at night, when actual output is zero:
 
 $$
@@ -45,9 +50,10 @@ $$
 
 This detail matters more than it sounds. A paper reporting PV MAPE is either
 dropping night hours or dividing by zero somewhere, and the two choices are not
-comparable.
+comparable. Fixing the metric before running anything is how you avoid choosing the
+one that flatters your result.
 
-## Architecture
+## Planned architecture
 
 ```
 data/         ingestion, resampling, timezone & DST handling, gap policy
@@ -56,12 +62,12 @@ models/       naive · linear · random_forest · gradient_boosting · lstm
 evaluate/     rolling-origin backtest, metrics, error decomposition
 ```
 
-Feature engineering is deliberately shared across every model, so the comparison
-measures the *model*, not who got the better features.
+Feature engineering will be **shared across every model**, so the comparison
+measures the model rather than who got the better features.
 
-## Implementation
+## Intended approach
 
-The features that carried the most weight:
+The features I expect to carry the most weight:
 
 ```python
 def build_features(df):
@@ -90,44 +96,30 @@ def build_features(df):
     return out
 ```
 
-Backtesting uses a **rolling-origin** split, never a random one. Random splits on
-time series leak future information backwards through the lag features and
-produce results that look excellent and mean nothing.
+## Experimental protocol
 
-## Results
+Committing to this before running anything is the whole point.
 
-Day-ahead forecasts, 12 months of data, rolling-origin backtest with a 30-day
-test window stepped monthly:
+- **Rolling-origin backtest, never a random split.** Random splits on time series
+  leak future information backwards through the lag features and produce results
+  that look excellent and mean nothing.
+- **A seasonal naive baseline** — predict that this hour equals the same hour last
+  week — reported alongside every model. If a model can't clear that comfortably, it
+  isn't earning its complexity.
+- **Ablation on the clear-sky index**, because I suspect a physics-derived feature
+  will matter more than the choice of model, and I'd rather test that than assume it.
+- Training cost reported alongside accuracy. A model that wins by a small margin at
+  twenty times the cost has not obviously won.
 
-| Model | Load MAPE | PV nRMSE | Train time |
-|---|---|---|---|
-| Seasonal naive (t − 168 h) | 8.4% | 14.1% | — |
-| Linear regression | 6.9% | 11.8% | < 1 s |
-| Random forest | 5.1% | 9.4% | 42 s |
-| Gradient boosting | **4.6%** | **8.7%** | 88 s |
-| LSTM (2 × 64) | 4.8% | 8.9% | 21 min |
+## Scope beyond the first version
 
-What I take from this:
-
-- **The LSTM did not win.** With well-constructed lag features, gradient boosting
-  matched or beat it at a fraction of the training cost. The deep model would
-  likely pull ahead with substantially more data, but at this scale, claiming it
-  is "better" would be dishonest.
-- **The naive baseline is not embarrassing.** 8.4% MAPE from copying last week is
-  a reminder of how much of a load curve is pure repetition — and any model that
-  can't clear that bar comfortably isn't earning its complexity.
-- **Clear-sky index was the single highest-value feature.** Removing it degraded
-  PV nRMSE from 8.7% to 12.3%, a bigger swing than any change of model.
-
-## Future improvements
-
-- Probabilistic forecasts (quantile regression / prediction intervals) — a point
+- Probabilistic forecasts (quantile regression, prediction intervals) — a point
   forecast is the wrong output for anything that feeds a reserve decision
 - Sky-image or satellite-derived inputs for intra-hour PV ramps
 - Hierarchical reconciliation across feeder → substation → system level
-- Test transfer to a site with no history, which is the actually hard case
+- Transfer to a site with no history, which is the genuinely hard case
 
 ## Code
 
-The repository contains the full feature pipeline, the backtesting harness, and
-notebooks reproducing every number in the table.
+Not public yet. The repository, the feature pipeline and the backtesting harness
+will be linked here once the protocol above has actually been run.

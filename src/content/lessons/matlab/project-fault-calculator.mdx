@@ -1,0 +1,320 @@
+---
+title: 'Project: Symmetrical Fault Current Calculator'
+track: matlab
+module: programming
+order: 16
+description: Build a validated tool that computes three-phase fault current and fault level anywhere in a radial system — as real functions, with tests.
+objectives:
+  - Structure a calculation as validated, documented functions
+  - Combine per-unit conversion, control flow and tables into one tool
+  - Verify a numerical result against an independent hand calculation
+prerequisites: [functions, conditionals, loops, logical-indexing, data-structures, debugging]
+estimatedMinutes: 50
+difficulty: intermediate
+tags: ['matlab', 'project', 'fault-analysis', 'power-systems']
+---
+
+The Foundations project was a script. This one is a **tool** — functions with help
+text, validated inputs, and tests that prove it right.
+
+Symmetrical fault analysis is the natural subject: it's on your syllabus, the
+arithmetic is simple enough to check by hand, and the answer is one a protection
+engineer actually needs.
+
+## The problem
+
+For a bolted three-phase fault at a bus, with everything on a common base, the fault
+current in per unit is:
+
+$$
+I_f = \frac{V_{pre}}{Z_{th}}
+$$
+
+where $V_{pre}$ is the pre-fault voltage (usually taken as 1.0 pu) and $Z_{th}$ is
+the Thevenin impedance seen from the faulted bus.
+
+Converting to real units:
+
+$$
+I_{base} = \frac{S_{base}}{\sqrt{3}\,V_{base}}, \qquad
+I_f^{amps} = |I_f^{pu}| \times I_{base}, \qquad
+\text{MVA}_f = |I_f^{pu}| \times S_{base}
+$$
+
+Simple enough to verify by hand — which is exactly why it's a good first tool.
+
+<Callout type="engineering">
+  Fault level determines the interrupting rating of every circuit breaker at that
+  bus. Get it wrong low and you specify a breaker that will fail to clear a fault.
+  This is a calculation where "roughly right" is not a category.
+</Callout>
+
+## Stage 1 — the core function
+
+<CodeFile name="fault_at_bus.m">
+```matlab
+function [I_amps, MVA_f, I_pu] = fault_at_bus(Z_th_pu, S_base_MVA, V_base_kV, V_pre_pu)
+%FAULT_AT_BUS Symmetrical three-phase fault current at a bus.
+%
+%   [I_AMPS, MVA_F, I_PU] = FAULT_AT_BUS(Z_TH_PU, S_BASE_MVA, V_BASE_KV)
+%   returns the fault current in amperes, the fault level in MVA, and the
+%   fault current in per unit, for a bolted three-phase fault.
+%
+%   Z_TH_PU may be complex. V_PRE_PU defaults to 1.0 if omitted.
+%
+%   Example:
+%       [I, MVA] = fault_at_bus(0.15, 100, 132)
+%       % I = 2915.5 A, MVA = 666.7
+
+    arguments
+        Z_th_pu     (1,1) double
+        S_base_MVA  (1,1) double {mustBePositive}
+        V_base_kV   (1,1) double {mustBePositive}
+        V_pre_pu    (1,1) double = 1.0
+    end
+
+    assert(abs(Z_th_pu) > 0, 'Thevenin impedance cannot be zero — infinite fault current');
+
+    I_pu   = V_pre_pu / Z_th_pu;
+    I_base = S_base_MVA * 1e6 / (sqrt(3) * V_base_kV * 1e3);   % amperes
+
+    I_amps = abs(I_pu) * I_base;
+    MVA_f  = abs(I_pu) * S_base_MVA;
+end
+```
+</CodeFile>
+
+Everything from the Functions lesson is here: signature, help block with an example,
+an `arguments` block that validates and supplies a default, and a guard against the
+one input that would produce infinity.
+
+## Stage 2 — verify it by hand
+
+Before building anything on top of this, prove it.
+
+<CodeFile name="test_fault_at_bus.m">
+```matlab
+%% Hand calculation
+%   Z_th   = 0.15 pu on a 100 MVA, 132 kV base
+%   I_pu   = 1.0 / 0.15                     = 6.6667 pu
+%   MVA_f  = 6.6667 x 100                   = 666.67 MVA
+%   I_base = 100e6 / (sqrt(3) x 132e3)      = 437.39 A
+%   I_f    = 6.6667 x 437.39                = 2915.9 A
+
+[I, MVA, Ipu] = fault_at_bus(0.15, 100, 132);
+
+tol = 1e-2;
+assert(abs(Ipu - 6.6667) < 1e-4, 'per-unit current wrong');
+assert(abs(MVA - 666.67)  < tol,  'fault MVA wrong');
+assert(abs(I   - 2915.9)  < 1.0,  'fault current wrong');
+
+fprintf('PASS  I = %.1f A,  %.1f MVA,  %.4f pu\n', I, MVA, Ipu);
+
+%% A second case where the answer differs, so the test can discriminate
+%   Z_th = 0.25 pu  ->  I_pu = 4.0,  MVA = 400
+[~, MVA2, Ipu2] = fault_at_bus(0.25, 100, 132);
+assert(abs(Ipu2 - 4.0) < 1e-9 && abs(MVA2 - 400) < tol);
+fprintf('PASS  second case\n');
+```
+</CodeFile>
+
+<Callout type="tip" title="Two cases, not one">
+  A single test can pass by coincidence. The second case has a different answer, so a
+  bug that happened to produce the right number once will be caught. Tests that can't
+  distinguish right from wrong aren't tests.
+</Callout>
+
+## Stage 3 — accumulate impedance through a radial system
+
+Real questions are about a *location*, not an impedance. In a radial system the
+Thevenin impedance at a bus is the source impedance plus every series element
+between the source and that bus.
+
+<CodeFile name="thevenin_radial.m">
+```matlab
+function Z_th = thevenin_radial(Z_source, Z_branches)
+%THEVENIN_RADIAL Cumulative Thevenin impedance along a radial feeder.
+%
+%   Z_TH = THEVENIN_RADIAL(Z_SOURCE, Z_BRANCHES) returns a vector whose k-th
+%   entry is the impedance seen at the k-th bus downstream of the source, all
+%   in per unit on a common base.
+%
+%   Bus 1 is the source bus, so Z_TH(1) == Z_SOURCE.
+
+    arguments
+        Z_source   (1,1) double
+        Z_branches (:,1) double
+    end
+
+    % Sequential accumulation — each bus depends on the one before it, so this
+    % is a genuine use for cumsum rather than a loop.
+    Z_th = [Z_source; Z_source + cumsum(Z_branches)];
+end
+```
+</CodeFile>
+
+`cumsum` is the vectorised form of "running total". The Loops lesson said sequential
+dependence usually forces a loop — this is the exception worth knowing, because a
+running sum has a built-in.
+
+## Stage 4 — the complete tool
+
+Bring it together with a table, so the output is something you could paste into a
+report.
+
+<CodeFile name="fault_study.m">
+```matlab
+%% Radial feeder fault study
+clear; clc;
+
+%% System data — all per unit on a common base
+S_base   = 100;        % MVA
+V_base   = 132;        % kV
+Z_source = 0.05 + 0.20i;
+
+bus_name  = ["Source"; "Bus 2"; "Bus 3"; "Bus 4"; "Bus 5"];
+Z_branch  = [0.02 + 0.06i;      % source -> bus 2
+             0.03 + 0.09i;      % bus 2  -> bus 3
+             0.04 + 0.12i;      % bus 3  -> bus 4
+             0.06 + 0.18i];     % bus 4  -> bus 5
+
+%% Analysis
+Z_th = thevenin_radial(Z_source, Z_branch);
+
+n      = numel(Z_th);
+I_amps = zeros(n,1);
+MVA_f  = zeros(n,1);            % pre-allocated
+
+for k = 1:n
+    [I_amps(k), MVA_f(k)] = fault_at_bus(Z_th(k), S_base, V_base);
+end
+
+results = table(bus_name, abs(Z_th), I_amps/1000, MVA_f, ...
+                'VariableNames', {'Bus','Z_th_pu','I_kA','Fault_MVA'});
+
+%% Report
+fprintf('Fault study — %.0f MVA, %.0f kV base\n\n', S_base, V_base);
+disp(results);
+
+%% Checks
+assert(all(diff(MVA_f) < 0), 'Fault level must fall with distance from source');
+assert(all(I_amps > 0), 'Fault current must be positive');
+
+% Breaker screening
+rating_MVA = 500;
+weak = results(results.Fault_MVA > rating_MVA, :);
+if isempty(weak)
+    fprintf('\nAll buses within the %d MVA breaker rating.\n', rating_MVA);
+else
+    fprintf('\n%d bus(es) exceed the %d MVA rating:\n', height(weak), rating_MVA);
+    disp(weak);
+end
+```
+</CodeFile>
+
+The `assert(all(diff(MVA_f) < 0))` is the physics check from the Debugging lesson:
+fault level must *decrease* as you move away from the source, because impedance
+accumulates. If it doesn't, the branch data is in the wrong order or a sign is wrong
+— and you find out immediately rather than in a report.
+
+## Extend it
+
+<Exercise n={1} kind="practice" title="Add fault impedance">
+  Real faults aren't bolted. Add an optional fault impedance $Z_f$ so that
+  $I_f = V_{pre} / (Z_{th} + Z_f)$, defaulting to zero.
+
+  <Solution>
+    ```matlab
+    function [I_amps, MVA_f, I_pu] = fault_at_bus(Z_th_pu, S_base_MVA, V_base_kV, V_pre_pu, Z_f_pu)
+        arguments
+            Z_th_pu     (1,1) double
+            S_base_MVA  (1,1) double {mustBePositive}
+            V_base_kV   (1,1) double {mustBePositive}
+            V_pre_pu    (1,1) double = 1.0
+            Z_f_pu      (1,1) double = 0
+        end
+
+        Z_total = Z_th_pu + Z_f_pu;
+        assert(abs(Z_total) > 0, 'Total impedance cannot be zero');
+
+        I_pu   = V_pre_pu / Z_total;
+        I_base = S_base_MVA * 1e6 / (sqrt(3) * V_base_kV * 1e3);
+        I_amps = abs(I_pu) * I_base;
+        MVA_f  = abs(I_pu) * S_base_MVA;
+    end
+    ```
+
+    Defaulting `Z_f_pu` to zero keeps every existing call working — a bolted fault is
+    the special case where $Z_f = 0$. Adding parameters without breaking callers is
+    a habit worth having early.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Report X/R ratio">
+  Add X/R at each bus. Why would a protection engineer want it?
+
+  <Solution>
+    ```matlab
+    XR = imag(Z_th) ./ real(Z_th);
+    results.XR = XR;
+    ```
+
+    X/R sets the **DC offset** in the fault current. A high X/R means the asymmetric
+    first-cycle current is substantially larger than the symmetrical RMS value this
+    tool computes, and breaker ratings must account for it.
+
+    So this tool gives a *symmetrical* fault level — genuinely useful, and not the
+    whole story. Being clear about what a tool does and doesn't cover is part of
+    building it.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="debug" title="The fault level rises with distance">
+  Your assertion fires: `Fault level must fall with distance from source`. What are
+  the two most likely causes?
+
+  <Solution>
+    **The branch list is out of order.** `thevenin_radial` assumes `Z_branches` is
+    ordered from the source outwards. Shuffled, the cumulative sum is meaningless.
+
+    **A sign or magnitude error in the data.** A negative reactance, or an impedance
+    entered in ohms while the rest are per unit, can make the running total decrease.
+
+    Diagnose by printing the intermediate values:
+
+    ```matlab
+    disp(table((1:numel(Z_th))', Z_th, abs(Z_th), ...
+         'VariableNames', {'Bus','Z_th','magnitude'}));
+    ```
+
+    This is the Debugging lesson's "shrink it" step — look at the intermediate
+    quantity rather than the final answer.
+
+    Note that the assertion did its job: it caught a *data* error, not a code error.
+    Most assertions you write will.
+  </Solution>
+</Exercise>
+
+## What you built
+
+- `fault_at_bus` — validated, documented, defaulted, guarded against division by zero
+- `thevenin_radial` — accumulates impedance along a feeder
+- `fault_study` — a driver producing a report-ready table with physics checks
+- Tests that verify both functions against hand calculations
+
+Every technique from this module: functions and scope, `arguments` validation,
+conditionals, a pre-allocated loop, logical indexing to filter the table, tables for
+mixed-type output, and assertions that catch silently wrong results.
+
+<KeyIdea>
+  A **tool** differs from a script in three ways: it validates what comes in, it
+  documents what it does, and it proves itself against an answer you obtained
+  independently. Everything else is detail.
+</KeyIdea>
+
+## Further reading
+
+- Grainger & Stevenson, *Power System Analysis*, Chapter 10 — symmetrical faults
+- `doc arguments`, `doc assert`, `doc table`
+- Next module: **Data and Visualisation** — reading real measurement files and making
+  figures worth putting in a report
