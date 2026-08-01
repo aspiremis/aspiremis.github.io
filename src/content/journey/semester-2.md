@@ -8,26 +8,23 @@ summary: >-
   protection coordination and the optimisation methods that decide how a system is
   actually operated. This is also when I expect to settle on a thesis direction.
 courses:
-  - code: EE6102
-    name: Power System Dynamics and Stability
-    credits: 4
-    note: Planned — synchronous machine modelling, small-signal and transient stability.
-  - code: EE6104
-    name: Power System Protection
-    credits: 3
-    note: Planned — relay coordination, distance protection, protection of inverter-fed networks.
-  - code: EE6106
-    name: FACTS and HVDC Transmission
-    credits: 3
-    note: Planned.
-  - code: EE6108
-    name: Optimisation Techniques in Power Systems
-    credits: 3
-    note: Planned — OPF, unit commitment, convex relaxations.
-  - code: EE6192
-    name: Seminar
-    credits: 2
-    note: Planned — literature survey feeding into the thesis proposal.
+  - name: Power System Dynamics and Stability
+    type: Core
+    note: >-
+      Intended — synchronous machine modelling, small-signal and transient stability.
+      Course codes and offerings are confirmed at registration; nothing here is fixed yet.
+  - name: Power System Protection
+    type: Core
+    note: 'Intended — relay coordination, distance protection, protection of inverter-fed networks.'
+  - name: FACTS and HVDC Transmission
+    type: Elective
+    note: 'Intended.'
+  - name: Optimisation Techniques in Power Systems
+    type: Elective
+    note: 'Intended — OPF, unit commitment, convex relaxations.'
+  - name: Seminar
+    type: Seminar
+    note: 'Intended — literature survey feeding into the thesis proposal.'
 labs: []
 highlights: []
 books:

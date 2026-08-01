@@ -82,14 +82,27 @@ const journey = defineCollection({
     semester: z.number().int().min(1).max(4),
     title: z.string(),
     period: z.string(),
+    /** e.g. "Autumn 2026-27" — the institute's own session label. */
+    session: z.string().optional(),
     status: z.enum(['completed', 'current', 'upcoming']),
     summary: z.string(),
     courses: z
       .array(
         z.object({
-          code: z.string(),
+          /** Blank for a course that is planned but not yet registered. */
+          code: z.string().optional(),
           name: z.string(),
-          credits: z.number().optional(),
+          /**
+           * Lecture-Tutorial-Practical hours per week, exactly as the institute
+           * states it ("3-1-0"). Deliberately not converted to a credit count:
+           * the L+T+P/2 rule varies between institutes, and guessing would put
+           * an invented number next to real course data.
+           */
+          ltp: z
+            .string()
+            .regex(/^\d+-\d+-\d+$/, 'ltp must look like "3-1-0"')
+            .optional(),
+          type: z.enum(['Core', 'Core Lab', 'Elective', 'Seminar', 'Thesis']).optional(),
           instructor: z.string().optional(),
           note: z.string().optional(),
         }),

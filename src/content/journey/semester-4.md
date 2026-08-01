@@ -7,10 +7,9 @@ summary: >-
   Completing the thesis, defending it, and turning the result into something that
   outlives the degree — a paper, a released tool, or ideally both.
 courses:
-  - code: EE6902
-    name: M.Tech Thesis — Phase II
-    credits: 12
-    note: Planned.
+  - name: M.Tech Thesis — Phase II
+    type: Thesis
+    note: 'Intended. Course code assigned at registration.'
 labs: []
 highlights: []
 books: []

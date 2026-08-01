@@ -89,6 +89,7 @@ export const TOPICS = [
   { slug: 'power-systems', label: 'Power Systems' },
   { slug: 'distribution-systems', label: 'Distribution Systems' },
   { slug: 'power-quality', label: 'Power Quality' },
+  { slug: 'high-voltage', label: 'High Voltage Engineering' },
   { slug: 'renewable-integration', label: 'Renewable Integration' },
   { slug: 'control-systems', label: 'Control Systems' },
   { slug: 'electrical-machines', label: 'Electrical Machines' },

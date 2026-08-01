@@ -16,9 +16,22 @@ const rendered = await Promise.all(
   })),
 );
 
-const totalCredits = semesters
+/**
+ * Weekly contact hours, summed from the L-T-P figures.
+ *
+ * Deliberately not "credits": the L + T + P/2 conversion differs between
+ * institutes, and putting a guessed credit total next to real course data would
+ * be inventing a number. Contact hours follow directly from L-T-P with no
+ * assumption at all.
+ */
+const contactHours = semesters
   .flatMap((s) => s.data.courses)
-  .reduce((sum, course) => sum + (course.credits ?? 0), 0);
+  .reduce((sum, course) => {
+    if (!course.ltp) return sum;
+    return sum + course.ltp.split('-').reduce((a, b) => a + Number(b), 0);
+  }, 0);
+
+const coursesWithLtp = semesters.flatMap((s) => s.data.courses).filter((c) => c.ltp).length;
 
 const statusTone = { completed: 'done', current: 'active', upcoming: 'planned' } as const;
 const statusLabel = { completed: 'Completed', current: 'In progress', upcoming: 'Upcoming' } as const;
@@ -55,8 +68,11 @@ const LISTS = [
         </dd>
       </div>
       <div class="bg-bg px-5 py-4">
-        <dt class="text-xs text-subtle">Credits</dt>
-        <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">{totalCredits}</dd>
+        <dt class="text-xs text-subtle">Contact hrs/wk</dt>
+        <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">
+          {contactHours}
+          {coursesWithLtp > 0 && <span class="text-sm font-normal text-subtle"> now</span>}
+        </dd>
       </div>
     </dl>
   </PageHeader>
@@ -108,7 +124,10 @@ const LISTS = [
                   <h2 id={`heading-s${d.semester}`} class="text-h2 font-semibold tracking-tight text-fg">
                     {d.title}
                   </h2>
-                  <p class="mt-0.5 font-mono text-xs text-subtle">{d.period}</p>
+                  <p class="mt-0.5 font-mono text-xs text-subtle">
+                    {d.period}
+                    {d.session && <span class="ml-2 text-subtle">· {d.session}</span>}
+                  </p>
                 </div>
                 <Badge tone={statusTone[d.status]} class="ml-auto">
                   {statusLabel[d.status]}
@@ -126,25 +145,44 @@ const LISTS = [
                         <tr class="border-b border-line bg-bg-subtle">
                           <th scope="col" class="px-4 py-3 font-medium text-subtle">Code</th>
                           <th scope="col" class="px-4 py-3 font-medium text-subtle">Course</th>
-                          <th scope="col" class="px-4 py-3 text-right font-medium text-subtle">Credits</th>
+                          <th scope="col" class="whitespace-nowrap px-4 py-3 text-right font-medium text-subtle">
+                            L-T-P
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         {d.courses.map((course) => (
                           <tr class="border-b border-line last:border-0">
                             <td class="whitespace-nowrap px-4 py-3 align-top font-mono text-xs text-subtle">
-                              {course.code}
+                              {course.code ?? '—'}
                             </td>
                             <td class="px-4 py-3 align-top">
-                              <span class="font-medium text-fg">{course.name}</span>
+                              <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span class="font-medium text-fg">{course.name}</span>
+                                {course.type && (
+                                  <span
+                                    class:list={[
+                                      'rounded-full border px-2 py-0.5 text-[10px] font-medium leading-4 whitespace-nowrap',
+                                      course.type === 'Core' || course.type === 'Core Lab'
+                                        ? 'border-accent-border bg-accent-tint text-accent'
+                                        : 'border-line bg-bg-subtle text-subtle',
+                                    ]}
+                                  >
+                                    {course.type}
+                                  </span>
+                                )}
+                              </span>
+                              {course.instructor && (
+                                <span class="mt-1 block text-xs text-muted">{course.instructor}</span>
+                              )}
                               {course.note && (
-                                <span class="mt-0.5 block text-xs leading-relaxed text-subtle">
+                                <span class="mt-1 block text-xs leading-relaxed text-subtle">
                                   {course.note}
                                 </span>
                               )}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-right align-top font-mono text-xs text-muted">
-                              {course.credits ?? '—'}
+                              {course.ltp ?? '—'}
                             </td>
                           </tr>
                         ))}
