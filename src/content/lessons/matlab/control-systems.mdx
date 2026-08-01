@@ -1,0 +1,379 @@
+---
+title: Control System Toolbox
+track: matlab
+module: toolboxes
+order: 34
+description: Transfer functions, state space, step and Bode responses, and stability margins — with the AVR loop as the running example.
+objectives:
+  - Build models as transfer functions or state space, and convert between them
+  - Read a step response and a Bode plot for stability information
+  - Interpret gain and phase margins, and connect eigenvalues to damping
+prerequisites: [ode-solvers]
+estimatedMinutes: 35
+difficulty: advanced
+toolboxes: ['Control System Toolbox']
+tags: ['matlab', 'control-systems', 'stability', 'avr']
+---
+
+The ODE lesson integrated a system forward in time. Control theory asks a different
+question: **without simulating, what can I say about how this system behaves?**
+
+For power systems that question is Semester 2's whole subject — small-signal
+stability, AVR and governor tuning, power system stabiliser design.
+
+## Two ways to describe a system
+
+**Transfer function** — input-output, in the Laplace domain:
+
+```matlab
+s = tf('s');
+G = 10 / (s^2 + 3*s + 10);           % write it like the algebra
+
+% Or by coefficient vectors
+G = tf(10, [1 3 10]);                % numerator, denominator
+```
+
+**State space** — the internal states, the form the ODE solver wanted:
+
+```matlab
+A = [0 1; -10 -3];
+B = [0; 1];
+C = [10 0];
+D = 0;
+sys = ss(A, B, C, D);
+
+Gtf  = tf(sys);        % convert to transfer function
+sys2 = ss(G);          % and back
+```
+
+<Compare
+  headings={['Form', 'Best for', 'Limitation']}
+  rows={[
+    { option: 'Transfer function', when: 'Single input, single output; frequency response', cost: 'Hides internal states', recommended: true },
+    { option: 'State space', when: 'Multi-input/output; eigenvalue and modal analysis', cost: 'Less immediately readable' },
+    { option: 'Zero-pole-gain', when: 'When pole and zero locations are the point', cost: 'zpk(G) shows them directly' },
+  ]}
+/>
+
+For power system small-signal stability, **state space is the natural form** — the
+eigenvalues of $A$ *are* the system modes, and that is what the analysis is about.
+
+## Poles decide everything
+
+```matlab
+G = 10 / (s^2 + 3*s + 10);
+
+p = pole(G)                    % -1.5 ± 2.7839i
+damp(G)                        % frequency, damping ratio, time constant
+[wn, zeta] = damp(G);
+```
+
+A pole at $s = -\sigma \pm j\omega_d$ tells you:
+
+- **Stable if $\sigma > 0$** — that is, the real part is negative. Any pole in the
+  right half-plane means the response grows without bound.
+- **Damping ratio** $\zeta = \sigma/\omega_n$ — how quickly oscillation decays.
+- **Damped frequency** $\omega_d$ — how fast it oscillates.
+
+<Callout type="engineering">
+  Power system convention: an electromechanical mode with **ζ < 0.05 is considered
+  poorly damped**, and utilities typically require ζ > 0.03 to 0.05 for all modes
+  under credible contingencies.
+
+  That is precisely a statement about eigenvalue real parts, which is why small-signal
+  stability analysis is: linearise around the operating point, form $A$, compute
+  `eig(A)`, and check every mode's damping.
+
+  ```matlab
+  lambda = eig(A);
+  zeta   = -real(lambda) ./ abs(lambda);
+  poorly_damped = find(zeta < 0.05 & imag(lambda) ~= 0);
+  ```
+</Callout>
+
+## Time response
+
+```matlab
+step(G);                       % unit step
+impulse(G);
+[y, t] = step(G);              % capture rather than plot
+
+info = stepinfo(G)
+% RiseTime, SettlingTime, Overshoot, Peak, PeakTime
+```
+
+`stepinfo` gives the numbers you'd otherwise read off the plot by eye — settling
+time and overshoot are usually the specification an AVR is tuned against.
+
+```matlab
+t = 0:0.01:10;
+u = square(2*pi*0.2*t);        % arbitrary input
+lsim(G, u, t);
+```
+
+## Frequency response
+
+```matlab
+bode(G);  grid on;
+nyquist(G);
+[mag, phase, w] = bode(G);     % capture the data
+bandwidth(G)
+```
+
+The Bode plot shows gain and phase against frequency. Its practical use is stability
+margins:
+
+```matlab
+[Gm, Pm, Wcg, Wcp] = margin(G);
+
+fprintf('Gain margin  : %.2f dB at %.3f rad/s\n', 20*log10(Gm), Wcg);
+fprintf('Phase margin : %.1f deg at %.3f rad/s\n', Pm, Wcp);
+```
+
+<Analogy>
+  Stability margins are **how much you can push the system before it becomes
+  unstable**.
+
+  Gain margin: how much extra gain it tolerates. Phase margin: how much extra delay.
+
+  A system with 2 dB gain margin is technically stable and practically fragile — any
+  modelling error, any unmodelled delay, and it isn't.
+</Analogy>
+
+Typical targets: **gain margin > 6 dB, phase margin > 30–45°.** A design meeting the
+specification with 3° of phase margin has met it on paper only.
+
+## Closing the loop
+
+```matlab
+G = 10 / (s^2 + 3*s + 10);       % plant
+K = 5;                            % proportional controller
+
+T = feedback(K*G, 1);             % unity negative feedback
+step(T); grid on;
+
+C = pid(2, 5, 0.1);               % Kp, Ki, Kd
+T = feedback(C*G, 1);
+
+% Automatic tuning
+C_tuned = pidtune(G, 'PID');
+```
+
+`feedback(L, 1)` is the closed loop with unity feedback. Getting the sign convention
+right matters — `feedback` assumes *negative* feedback by default, which is what you
+almost always want.
+
+<CodeFile name="avr_loop.m" caption="A simplified excitation control loop">
+```matlab
+%% Simplified AVR / exciter, IEEE Type-1 style
+s = tf('s');
+
+KA = 200;  TA = 0.05;        % amplifier
+KE = 1.0;  TE = 0.5;         % exciter
+KG = 1.0;  TG = 1.0;         % generator field
+KR = 1.0;  TR = 0.02;        % voltage transducer
+
+G_amp = KA / (1 + TA*s);
+G_exc = KE / (1 + TE*s);
+G_gen = KG / (1 + TG*s);
+H_sen = KR / (1 + TR*s);
+
+L = G_amp * G_exc * G_gen;               % open loop
+T = feedback(L, H_sen);                  % closed loop
+
+[Gm, Pm] = margin(L);
+fprintf('Gain margin %.2f dB, phase margin %.1f deg\n', 20*log10(Gm), Pm);
+
+info = stepinfo(T);
+fprintf('Settling time %.3f s, overshoot %.1f%%\n', ...
+        info.SettlingTime, info.Overshoot);
+
+figure;
+tiledlayout(1,2);
+nexttile; step(T); grid on; title('Closed-loop step response');
+nexttile; margin(L); grid on;
+```
+</CodeFile>
+
+Try raising `KA`. Steady-state error falls — good — while phase margin shrinks and
+overshoot grows. That trade-off between regulation accuracy and stability margin **is**
+AVR design, and it's why a power system stabiliser is added: it provides damping torque
+without giving back the regulation.
+
+## Root locus
+
+```matlab
+rlocus(L);           % pole paths as gain varies
+grid on;
+sgrid(0.05, [])      % overlay the 5% damping line
+```
+
+`sgrid(zeta, wn)` draws constant-damping rays. With the 0.05 line overlaid, you can
+read directly the gain at which a mode's damping falls below the utility requirement —
+which is a design limit, not just a plot feature.
+
+## Discretisation
+
+```matlab
+Gd = c2d(G, 0.01, 'zoh');       % 10 ms sample, zero-order hold
+Gd = c2d(G, 0.01, 'tustin');    % bilinear — better frequency-domain match
+```
+
+Necessary when the controller is a digital relay or a microcontroller. The sample rate
+must be well above the closed-loop bandwidth — a common rule is 10 to 20 times.
+
+## Common mistakes
+
+<Callout type="warning" title="Confusing open-loop and closed-loop">
+  `margin` takes the **open-loop** transfer function. Passing the closed loop gives
+  numbers that look plausible and mean nothing.
+</Callout>
+
+<Callout type="warning" title="Assuming stability from a step response that looks fine">
+  A response can settle nicely and still have almost no margin. Check `margin`.
+</Callout>
+
+<Callout type="warning" title="Sign errors in feedback">
+  `feedback(L,H)` is negative feedback. Positive feedback is `feedback(L,H,+1)`, and
+  getting it wrong turns a stable design unstable with no warning.
+</Callout>
+
+<Callout type="warning" title="Ignoring the transducer lag">
+  Leaving out the measurement path (TR above) makes a design look better than it is.
+  Sensor dynamics eat phase margin.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Find the stability limit">
+  For the AVR loop above, find the amplifier gain KA at which the closed loop becomes
+  unstable.
+
+  <Solution>
+    ```matlab
+    s = tf('s');
+    KA_vals = 50:10:2000;
+    stable = true(size(KA_vals));
+    Pm_vals = zeros(size(KA_vals));
+
+    for k = 1:numel(KA_vals)
+        L = (KA_vals(k)/(1+0.05*s)) * (1/(1+0.5*s)) * (1/(1+1.0*s));
+        T = feedback(L, 1/(1+0.02*s));
+        stable(k)  = all(real(pole(T)) < 0);
+        [~, Pm_vals(k)] = margin(L);
+    end
+
+    limit = KA_vals(find(~stable, 1));
+    fprintf('Unstable from KA = %d\n', limit);
+
+    yyaxis left;  plot(KA_vals, Pm_vals); ylabel('Phase margin (deg)');
+    yyaxis right; plot(KA_vals, double(stable)); ylabel('Stable');
+    xlabel('K_A'); grid on;
+    ```
+
+    Phase margin falls steadily as gain rises and crosses zero at the stability limit.
+    Note the design limit in practice is well before that — you would stop at 30–45°
+    of margin, not at 0°.
+
+    This is one of the few genuinely defensible uses of `yyaxis`: the two quantities
+    are directly coupled, since instability *is* zero phase margin.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Check the damping of every mode">
+  Write a function that takes a state matrix and reports any poorly damped
+  electromechanical mode.
+
+  <Solution>
+    ```matlab
+    function report_modes(A, zeta_min)
+    %REPORT_MODES Small-signal modal analysis of a state matrix.
+
+        arguments
+            A        double
+            zeta_min (1,1) double = 0.05
+        end
+
+        lambda = eig(A);
+        zeta   = -real(lambda) ./ abs(lambda);
+        f_Hz   = abs(imag(lambda)) / (2*pi);
+
+        oscillatory = imag(lambda) > 1e-9;          % one of each complex pair
+        T = table(lambda(oscillatory), f_Hz(oscillatory), zeta(oscillatory), ...
+                  'VariableNames', {'Eigenvalue','Freq_Hz','Damping'});
+        T = sortrows(T, 'Damping');
+        disp(T);
+
+        if any(real(lambda) > 0)
+            error('UNSTABLE: %d eigenvalue(s) in the right half-plane', ...
+                  sum(real(lambda) > 0));
+        end
+
+        poor = T.Damping < zeta_min;
+        if any(poor)
+            warning('%d mode(s) below %.2f damping — lowest %.4f at %.2f Hz', ...
+                    sum(poor), zeta_min, T.Damping(1), T.Freq_Hz(1));
+        end
+    end
+    ```
+
+    Electromechanical modes typically sit between 0.2 and 2 Hz — local machine modes
+    at the upper end, inter-area modes at the lower. Filtering the table to that band
+    is usually the next refinement, because those are the modes a power system
+    stabiliser is designed to damp.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does a damping ratio of 0.03 indicate for a power system mode?',
+      options: [
+        'Well damped and acceptable',
+        'Poorly damped — typically below utility requirements',
+        'Unstable',
+        'Critically damped',
+      ],
+      answer: 1,
+      explain:
+        'Utilities typically require ζ above 0.03–0.05 for all modes under credible contingencies. At 0.03 the oscillation decays only slowly, so a disturbance rings for a long time.',
+    },
+    {
+      q: 'margin() should be given which transfer function?',
+      options: [
+        'The closed loop',
+        'The open loop',
+        'The plant only',
+        'Either — it detects which',
+      ],
+      answer: 1,
+      explain:
+        'Gain and phase margins describe how far the open-loop response is from the critical point. Passing the closed loop produces numbers that look reasonable and mean nothing.',
+    },
+    {
+      q: 'Raising AVR gain improves voltage regulation. What is the cost?',
+      options: [
+        'Slower response',
+        'Reduced stability margin and increased overshoot',
+        'Higher steady-state error',
+        'There is no cost',
+      ],
+      answer: 1,
+      explain:
+        'Regulation accuracy trades against stability margin. That trade-off is the core of AVR design, and it is why a power system stabiliser is added — it supplies damping without surrendering the regulation.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Poles decide stability; margins decide robustness.** A system can be technically
+  stable and practically fragile. For power systems, small-signal analysis reduces to
+  forming $A$, taking `eig(A)`, and checking that every mode's damping clears the
+  requirement.
+</KeyIdea>
+
+## Further reading
+
+- `doc tf`, `doc margin`, `doc damp`, `doc pidtune`
+- Kundur, *Power System Stability and Control*, Chapters 8 and 12
+- Next: **signal processing** — FFT, harmonics, and computing THD honestly

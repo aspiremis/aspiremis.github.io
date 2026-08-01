@@ -1,0 +1,308 @@
+---
+title: Simscape Electrical
+track: matlab
+module: toolboxes
+order: 37
+description: Physical network modelling — wires instead of signal arrows, the powergui, and choosing between continuous, discrete and phasor simulation.
+objectives:
+  - Distinguish physical connections from directed signal flow
+  - Configure the powergui and choose the right simulation mode
+  - Judge when Simscape Electrical is the right tool rather than OpenDSS or a script
+prerequisites: [simulink]
+estimatedMinutes: 30
+difficulty: advanced
+toolboxes: ['Simscape Electrical', 'Simulink']
+tags: ['matlab', 'simscape', 'power-electronics', 'modelling']
+---
+
+Plain Simulink blocks pass **signals**: a number flows from output to input, one
+direction. That is exactly right for a control loop and exactly wrong for a circuit.
+
+In a circuit, connecting two components makes current flow *both ways*, and voltage is
+shared. There's no "output" of a resistor. Simscape Electrical models that properly.
+
+## Physical connections versus signal flow
+
+<Analogy>
+  A Simulink signal line is a **telephone call** — information travels one way, and
+  the listener doesn't affect the speaker.
+
+  A Simscape connection is a **wire**. Connect a load and the source *notices*. Current
+  flows, voltage sags, and both ends are coupled.
+
+  You cannot model a circuit with telephone calls. That's what the two block libraries
+  are for.
+</Analogy>
+
+Practically: Simscape ports are **circles** and their connections are undirected.
+Simulink ports are arrows.
+
+To read a physical quantity into the signal domain you need an explicit **sensor**
+block, and to impose one you need a **controlled source**. Those conversions are where
+the two worlds meet — typically a voltage sensor feeding a controller, whose output
+drives a controlled source or a switch gate.
+
+## The powergui is mandatory
+
+Every Simscape Electrical model needs exactly one **powergui** block. It isn't
+decoration — it configures the solver that resolves the network equations.
+
+```matlab
+% Set the mode from a script
+powergui = find_system(model, 'BlockType', 'PowerGUI');
+set_param(powergui{1}, 'SimulationMode', 'Discrete');
+set_param(powergui{1}, 'SampleTime', '5e-6');       % 5 microseconds
+```
+
+<Compare
+  headings={['Mode', 'Use for', 'Cost']}
+  rows={[
+    { option: 'Discrete', when: 'Power electronics, most coursework', cost: 'Fast and stable; pick Ts ≈ 1/20 of the switching period', recommended: true },
+    { option: 'Continuous', when: 'Small circuits needing exact transients', cost: 'Accurate, slow, can be very stiff' },
+    { option: 'Phasor', when: 'Transient stability at one frequency', cost: 'Enormously faster; loses all harmonic content' },
+  ]}
+/>
+
+<Callout type="engineering">
+  **Phasor mode is the one worth understanding.** It replaces the differential
+  equations with algebraic phasor equations at a single frequency, so a multi-second
+  transient stability study runs in seconds instead of hours.
+
+  The trade is total: harmonics, switching and any off-fundamental behaviour vanish
+  entirely. It is exactly right for rotor-angle stability and completely wrong for
+  power quality.
+
+  Choosing the mode is choosing which physics you are modelling — not a performance
+  tweak.
+</Callout>
+
+<Callout type="warning" title="Discrete sample time and switching">
+  In Discrete mode, `SampleTime` caps your time resolution. With a 10 kHz carrier
+  (100 µs period), a sample time of 50 µs resolves the switching barely and inaccurately.
+
+  Rule of thumb: **Ts ≈ switching period / 20**, so 5 µs for 10 kHz. Smaller is more
+  accurate and slower.
+</Callout>
+
+## What's in the library
+
+- **Sources** — AC/DC voltage and current, three-phase programmable source
+- **Passives** — series and parallel RLC branches and loads, mutual inductance
+- **Machines** — synchronous, asynchronous, permanent magnet, DC, with standard
+  parameterisations
+- **Power electronics** — diode, thyristor, IGBT, MOSFET, and complete bridge blocks
+- **Transformers** — single and three-phase, saturable, three-winding
+- **Transmission** — PI section line, distributed parameter line
+- **Control & measurement** — sensors, PLL, PWM generators, RMS and power measurement,
+  sequence analysers
+
+The three-phase blocks are where the real value is. Getting a saturable three-phase
+transformer or a synchronous machine right from first principles is weeks of work; here
+it's a block with a parameter dialog.
+
+## Choosing your tool
+
+This matters more than any block-level detail.
+
+<Compare
+  headings={['Study', 'Tool', 'Why']}
+  rows={[
+    { option: 'Converter switching, harmonics', when: 'Simscape Electrical', cost: 'Needs switching-level detail', recommended: true },
+    { option: 'Machine transients, fault ride-through', when: 'Simscape Electrical', cost: 'Machine models are validated and standard' },
+    { option: 'Unbalanced distribution feeder, hosting capacity', when: 'OpenDSS', cost: 'Purpose-built for unbalanced multi-phase steady state' },
+    { option: 'Load flow on a large transmission system', when: 'MATLAB script or pandapower', cost: 'Algebraic — no dynamics to simulate' },
+    { option: 'Rotor-angle stability, many machines', when: 'Simscape phasor mode', cost: 'Fast enough to be practical' },
+  ]}
+/>
+
+<Callout type="warning" title="Simscape Electrical is not a distribution analysis tool">
+  It *can* model an unbalanced feeder, and it will be painfully slow and awkward for
+  a hosting capacity study over hundreds of scenarios. OpenDSS exists for exactly that
+  problem and does it in milliseconds per case.
+
+  Choosing the wrong tool costs weeks. The rule: **switching and dynamics → Simscape;
+  unbalanced steady-state distribution → OpenDSS; large algebraic networks → code.**
+</Callout>
+
+## A worked configuration
+
+<CodeFile name="configure_model.m" caption="Setting up a converter model entirely from a script">
+```matlab
+function configure_converter(model, f_sw)
+%CONFIGURE_CONVERTER Set solver and powergui for a switching study.
+%   F_SW is the switching frequency in Hz.
+
+    arguments
+        model (1,:) char
+        f_sw  (1,1) double {mustBePositive}
+    end
+
+    load_system(model);
+
+    Ts = 1/(20*f_sw);                     % 20 samples per switching period
+
+    pg = find_system(model, 'BlockType', 'PowerGUI');
+    assert(~isempty(pg), 'Model has no powergui block — Simscape models require one');
+    set_param(pg{1}, 'SimulationMode', 'Discrete');
+    set_param(pg{1}, 'SampleTime', num2str(Ts));
+
+    set_param(model, 'SolverType', 'Fixed-step');
+    set_param(model, 'FixedStep',  num2str(Ts));
+    set_param(model, 'StopTime',   '0.2');
+
+    fprintf('Configured %s: discrete, Ts = %.2e s (%d samples/period)\n', ...
+            model, Ts, round(1/(f_sw*Ts)));
+end
+```
+</CodeFile>
+
+Discrete powergui plus a fixed-step solver at the same `Ts` is the standard,
+predictable configuration for switching studies — and it's what you need if the model
+will later be used for code generation.
+
+## Verifying a model
+
+A Simscape model produces plausible-looking waveforms very easily. Check it.
+
+```matlab
+% 1. Power balance — losses must be positive and sensible
+P_in  = mean(v_in  .* i_in);
+P_out = mean(v_out .* i_out);
+eta   = P_out / P_in;
+assert(eta > 0 && eta < 1, 'Efficiency %.3f is physically impossible', eta);
+
+% 2. Switching ripple must appear at the carrier frequency
+[amp, f] = one_sided_fft(v_out, fs);
+[~, pk]  = max(amp(f > 0.5*f_sw & f < 1.5*f_sw));
+% ... confirm the peak sits at f_sw
+
+% 3. RMS against theory for a known operating point
+V_rms = rms(v_out);
+fprintf('measured %.2f V vs expected %.2f V\n', V_rms, V_expected);
+```
+
+<Callout type="tip" title="Efficiency above 100% means the model is wrong">
+  It's the fastest sanity check there is. A converter that outputs more power than it
+  takes in usually means a sign convention error on a current measurement, or a source
+  connected where a load should be. Assert on it.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Missing or duplicated powergui">
+  Exactly one per model. Zero gives a cryptic error; two gives conflicting solver
+  configuration.
+</Callout>
+
+<Callout type="warning" title="Connecting a Simulink signal to a Simscape port">
+  They're different domains. You need a sensor block to go physical → signal, and a
+  controlled source to go the other way.
+</Callout>
+
+<Callout type="warning" title="Sample time too large for the switching frequency">
+  Aliased, wrong waveforms that look clean. Ts ≈ period/20.
+</Callout>
+
+<Callout type="warning" title="Using phasor mode for a harmonic study">
+  Phasor mode has no harmonics by construction. The answer will be beautifully clean
+  and meaningless.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="read" title="Which simulation mode?">
+  1. THD of a six-pulse rectifier
+  2. Rotor angle swing of four machines over 10 s after a fault
+  3. Inrush current when energising a transformer
+  4. Voltage sag propagation through a distribution network over 500 ms
+
+  <Solution>
+    1. **Discrete.** Harmonics are the entire measurement; phasor mode would report
+       zero distortion.
+    2. **Phasor.** Ten seconds of four-machine detail in discrete mode is very slow,
+       and rotor-angle dynamics live at the fundamental. This is what phasor mode is
+       for.
+    3. **Continuous or fine Discrete.** Inrush is driven by core saturation and the
+       point-on-wave at closing — genuinely nonlinear, needs fine time resolution.
+    4. **Discrete.** Sub-cycle behaviour matters, but not at switching resolution.
+
+    The question is always: **what is the fastest phenomenon I need to see?** Set the
+    mode and sample time from that.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="debug" title="Efficiency comes out at 104%">
+  A DC-DC converter model reports output power exceeding input. What is wrong?
+
+  <Solution>
+    Physically impossible, so it's a measurement or convention error. In order of
+    likelihood:
+
+    **Current sensor polarity.** Simscape current measurement has a direction. Reversed
+    on the input side, `P_in` comes out negative or undersized.
+
+    **Averaging over a partial switching period.** `mean(v.*i)` over a non-integer
+    number of cycles biases the result — the same synchronisation issue as the FFT
+    lesson. Average over whole periods.
+
+    **Measuring at the wrong node.** Voltage taken after the input filter rather than at
+    the source omits some of the input power.
+
+    Diagnose by checking each measurement in isolation at a steady operating point, and
+    confirm the input current is positive when power flows in:
+
+    ```matlab
+    fprintf('P_in %.2f W, P_out %.2f W, losses %.2f W\n', P_in, P_out, P_in - P_out);
+    assert(P_in > 0, 'Input power negative — check current sensor polarity');
+    ```
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the difference between a Simulink signal line and a Simscape connection?',
+      options: [
+        'Colour only',
+        'Signals flow one way; Simscape connections are physical, so both ends interact',
+        'Simscape connections are faster',
+        'Signals carry complex numbers',
+      ],
+      answer: 1,
+      explain:
+        'A wire is not a telephone call. Connecting a load changes the source, current flows both ways, and voltage is shared — which is why circuits need the physical domain.',
+    },
+    {
+      q: 'When is phasor mode appropriate?',
+      options: [
+        'Harmonic analysis',
+        'Rotor-angle stability studies at the fundamental frequency',
+        'Power electronic switching',
+        'Transformer inrush',
+      ],
+      answer: 1,
+      explain:
+        'Phasor mode replaces the dynamics with algebraic phasor equations at one frequency — enormously faster, and it discards harmonics and switching entirely.',
+    },
+    {
+      q: 'For a 10 kHz switching converter in Discrete mode, roughly what sample time?',
+      options: ['1 ms', '100 µs', '5 µs', '1 s'],
+      answer: 2,
+      explain:
+        'About one twentieth of the 100 µs switching period. At 100 µs you would have one sample per period and a completely aliased waveform.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Simscape models **physical networks**, where connections are wires rather than
+  signals. Choosing the powergui mode is choosing **which physics you are simulating** —
+  and choosing Simscape at all should be a deliberate decision against OpenDSS or a
+  script, because the wrong tool costs weeks.
+</KeyIdea>
+
+## Further reading
+
+- `doc simscapeelectrical`, `doc powergui`
+- Next: the **module project** — deriving transmission line ABCD parameters
+  symbolically, then comparing the short, medium and long line models numerically

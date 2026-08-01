@@ -1,0 +1,422 @@
+---
+title: 'Project: Transmission Line Parameter Calculator'
+track: matlab
+module: toolboxes
+order: 38
+description: Derive the ABCD parameters symbolically, compute them numerically for a real line, and find out exactly where the short and medium line models stop being adequate.
+objectives:
+  - Derive exact long-line ABCD parameters with the Symbolic Math Toolbox
+  - Compare short, medium and long line models and quantify their error
+  - Determine the line length at which each approximation ceases to be acceptable
+prerequisites: [symbolic-math, control-systems, publication-figures]
+estimatedMinutes: 55
+difficulty: advanced
+toolboxes: ['Symbolic Math Toolbox']
+tags: ['matlab', 'project', 'transmission-lines', 'abcd-parameters']
+---
+
+Your Power System Analysis course gives three transmission line models and tells you
+that short is good below about 80 km, medium up to about 250 km, and long above that.
+
+Those numbers are inherited from textbooks and rarely justified. This project derives
+the exact model, implements all three, and **finds the crossover lengths for a specific
+line** — so the rule of thumb becomes a measured result.
+
+## The theory
+
+A transmission line is a two-port network. Sending-end and receiving-end quantities
+relate through the ABCD parameters:
+
+$$
+\begin{bmatrix} V_S \\ I_S \end{bmatrix} =
+\begin{bmatrix} A & B \\ C & D \end{bmatrix}
+\begin{bmatrix} V_R \\ I_R \end{bmatrix}
+$$
+
+The **exact** (distributed parameter) solution, for a line of length $l$ with
+series impedance $z$ and shunt admittance $y$ per unit length:
+
+$$
+\gamma = \sqrt{zy}, \qquad Z_c = \sqrt{z/y}
+$$
+
+$$
+A = D = \cosh(\gamma l), \quad B = Z_c \sinh(\gamma l), \quad C = \frac{\sinh(\gamma l)}{Z_c}
+$$
+
+The approximations drop terms:
+
+| Model | A = D | B | C |
+|---|---|---|---|
+| Short | 1 | $Z$ | 0 |
+| Medium (nominal π) | $1 + \frac{ZY}{2}$ | $Z$ | $Y\left(1 + \frac{ZY}{4}\right)$ |
+| Long (exact) | $\cosh\gamma l$ | $Z_c \sinh\gamma l$ | $\sinh(\gamma l)/Z_c$ |
+
+where $Z = zl$ and $Y = yl$ are the total series impedance and shunt admittance.
+
+<Callout type="engineering">
+  For **any** ABCD network, $AD - BC = 1$. It follows from the network being passive
+  and reciprocal.
+
+  That identity is a free correctness test. Every model you implement must satisfy it —
+  and the short line model does **not** (with $C = 0$, $AD - BC = 1$ exactly, so it
+  passes; but check the medium model, where it holds only approximately). Watching
+  which models satisfy it exactly is itself informative.
+</Callout>
+
+## Stage 1 — derive the exact model symbolically
+
+Let the toolbox do the algebra, and confirm it against the textbook.
+
+<CodeFile name="derive_abcd.m">
+```matlab
+%% Derive long-line ABCD parameters from the wave equation solution
+clear; clc;
+
+syms z y l positive
+syms gamma_ Zc
+
+gamma_ = sqrt(z*y);            % propagation constant per unit length
+Zc     = sqrt(z/y);            % characteristic impedance
+
+A_long = cosh(gamma_*l);
+B_long = Zc * sinh(gamma_*l);
+C_long = sinh(gamma_*l) / Zc;
+D_long = A_long;
+
+% The reciprocity identity must hold exactly
+identity = simplify(A_long*D_long - B_long*C_long);
+fprintf('AD - BC = %s\n', char(identity));      % should print 1
+assert(isAlways(identity == 1), 'Reciprocity identity failed');
+
+%% Show that the medium-line model is the second-order Taylor expansion
+Z = z*l;  Y = y*l;
+
+A_series = taylor(A_long, l, 'Order', 5);
+A_medium = 1 + Z*Y/2;
+
+fprintf('\nExact A, expanded:  %s\n', char(simplify(A_series)));
+fprintf('Medium-line A:      %s\n', char(expand(A_medium)));
+```
+</CodeFile>
+
+Run it and you see the medium-line model emerge as the truncated series expansion of
+the exact one. That's the actual relationship between the models — not three separate
+theories, but one exact result and two truncations of it.
+
+Understanding that immediately tells you *why* the approximations degrade with length:
+you're dropping higher powers of $\gamma l$, and $\gamma l$ grows with $l$.
+
+## Stage 2 — numerical implementation
+
+<CodeFile name="line_abcd.m">
+```matlab
+function [ABCD, info] = line_abcd(z_per_km, y_per_km, length_km, model)
+%LINE_ABCD Transmission line ABCD parameters.
+%
+%   [ABCD, INFO] = LINE_ABCD(Z_PER_KM, Y_PER_KM, LENGTH_KM, MODEL) returns the
+%   2x2 ABCD matrix. MODEL is "short", "medium" or "long" (default "long").
+%
+%   Z_PER_KM is complex ohms/km, Y_PER_KM complex siemens/km.
+%
+%   Example:
+%       line_abcd(0.036 + 0.30i, 4.22e-6i, 200)
+
+    arguments
+        z_per_km  (1,1) double
+        y_per_km  (1,1) double
+        length_km (1,1) double {mustBePositive}
+        model     (1,:) char {mustBeMember(model, {'short','medium','long'})} = 'long'
+    end
+
+    Z = z_per_km * length_km;          % total series impedance
+    Y = y_per_km * length_km;          % total shunt admittance
+
+    switch model
+        case 'short'
+            A = 1;      B = Z;
+            C = 0;      D = 1;
+
+        case 'medium'                   % nominal pi
+            A = 1 + Z*Y/2;              B = Z;
+            C = Y*(1 + Z*Y/4);          D = A;
+
+        case 'long'                     % exact, distributed parameter
+            gamma = sqrt(z_per_km * y_per_km);
+            Zc    = sqrt(z_per_km / y_per_km);
+            gl    = gamma * length_km;
+
+            A = cosh(gl);               B = Zc * sinh(gl);
+            C = sinh(gl) / Zc;          D = A;
+
+            info.gamma = gamma;
+            info.Zc    = Zc;
+            info.gl    = gl;
+    end
+
+    ABCD = [A B; C D];
+
+    info.model      = model;
+    info.Z          = Z;
+    info.Y          = Y;
+    info.reciprocity = abs(A*D - B*C - 1);      % should be ~0
+
+    if info.reciprocity > 1e-6
+        warning('AD - BC = 1 violated by %.2e for the %s model', ...
+                info.reciprocity, model);
+    end
+end
+```
+</CodeFile>
+
+Note that `info.reciprocity` is computed and checked for every model. That's the free
+correctness test from above, built in.
+
+## Stage 3 — performance quantities
+
+<CodeFile name="line_performance.m">
+```matlab
+function perf = line_performance(ABCD, V_R_kV, S_R_MVA, pf, lagging)
+%LINE_PERFORMANCE Sending-end conditions and line performance.
+%
+%   V_R_KV is receiving-end line-to-line voltage, S_R_MVA the load,
+%   PF the power factor, LAGGING true for a lagging load.
+
+    arguments
+        ABCD    (2,2) double
+        V_R_kV  (1,1) double {mustBePositive}
+        S_R_MVA (1,1) double {mustBePositive}
+        pf      (1,1) double {mustBeInRange(pf, 0, 1)}
+        lagging (1,1) logical = true
+    end
+
+    V_R = V_R_kV*1e3 / sqrt(3);                       % phase voltage, V
+    theta = acos(pf) * (2*lagging - 1);               % + for lagging
+    I_R = S_R_MVA*1e6 / (sqrt(3)*V_R_kV*1e3) * exp(-1i*theta);
+
+    sending = ABCD * [V_R; I_R];
+    V_S = sending(1);
+    I_S = sending(2);
+
+    perf.V_S_kV   = abs(V_S) * sqrt(3) / 1e3;
+    perf.I_S_A    = abs(I_S);
+    perf.P_S_MW   = 3*real(V_S * conj(I_S)) / 1e6;
+    perf.P_R_MW   = 3*real(V_R * conj(I_R)) / 1e6;
+    perf.losses_MW = perf.P_S_MW - perf.P_R_MW;
+    perf.efficiency = perf.P_R_MW / perf.P_S_MW * 100;
+
+    % Voltage regulation: rise at the receiving end when load is removed
+    V_R_noload = abs(V_S) / abs(ABCD(1,1));
+    perf.regulation = (V_R_noload - abs(V_R)) / abs(V_R) * 100;
+
+    assert(perf.losses_MW >= 0, 'Negative losses — check the model');
+    assert(perf.efficiency <= 100, 'Efficiency above 100%% — impossible');
+end
+```
+</CodeFile>
+
+Those two assertions catch sign errors immediately. Negative losses or efficiency above
+100% means a conjugate or a direction is wrong, and the numbers would otherwise look
+merely surprising rather than obviously broken.
+
+## Stage 4 — where does each model break?
+
+This is the question the project exists to answer.
+
+<CodeFile name="model_comparison.m">
+```matlab
+%% Compare the three models across line length
+clear; clc;
+
+% A typical 400 kV overhead line, per km
+z = 0.036 + 0.30i;        % ohm/km
+y = 4.22e-6i;             % S/km
+
+lengths = 10:5:800;       % km
+V_R = 400;  S_R = 500;  pf = 0.95;
+
+err_short  = zeros(size(lengths));
+err_medium = zeros(size(lengths));
+V_S_exact  = zeros(size(lengths));
+
+for k = 1:numel(lengths)
+    L = lengths(k);
+
+    p_long   = line_performance(line_abcd(z, y, L, 'long'),   V_R, S_R, pf);
+    p_short  = line_performance(line_abcd(z, y, L, 'short'),  V_R, S_R, pf);
+    p_medium = line_performance(line_abcd(z, y, L, 'medium'), V_R, S_R, pf);
+
+    V_S_exact(k)  = p_long.V_S_kV;
+    err_short(k)  = abs(p_short.V_S_kV  - p_long.V_S_kV) / p_long.V_S_kV * 100;
+    err_medium(k) = abs(p_medium.V_S_kV - p_long.V_S_kV) / p_long.V_S_kV * 100;
+end
+
+%% Where does each cross a 1% error threshold?
+tol = 1.0;
+L_short_limit  = lengths(find(err_short  > tol, 1));
+L_medium_limit = lengths(find(err_medium > tol, 1));
+
+fprintf('Short-line model exceeds %.1f%% error beyond %d km\n', tol, L_short_limit);
+fprintf('Medium-line model exceeds %.1f%% error beyond %d km\n', tol, L_medium_limit);
+
+%% Figure
+fig = figure('Units','centimeters','Position',[2 2 16 11],'Color','w');
+t = tiledlayout(2,1,'TileSpacing','compact');
+
+nexttile;
+semilogy(lengths, err_short, 'LineWidth', 1.5); hold on;
+semilogy(lengths, err_medium, '--', 'LineWidth', 1.5);
+yline(tol, ':', '1% error', 'Color', [0.4 0.4 0.4]);
+hold off;
+ylabel('|Error| in V_S (%)');
+legend({'Short line','Medium line (nominal \pi)'}, 'Location','northwest','Box','off');
+title('Error against the exact distributed-parameter model');
+grid on;
+
+nexttile;
+plot(lengths, V_S_exact, 'LineWidth', 1.5);
+xlabel('Line length (km)'); ylabel('V_S (kV)');
+title('Exact sending-end voltage');
+grid on;
+
+exportgraphics(fig, 'line_model_comparison.pdf', 'ContentType', 'vector');
+```
+</CodeFile>
+
+<Callout type="engineering">
+  Run this and you get **specific crossover lengths for this line**, not remembered
+  rules of thumb.
+
+  The textbook boundaries (80 km, 250 km) are approximately right for typical overhead
+  lines at 50/60 Hz — but they depend on $\gamma$, which depends on the conductor,
+  spacing and frequency. A cable has far higher shunt capacitance, so its $y$ is much
+  larger, $\gamma l$ grows faster, and the short-line model fails at a much shorter
+  length.
+
+  Rerunning this script with cable parameters is the single most useful extension of
+  the project, and it explains why underground cable studies take shunt charging
+  seriously at lengths where overhead lines ignore it.
+</Callout>
+
+## Extend it
+
+<Exercise n={1} kind="practice" title="Repeat for a cable">
+  A 400 kV XLPE cable has roughly `z = 0.028 + 0.18i` Ω/km and `y = 60e-6i` S/km —
+  shunt admittance more than ten times an overhead line's. Where do the models break?
+
+  <Solution>
+    ```matlab
+    z_cable = 0.028 + 0.18i;
+    y_cable = 60e-6i;
+
+    % Same sweep as above with these parameters
+    ```
+
+    The crossover lengths drop dramatically — the short-line model becomes unusable
+    within a few tens of km.
+
+    The reason is directly visible in $\gamma = \sqrt{zy}$. With $y$ an order of
+    magnitude larger, $\gamma$ is roughly three times bigger, so $\gamma l$ reaches any
+    given value at a third of the length.
+
+    This is also why long submarine AC cables are limited by charging current: the
+    shunt admittance draws so much reactive current that little capacity remains for
+    real power. Beyond a few hundred km, HVDC becomes the only option — and that
+    conclusion falls straight out of this calculation.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Surge impedance loading">
+  Compute the SIL, $P_{SIL} = V_{LL}^2 / Z_c$, and show that at exactly SIL the voltage
+  profile is flat along the line.
+
+  <Solution>
+    ```matlab
+    gamma = sqrt(z*y);
+    Zc    = sqrt(z/y);
+
+    V_LL = 400;                                    % kV
+    SIL  = V_LL^2 / abs(Zc);                       % MW
+
+    fprintf('Zc  = %.1f ohm (angle %.1f deg)\n', abs(Zc), rad2deg(angle(Zc)));
+    fprintf('SIL = %.1f MW\n', SIL);
+
+    % Voltage at points along a 400 km line, loaded at SIL
+    L = 400;
+    x = linspace(0, L, 200);
+    V_R = V_LL*1e3/sqrt(3);
+    I_R = SIL*1e6 / (sqrt(3)*V_LL*1e3);            % unity pf, resistive at SIL
+
+    V_x = V_R*cosh(gamma*(L-x)) + Zc*I_R*sinh(gamma*(L-x));
+
+    plot(x, abs(V_x)*sqrt(3)/1e3, 'LineWidth', 1.5);
+    xlabel('Distance from sending end (km)');
+    ylabel('|V| (kV)'); grid on;
+    title(sprintf('Voltage profile at SIL = %.0f MW', SIL));
+    ```
+
+    The profile is nearly flat — that is the definition of SIL. The line's shunt
+    capacitance generates exactly the reactive power its series inductance consumes, so
+    there is no net reactive flow and no voltage variation along the line.
+
+    It's not quite perfectly flat here because $Z_c$ has a small real part for a lossy
+    line. A lossless line gives an exactly flat profile, which is the idealisation the
+    textbook definition assumes.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="debug" title="Efficiency comes out above 100%">
+  Your `line_performance` assertion fires. What are the likely causes?
+
+  <Solution>
+    Three candidates, all sign or convention errors:
+
+    **The current angle convention.** A lagging load means current lags voltage, so
+    $I_R = |I|e^{-j\theta}$ with $\theta > 0$. Getting the sign of the exponent wrong
+    makes a lagging load leading, which changes the reactive flow and can make sending
+    power appear smaller than receiving power.
+
+    **A missing conjugate.** $S = VI^*$, not $VI$. Without the conjugate, real and
+    reactive power are mixed and $P$ can come out anything.
+
+    **Phase versus line voltage.** Mixing $V_{LL}$ and $V_{phase}$ introduces a factor
+    of $\sqrt3$ into one power and not the other.
+
+    Isolate it by testing a case you can compute by hand — a purely resistive load on a
+    short line, where losses must equal $3|I|^2R$:
+
+    ```matlab
+    ABCD = line_abcd(0.036, 0, 100, 'short');     % R only, no shunt
+    p = line_performance(ABCD, 400, 500, 1.0);
+    I = 500e6/(sqrt(3)*400e3);
+    fprintf('computed %.3f MW vs 3*I^2*R = %.3f MW\n', ...
+            p.losses_MW, 3*I^2*3.6/1e6);
+    ```
+
+    If those agree, the machinery is right and the bug is in the complex case.
+  </Solution>
+</Exercise>
+
+## What you built
+
+- A symbolic derivation of the exact ABCD parameters, verified against reciprocity
+- A demonstration that the medium-line model is a truncated series expansion of the
+  exact one
+- A numerical implementation of all three models with a built-in correctness check
+- A performance calculator with physical assertions
+- A quantified answer to "where does each approximation stop being acceptable?" for a
+  specific line
+
+<KeyIdea>
+  The three line models are **one exact result and two truncations of it**, not three
+  separate theories. Deriving that symbolically explains *why* the approximations
+  degrade with length — and computing the crossover for your own line turns a
+  remembered rule of thumb into a measured result.
+</KeyIdea>
+
+## Further reading
+
+- Grainger & Stevenson, Chapters 5 and 6 — line parameters and performance
+- `doc cosh`, `doc taylor`, `doc matlabFunction`
+- Next module: **Power System Applications** — Y-bus, load flow, symmetrical
+  components and the capstone

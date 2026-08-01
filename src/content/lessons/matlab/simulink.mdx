@@ -1,0 +1,297 @@
+---
+title: Simulink
+track: matlab
+module: toolboxes
+order: 36
+description: Block-diagram modelling — when it beats writing code, how to drive it from a script, and the version-control problem nobody warns you about.
+objectives:
+  - Decide when Simulink is the right tool and when a script is better
+  - Configure solver settings correctly for a power system model
+  - Run simulations from a script and post-process the results in MATLAB
+prerequisites: [ode-solvers, control-systems]
+estimatedMinutes: 30
+difficulty: advanced
+toolboxes: ['Simulink']
+tags: ['matlab', 'simulink', 'modelling', 'simulation']
+---
+
+Simulink is a graphical environment for simulating dynamic systems. You draw the
+system as connected blocks instead of writing the differential equations.
+
+For a power systems M.Tech it is unavoidable — most machine, converter and control
+coursework uses it, and Simscape Electrical (next lesson) is built on it. It is also
+frequently the wrong choice, so this lesson spends real effort on the boundary.
+
+## When Simulink wins
+
+<Analogy>
+  A script is a **recipe**: do this, then this, then this.
+
+  Simulink is a **plumbing diagram**: everything is connected and everything happens
+  simultaneously, with the solver working out consistent values at every instant.
+
+  For a genuinely simultaneous physical system — where a converter, its controller and
+  the machine all interact continuously — the plumbing diagram is the honest
+  representation.
+</Analogy>
+
+<Compare
+  headings={['Task', 'Use', 'Why']}
+  rows={[
+    { option: 'Power electronic converter with control', when: 'Simulink', cost: 'Component library is enormous; switching handled properly', recommended: true },
+    { option: 'Machine model with AVR and governor', when: 'Simulink', cost: 'The interconnection IS the model' },
+    { option: 'Load flow on a 118-bus system', when: 'Script', cost: 'Algebraic, iterative — no dynamics to simulate' },
+    { option: 'A 300-scenario Monte Carlo study', when: 'Script driving the model', cost: 'Automation from MATLAB, not clicking' },
+    { option: 'Data analysis and plotting', when: 'Script', cost: 'Simulink has no advantage here' },
+    { option: 'Anything you must version-control carefully', when: 'Script', cost: 'See below — this is a real problem' },
+  ]}
+/>
+
+## The version control problem
+
+<Callout type="warning" title="A .slx file is a binary archive">
+  Git can tell you a model changed. It **cannot** show you what changed, and it cannot
+  merge two people's edits.
+
+  For coursework this rarely matters. For a thesis you'll iterate on for a year, it
+  means you cannot answer "what did I change between the result in Chapter 3 and the
+  one in Chapter 5?" from the repository.
+
+  Partial mitigations:
+
+  - `Simulink.slxToMdl` — not a real diff, but a text form
+  - `visdiff('a.slx','b.slx')` — Simulink's own graphical comparison, genuinely useful
+  - **Keep parameters in a script, not typed into blocks.** Then the thing that
+    actually varies between runs is a text file git can diff.
+
+  That last one is the important habit. A model whose block dialogs all read `Ra`,
+  `Ld`, `Lq` and take their values from a `parameters.m` is far more maintainable than
+  one with numbers typed in.
+</Callout>
+
+## Solver configuration
+
+The settings that decide whether results are trustworthy.
+
+```matlab
+% Set from a script rather than clicking through the dialog
+set_param('my_model', 'SolverType', 'Variable-step');
+set_param('my_model', 'Solver', 'ode23tb');      % stiff — typical for power electronics
+set_param('my_model', 'RelTol', '1e-6');
+set_param('my_model', 'MaxStep', '1e-5');
+set_param('my_model', 'StopTime', '0.5');
+```
+
+<Compare
+  headings={['Model type', 'Solver', 'Note']}
+  rows={[
+    { option: 'Power electronics with switching', when: 'ode23tb (stiff)', cost: 'Switching makes it stiff; cap MaxStep below the switching period', recommended: true },
+    { option: 'Electromechanical transients', when: 'ode45 or ode23t', cost: 'Non-stiff at this time scale' },
+    { option: 'Control loops only', when: 'ode45', cost: 'Usually well behaved' },
+    { option: 'Real-time or code generation', when: 'Fixed-step', cost: 'Required — variable step cannot be deployed' },
+  ]}
+/>
+
+<Callout type="warning" title="MaxStep matters for switching models">
+  With a 10 kHz PWM carrier, the period is 100 µs. A variable-step solver may take
+  steps longer than that and **step straight over switching events**, producing a
+  smooth-looking waveform that is completely wrong.
+
+  Set `MaxStep` to roughly one tenth of the switching period. If your converter output
+  looks suspiciously clean, this is the first thing to check.
+</Callout>
+
+## Driving Simulink from MATLAB
+
+This is the skill that turns Simulink from a clicking exercise into something you can
+do research with.
+
+<CodeFile name="run_sweep.m">
+```matlab
+%% Parameter sweep, driven entirely from a script
+model = 'converter_model';
+load_system(model);                       % open without showing the window
+
+Kp_values = [0.5 1.0 2.0 4.0];
+results = struct([]);
+
+for k = 1:numel(Kp_values)
+    % Push parameters into the base workspace, where blocks read them
+    Kp = Kp_values(k);                    %#ok<NASGU>
+    assignin('base', 'Kp', Kp);
+
+    out = sim(model, 'StopTime', '0.5');
+
+    results(k).Kp       = Kp_values(k);
+    results(k).time     = out.tout;
+    results(k).V_out    = out.logsout.getElement('V_out').Values.Data;
+    results(k).overshoot = ...
+        (max(results(k).V_out) - results(k).V_out(end)) / results(k).V_out(end) * 100;
+
+    fprintf('Kp = %.1f: overshoot %.2f%%\n', Kp_values(k), results(k).overshoot);
+end
+
+close_system(model, 0);                   % don't save changes
+```
+</CodeFile>
+
+For larger sweeps, `Simulink.SimulationInput` is the modern interface and supports
+running in parallel:
+
+```matlab
+for k = 1:numel(Kp_values)
+    in(k) = Simulink.SimulationInput(model);
+    in(k) = in(k).setVariable('Kp', Kp_values(k));
+    in(k) = in(k).setModelParameter('StopTime', '0.5');
+end
+
+out = parsim(in, 'ShowProgress', 'on');   % parallel, needs Parallel Computing Toolbox
+```
+
+## Getting data out
+
+```matlab
+% Preferred: mark signals for logging in the model, then
+out.logsout.getElement('V_out').Values.Data
+out.logsout.getElement('V_out').Values.Time
+
+% To Workspace block, configured as 'Structure With Time'
+out.simout.signals.values
+
+% Everything at once
+elements = out.logsout.getElementNames();
+```
+
+<Callout type="tip" title="Log signals, don't use Scope blocks">
+  A Scope shows you a picture you cannot analyse, replot, or put in a thesis. Logged
+  signals come back into MATLAB as data, where the whole Data and Visualisation module
+  applies.
+
+  Use Scopes while building the model. Log signals for results.
+</Callout>
+
+## Model referencing and structure
+
+For anything beyond a single-page model:
+
+- **Subsystems** group blocks visually. Free, and the first thing to reach for.
+- **Model references** (`Model` block) let one model include another as a separate
+  file — separately compiled, separately version-controlled, reusable.
+- **Libraries** hold blocks shared across several models, with linked instances that
+  update together.
+
+A thesis-scale model should be a small top-level diagram referencing a handful of
+sub-models, not one enormous canvas.
+
+## Common mistakes
+
+<Callout type="warning" title="Numbers typed into block dialogs">
+  Unfindable, undiffable, and impossible to sweep. Put them in a script and reference
+  the variable names.
+</Callout>
+
+<Callout type="warning" title="Algebraic loop errors">
+  A signal that depends on itself with no state in between. Simulink will complain.
+  Fix by inserting a unit delay or a state, or restructuring — never by enabling the
+  algebraic loop solver and hoping.
+</Callout>
+
+<Callout type="warning" title="Default solver on a switching model">
+  ode45 with default MaxStep will step over switching events. Use a stiff solver and
+  cap MaxStep.
+</Callout>
+
+<Callout type="warning" title="Building in Simulink what a script does better">
+  A load flow is algebraic and iterative. Implementing it as blocks is much harder than
+  the fifty lines of MATLAB from the previous module.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="read" title="Simulink or script?">
+  1. A three-phase inverter with PWM and a current controller
+  2. Hosting capacity across 300 random PV placements
+  3. Synchronous machine with AVR, governor and a fault at 1.0 s
+  4. Comparing five load-forecasting models
+
+  <Solution>
+    1. **Simulink.** Switching dynamics, continuous plant, discrete controller — and
+       the component library saves weeks.
+    2. **Script.** Each scenario is a steady-state load flow. Simulink adds nothing and
+       automating 300 runs is far easier from code.
+    3. **Simulink.** Multiple interacting subsystems with a timed event. This is the
+       archetypal case.
+    4. **Script.** Data handling and statistics — no dynamics at all.
+
+    The test: **is the system continuously interacting in time?** If yes, Simulink. If
+    it's algebraic, iterative or data-driven, write code.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="debug" title="The converter output looks too clean">
+  A PWM inverter at 10 kHz produces an output with no switching ripple at all. What is
+  wrong?
+
+  <Solution>
+    The solver is stepping over the switching events.
+
+    At 10 kHz the period is 100 µs. A variable-step solver, seeing a smooth-looking
+    signal between samples, may take steps of milliseconds — jumping straight past the
+    transitions. The result is a heavily aliased waveform that looks like a clean
+    sinusoid.
+
+    ```matlab
+    set_param(model, 'Solver', 'ode23tb');
+    set_param(model, 'MaxStep', '1e-5');       % 10 us — 1/10 of the period
+    ```
+
+    A sanity check worth building in: the ripple frequency in the output spectrum
+    should match the carrier. If the FFT shows nothing at 10 kHz, the simulation never
+    resolved the switching.
+
+    That check links this lesson to the last one — the FFT is how you verify a
+    time-domain simulation actually captured what it claims to.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why keep model parameters in a script rather than typed into block dialogs?',
+      options: [
+        'It runs faster',
+        'Parameters become diffable, sweepable and findable; the .slx binary is none of those',
+        'Simulink requires it',
+        'It reduces file size',
+      ],
+      answer: 1,
+      explain:
+        'A .slx is a binary archive git cannot diff. Keeping the values that actually change in a text file is what makes a year-long modelling project reviewable.',
+    },
+    {
+      q: 'Your PWM converter output shows no switching ripple. Most likely cause?',
+      options: [
+        'The controller is working perfectly',
+        'MaxStep is too large, so the solver steps over switching events',
+        'The carrier frequency is set to zero',
+        'The scope resolution is too low',
+      ],
+      answer: 1,
+      explain:
+        'A variable-step solver can take steps far longer than the switching period, aliasing the waveform into something smooth and wrong. Cap MaxStep at roughly a tenth of the period.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Use Simulink when the system is **continuously interacting in time**; use a script
+  when it's algebraic, iterative or data-driven. Whichever you choose, keep parameters
+  in text files and **log signals rather than watching Scopes** — that is what makes
+  the work reviewable a year later.
+</KeyIdea>
+
+## Further reading
+
+- `doc simulink`, `doc sim`, `doc Simulink.SimulationInput`
+- `doc visdiff` — comparing two versions of a model
+- Next: **Simscape Electrical** — physical network modelling, and the powergui

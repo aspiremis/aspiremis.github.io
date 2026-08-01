@@ -1,0 +1,373 @@
+---
+title: Signal Processing
+track: matlab
+module: toolboxes
+order: 35
+description: The FFT done properly — bin resolution, spectral leakage, windowing — and computing THD you would be willing to defend against IEEE 519.
+objectives:
+  - Compute a correctly scaled amplitude spectrum from a sampled waveform
+  - Explain spectral leakage and choose between synchronous sampling and windowing
+  - Compute THD and TDD correctly, and know which one the standard limits
+prerequisites: [numerical-integration]
+estimatedMinutes: 35
+difficulty: advanced
+toolboxes: ['Signal Processing Toolbox']
+tags: ['matlab', 'fft', 'harmonics', 'power-quality', 'ieee-519']
+---
+
+Harmonic analysis is where your Power Quality course meets MATLAB. The FFT is four
+characters to type and remarkably easy to misuse — most wrong harmonic results come
+from scaling, leakage or window length rather than from the transform itself.
+
+## The FFT, scaled correctly
+
+```matlab
+fs = 10000;                          % sampling frequency, Hz
+f0 = 50;                             % fundamental
+N  = 2000;                           % number of samples
+t  = (0:N-1)' / fs;
+
+v = 230*sqrt(2)*sin(2*pi*f0*t) ...
+  +  20*sqrt(2)*sin(2*pi*5*f0*t) ...     % 5th harmonic
+  +  12*sqrt(2)*sin(2*pi*7*f0*t);        % 7th
+
+X = fft(v);
+```
+
+Raw `fft` output is **not** in useful units. Three corrections:
+
+```matlab
+X = X(1:floor(N/2)+1);               % one-sided — the rest is a mirror
+amp = abs(X) / N;                    % scale by the number of samples
+amp(2:end-1) = 2 * amp(2:end-1);     % double, except DC and Nyquist
+
+f = (0:numel(amp)-1)' * fs/N;        % frequency axis, Hz
+```
+
+<Callout type="warning" title="The three scaling steps everyone gets wrong">
+  1. **Divide by N.** The FFT sums, so the magnitude scales with the record length.
+  2. **Double the one-sided bins.** Energy at +f and −f is split between two bins;
+     taking only the positive half loses half of it.
+  3. **Do not double DC or Nyquist.** They have no mirror partner.
+
+  Skip step 1 and your harmonics scale with how long you recorded. Skip step 2 and
+  every amplitude is halved. Both give plausible-looking spectra.
+</Callout>
+
+These are **peak** amplitudes. For RMS, divide by √2:
+
+```matlab
+amp_rms = amp / sqrt(2);
+```
+
+## Frequency resolution
+
+$$
+\Delta f = \frac{f_s}{N} = \frac{1}{T_{record}}
+$$
+
+Resolution depends **only on the record length**, not the sampling rate. Sampling
+faster raises the maximum frequency you can see; it does not let you distinguish two
+close ones.
+
+```matlab
+% 2000 samples at 10 kHz = 0.2 s of data
+% df = 10000/2000 = 5 Hz. The 50 Hz fundamental lands exactly in bin 11.
+```
+
+To resolve harmonics of a 50 Hz fundamental cleanly, you want $\Delta f$ to divide 50
+exactly — which means recording a **whole number of cycles**.
+
+## Spectral leakage
+
+<Analogy>
+  The FFT assumes your record **repeats forever**.
+
+  Capture exactly ten cycles and the end joins the beginning seamlessly — the repeated
+  signal is a clean sinusoid.
+
+  Capture ten and a half cycles and the join has a **step discontinuity**. A step
+  contains every frequency, so the spectrum smears energy across all the bins. That
+  smear is leakage, and it looks exactly like harmonic distortion that isn't there.
+</Analogy>
+
+<CodeFile name="leakage_demo.m">
+```matlab
+fs = 10000; f0 = 50;
+
+N_sync  = 2000;                        % 10.0 cycles — exact
+N_async = 2050;                        % 10.25 cycles — not
+
+for N = [N_sync, N_async]
+    t = (0:N-1)'/fs;
+    v = sin(2*pi*f0*t);
+
+    X = abs(fft(v))/N;  X = X(1:N/2+1);  X(2:end-1) = 2*X(2:end-1);
+    f = (0:numel(X)-1)'*fs/N;
+
+    band = f > 20 & f < 500;
+    fprintf('N = %d (%.2f cycles): peak %.4f, spurious energy %.4f\n', ...
+            N, N*f0/fs, max(X), sqrt(sum(X(band).^2) - max(X)^2));
+end
+```
+</CodeFile>
+
+The synchronous record gives a single clean spike. The asynchronous one spreads energy
+into neighbouring bins — and if you computed THD from it you would report distortion
+on a pure sinusoid.
+
+## Two fixes
+
+**Synchronous sampling** — capture an exact whole number of cycles. This is what a
+power quality analyser does: it phase-locks to the fundamental. Best when you control
+the acquisition.
+
+**Windowing** — taper the record to zero at both ends so there is no discontinuity.
+
+```matlab
+w = hann(N);
+V = fft(v .* w);
+amp = abs(V) / sum(w) * 2;           % scale by the WINDOW SUM, not N
+```
+
+<Callout type="warning" title="Windowing changes the scaling">
+  A window removes energy, so dividing by `N` under-reports amplitude. Divide by
+  `sum(w)` instead — the coherent gain of the window.
+
+  Getting this wrong is why windowed spectra sometimes come out about half the
+  expected height (`sum(hann(N)) ≈ N/2`).
+</Callout>
+
+<Compare
+  headings={['Window', 'Use for', 'Trade-off']}
+  rows={[
+    { option: 'Rectangular (none)', when: 'Synchronously sampled data', cost: 'Best resolution, terrible leakage otherwise', recommended: true },
+    { option: 'Hann', when: 'General purpose when you cannot synchronise', cost: 'Good leakage suppression, wider main lobe' },
+    { option: 'Flat-top', when: 'Accurate amplitude measurement', cost: 'Best amplitude accuracy, poor resolution' },
+    { option: 'Hamming / Blackman', when: 'Variations on the same trade', cost: 'Marginal differences' },
+  ]}
+/>
+
+## THD and TDD
+
+Now the quantity your Power Quality course cares about.
+
+<CodeFile name="harmonic_analysis.m">
+```matlab
+function h = harmonic_analysis(v, fs, f0, n_harmonics, I_L)
+%HARMONIC_ANALYSIS Harmonic content of a synchronously sampled waveform.
+%
+%   Requires v to span a WHOLE NUMBER OF CYCLES of f0.
+%   I_L (optional) is the maximum demand load current, for TDD.
+
+    arguments
+        v            (:,1) double
+        fs           (1,1) double
+        f0           (1,1) double
+        n_harmonics  (1,1) double = 40
+        I_L          (1,1) double = NaN
+    end
+
+    N = numel(v);
+    cycles = N * f0 / fs;
+    if abs(cycles - round(cycles)) > 1e-6
+        warning('Record spans %.3f cycles — not synchronous, leakage will bias results', cycles);
+    end
+
+    X = fft(v);
+    amp = abs(X)/N;  amp = amp(1:floor(N/2)+1);  amp(2:end-1) = 2*amp(2:end-1);
+    rms = amp / sqrt(2);
+
+    df  = fs/N;
+    idx = round((1:n_harmonics) * f0 / df) + 1;      % +1 because bin 1 is DC
+    idx = idx(idx <= numel(rms));
+
+    h.order      = (1:numel(idx))';
+    h.rms        = rms(idx);
+    h.fundamental = h.rms(1);
+    h.percent    = 100 * h.rms / h.fundamental;
+
+    % THD: referenced to the fundamental
+    h.THD = 100 * sqrt(sum(h.rms(2:end).^2)) / h.fundamental;
+
+    % TDD: referenced to maximum demand load current — what IEEE 519 limits
+    if ~isnan(I_L)
+        h.TDD = 100 * sqrt(sum(h.rms(2:end).^2)) / I_L;
+    else
+        h.TDD = NaN;
+    end
+
+    h.rms_total = sqrt(sum(h.rms.^2));
+end
+```
+</CodeFile>
+
+$$
+\text{THD}_I = \frac{\sqrt{\sum_{h\ge2} I_h^2}}{I_1}, \qquad \text{TDD} = \frac{\sqrt{\sum_{h\ge2} I_h^2}}{I_L}
+$$
+
+<Callout type="engineering">
+  **IEEE 519 limits current TDD, not current THD.** Same numerator, different
+  denominator — THD divides by the fundamental $I_1$, TDD by the maximum demand
+  load current $I_L$.
+
+  A drive at 10% load can show 80% current THD while injecting a trivial harmonic
+  current. TDD holds the denominator at maximum demand, so it reflects what the system
+  actually experiences.
+
+  For *voltage*, the standard does use THD — there the fundamental is held near
+  nominal by design, so it is a stable reference.
+
+  Your own [note on THD and IEEE 519](/notes/thd-and-ieee-519) has the limit tables.
+</Callout>
+
+## Filters
+
+```matlab
+% Low-pass Butterworth at 500 Hz
+[b, a] = butter(4, 500/(fs/2), 'low');       % normalised to Nyquist
+v_filt = filtfilt(b, a, v);                   % zero-phase — filters twice
+
+% Notch out the fundamental to see harmonics clearly
+[b, a] = iirnotch(f0/(fs/2), f0/(fs/2)/35);
+v_harm = filtfilt(b, a, v);
+
+fvtool(b, a);                                 % inspect the response
+```
+
+<Callout type="tip" title="filtfilt, not filter, for offline analysis">
+  `filter` introduces phase delay that shifts your waveform in time. `filtfilt` runs
+  the filter forwards and backwards, cancelling the phase shift exactly.
+
+  For offline analysis where you have the whole record, always `filtfilt`. For
+  real-time processing it's impossible — you can't filter backwards through data that
+  hasn't arrived — which is why real relays must live with phase delay.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Not scaling the FFT">
+  Divide by N, double the one-sided bins, leave DC and Nyquist alone.
+</Callout>
+
+<Callout type="warning" title="Non-synchronous records">
+  A partial cycle produces leakage that looks exactly like distortion. Check the cycle
+  count, or window and scale by `sum(w)`.
+</Callout>
+
+<Callout type="warning" title="Reporting current THD against IEEE 519">
+  The standard limits TDD for current. Quoting THD against those limits is the single
+  most common misreading of the standard.
+</Callout>
+
+<Callout type="warning" title="Using filter() when filtfilt() was meant">
+  Phase delay shifts your result in time, which matters when you are comparing against
+  another signal.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What resolution?">
+  Sampling at 12.8 kHz for 0.2 s. What is the frequency resolution, and does the 50 Hz
+  fundamental land on a bin exactly?
+
+  <Solution>
+    - $N = 12800 \times 0.2 = 2560$ samples
+    - $\Delta f = f_s/N = 12800/2560 = 5$ Hz
+    - 50 Hz / 5 Hz = **bin 10** exactly (index 11, since bin 1 is DC)
+
+    And 0.2 s at 50 Hz is exactly **10 cycles**, so the record is synchronous — no
+    leakage, no window needed.
+
+    12.8 kHz is not arbitrary: it's 256 samples per 50 Hz cycle, a common power quality
+    analyser rate chosen precisely so that whole cycles give clean bins.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Analyse a six-pulse rectifier current">
+  A six-pulse converter draws characteristic harmonics of order $6k \pm 1$ with
+  amplitude roughly $I_1/h$. Synthesise it and verify your THD calculation.
+
+  <Solution>
+    ```matlab
+    fs = 10000; f0 = 50; N = 2000;       % 10 cycles, synchronous
+    t = (0:N-1)'/fs;
+
+    I1 = 100;                             % A rms fundamental
+    orders = [1 5 7 11 13 17 19 23 25];
+    i = zeros(N,1);
+    for h = orders
+        i = i + (I1/h)*sqrt(2)*sin(2*pi*h*f0*t);
+    end
+
+    r = harmonic_analysis(i, fs, f0, 40, 120);   % I_L = 120 A
+
+    disp(table(r.order(1:13), r.rms(1:13), r.percent(1:13), ...
+         'VariableNames', {'Order','RMS_A','Percent_of_fundamental'}));
+
+    fprintf('THD = %.2f%%,  TDD = %.2f%%\n', r.THD, r.TDD);
+
+    % Theoretical check: sqrt(sum over h of (1/h)^2) for h in orders(2:end)
+    theory = 100*sqrt(sum((1./orders(2:end)).^2));
+    fprintf('theoretical THD = %.2f%%\n', theory);
+    assert(abs(r.THD - theory) < 0.1, 'THD disagrees with theory');
+    ```
+
+    THD comes out near 24%, and TDD is lower because $I_L$ exceeds $I_1$ — the load
+    isn't at maximum demand. That gap between the two numbers is exactly the point of
+    the distinction.
+
+    Note there are **no even harmonics and no triplens**: a balanced six-pulse
+    converter produces only $6k\pm1$. Seeing a 3rd harmonic in real measured data means
+    unbalance or a different converter topology, and that diagnostic is why the
+    characteristic orders are worth knowing.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What determines FFT frequency resolution?',
+      options: [
+        'The sampling rate',
+        'The record length in seconds',
+        'The number of harmonics requested',
+        'The window function',
+      ],
+      answer: 1,
+      explain:
+        'Δf = 1/T_record. Sampling faster raises the maximum observable frequency but does not help you distinguish two close ones — only a longer record does.',
+    },
+    {
+      q: 'Why does an asynchronous record produce apparent distortion?',
+      options: [
+        'The sampling rate is too low',
+        'The FFT assumes the record repeats, so a partial cycle creates a discontinuity that smears energy across bins',
+        'Rounding error accumulates',
+        'The signal is genuinely distorted',
+      ],
+      answer: 1,
+      explain:
+        'That smear is spectral leakage. It looks exactly like harmonic content, which is why power quality analysers phase-lock to the fundamental before transforming.',
+    },
+    {
+      q: 'IEEE 519 limits current distortion in terms of which quantity?',
+      options: ['THD', 'TDD', 'RMS current', 'Peak current'],
+      answer: 1,
+      explain:
+        'TDD references the maximum demand load current, so a lightly loaded converter is not penalised for a large ratio against a small fundamental. Voltage limits do use THD.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Scale the FFT correctly, capture a **whole number of cycles**, and know that
+  IEEE 519 limits **TDD** for current. Most wrong harmonic results come from those
+  three things, not from the transform.
+</KeyIdea>
+
+## Further reading
+
+- `doc fft`, `doc filtfilt`, `doc pwelch`
+- IEC 61000-4-7 — the standard method for harmonic measurement, including grouping
+- Next: **Simulink** — block-diagram modelling, and when it beats writing code

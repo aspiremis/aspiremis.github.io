@@ -1,0 +1,314 @@
+---
+title: Symbolic Math
+track: matlab
+module: toolboxes
+order: 32
+description: Doing algebra rather than arithmetic — deriving expressions exactly, then converting them into fast numerical functions.
+objectives:
+  - Manipulate symbolic expressions, solve equations and differentiate exactly
+  - Convert a symbolic result into a fast numerical function with matlabFunction
+  - Judge when symbolic work pays off and when it is the wrong tool
+prerequisites: [project-newton-raphson]
+estimatedMinutes: 30
+difficulty: intermediate
+toolboxes: ['Symbolic Math Toolbox']
+tags: ['matlab', 'symbolic', 'algebra', 'derivation']
+---
+
+Everything so far has been *numerical* — MATLAB computing with specific numbers. The
+Symbolic Math Toolbox does something different: it manipulates expressions the way
+you would on paper, exactly, with no rounding at all.
+
+That makes it excellent for derivations and terrible for large computations, and
+knowing which side of the line you're on is the whole skill.
+
+## Symbols instead of values
+
+```matlab
+syms x y R X V I positive
+syms delta real
+
+Z = R + 1i*X;
+S = V * conj(I);
+
+expand((x + y)^3)          % x^3 + 3*x^2*y + 3*x*y^2 + y^3
+factor(x^2 - 1)            % (x-1)(x+1)
+simplify(sin(x)^2 + cos(x)^2)   % 1
+```
+
+<Callout type="tip" title="Declare what you know">
+  `syms x positive` or `syms delta real` gives the solver information it will use.
+  Without an assumption, `simplify(sqrt(x^2))` cannot become `x` — it might be `-x`.
+  With `positive`, it can.
+
+  Declaring assumptions is often the difference between an expression that simplifies
+  beautifully and one that stays a mess.
+</Callout>
+
+## Solving
+
+```matlab
+syms V P Q R X Vs
+
+% Solve a quadratic symbolically
+sol = solve(V^2 - 3*V + 2 == 0, V)          % [1; 2]
+
+% Solve for one variable in terms of others
+eqn = P == V^2/R;
+solve(eqn, V)                                % [-sqrt(P*R); sqrt(P*R)]
+
+% Systems
+syms a b
+S = solve([a + b == 10, a - b == 2], [a, b]);
+[S.a, S.b]                                   % 6, 4
+```
+
+`solve` returns **all** roots, including ones that are physically meaningless. Picking
+the right one is your job — as with the two-bus voltage equation, where the second
+root is the collapsed solution.
+
+## Calculus
+
+```matlab
+syms t x delta
+
+diff(x^3 + 2*x, x)                   % 3*x^2 + 2
+diff(sin(delta), delta, 2)           % -sin(delta)
+
+int(x^2, x)                          % x^3/3
+int(sin(t), t, 0, pi)                % 2
+
+limit((1 - cos(x))/x^2, x, 0)        % 1/2
+taylor(exp(x), x, 'Order', 4)        % 1 + x + x^2/2 + x^3/6
+```
+
+<Callout type="engineering">
+  This is how you derive a load-flow Jacobian term without algebra errors:
+
+  ```matlab
+  syms Vi Vk di dk Gik Bik real
+
+  Pi = Vi*Vk*(Gik*cos(di - dk) + Bik*sin(di - dk));
+
+  dPi_ddi = simplify(diff(Pi, di))     % the H submatrix entry
+  dPi_dVi = simplify(diff(Pi, Vi))     % the N submatrix entry
+  ```
+
+  Compare the result against the expression in your textbook. If they disagree, one of
+  you is wrong — and it is worth finding out which *before* you spend an evening
+  debugging a solver that converges linearly.
+</Callout>
+
+## Substituting and evaluating
+
+```matlab
+syms R X
+Z = R + 1i*X;
+
+Z_num = subs(Z, [R X], [0.05 0.20]);       % still symbolic
+double(Z_num)                               % 0.0500 + 0.2000i — now a number
+
+vpa(pi, 30)                                 % 30 digits of precision
+```
+
+`subs` substitutes but keeps the result symbolic. `double` converts it to a normal
+MATLAB number. Forgetting `double` is why a symbolic result sometimes refuses to plot.
+
+## `matlabFunction` — the bridge
+
+This is the most useful function in the toolbox. Derive symbolically, then compile the
+result into a fast, vectorised numerical function.
+
+<CodeFile name="symbolic_to_numeric.m">
+```matlab
+syms V R X P Q real
+
+% Derive the voltage-drop expression once, exactly
+dV = (P*R + Q*X) / V;
+
+% Convert it into a numerical function
+dV_fun = matlabFunction(dV, 'Vars', {P, Q, R, X, V});
+
+% Now it is ordinary fast MATLAB — no symbolic overhead
+dV_fun(0.8, 0.4, 0.05, 0.20, 1.0)          % 0.1200
+
+% And it vectorises
+P_vals = linspace(0, 2, 1000);
+drops  = dV_fun(P_vals, 0.4, 0.05, 0.20, 1.0);
+```
+</CodeFile>
+
+The pattern is: **derive symbolically, compute numerically.** You get the exactness of
+algebra for the derivation and the speed of compiled numerics for the evaluation.
+
+`'Vars'` fixes the argument order — without it, MATLAB picks alphabetically, which is
+a reliable source of silently swapped arguments.
+
+You can also write the result straight to a file:
+
+```matlab
+matlabFunction(dV, 'Vars', {P,Q,R,X,V}, 'File', 'voltage_drop.m');
+```
+
+## When symbolic is the wrong tool
+
+<Compare
+  headings={['Task', 'Symbolic?', 'Why']}
+  rows={[
+    { option: 'Deriving a Jacobian entry', when: 'Yes', cost: 'Exact, and checkable against the textbook', recommended: true },
+    { option: 'Deriving ABCD parameters', when: 'Yes', cost: 'The algebra is tedious and error-prone by hand' },
+    { option: 'Verifying an identity', when: 'Yes', cost: 'simplify settles it definitively' },
+    { option: 'Solving a 14-bus load flow', when: 'No', cost: 'Orders of magnitude too slow; use numerics' },
+    { option: 'Inverting a 3x3 symbolic matrix', when: 'Borderline', cost: 'The result is enormous and unreadable' },
+    { option: 'Anything inside a loop', when: 'No', cost: 'Symbolic operations are extremely slow per call' },
+  ]}
+/>
+
+<Callout type="warning" title="Symbolic computation is slow — by design">
+  Every symbolic operation manipulates expression trees, not floating point numbers.
+  It is typically **hundreds to thousands of times slower** than the numerical
+  equivalent.
+
+  Use it once, at derivation time. Never inside an iteration. If you find yourself
+  calling `subs` in a loop, you wanted `matlabFunction` before the loop.
+</Callout>
+
+## Symbolic matrices
+
+Useful for small systems where the structure matters more than the numbers.
+
+```matlab
+syms z11 z12 z21 z22
+Z = [z11 z12; z21 z22];
+
+det(Z)                    % z11*z22 - z12*z21
+inv(Z)                    % the explicit 2x2 inverse
+eig(Z)                    % symbolic eigenvalues
+
+% Symmetrical components transformation
+syms a
+A = [1 1 1; 1 a^2 a; 1 a a^2];
+simplify(inv(A) * 3)      % confirms the 1/3 factor in the inverse transform
+```
+
+That last one is worth doing once yourself. Deriving the inverse symmetrical-component
+transform symbolically, and seeing the factor of 1/3 fall out, makes it stick in a way
+that memorising the matrix does not.
+
+## Common mistakes
+
+<Callout type="warning" title="Forgetting double()">
+  A symbolic result won't plot or feed a numerical function until converted.
+</Callout>
+
+<Callout type="warning" title="Symbolic operations in a loop">
+  Crushingly slow. Derive once, `matlabFunction`, then loop.
+</Callout>
+
+<Callout type="warning" title="Not declaring assumptions">
+  Without `real` or `positive`, expressions refuse to simplify because MATLAB must
+  keep the complex or negative cases open.
+</Callout>
+
+<Callout type="warning" title="Trusting solve() to pick the physical root">
+  It returns all of them. Selecting the meaningful one is engineering, not algebra.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Derive a Jacobian entry">
+  Derive $\partial Q_i / \partial |V_i|$ for
+
+  $$Q_i = |V_i||V_k|\left(G_{ik}\sin\delta_{ik} - B_{ik}\cos\delta_{ik}\right)$$
+
+  and check it against your textbook.
+
+  <Solution>
+    ```matlab
+    syms Vi Vk di dk Gik Bik real
+
+    Qi = Vi*Vk*(Gik*sin(di - dk) - Bik*cos(di - dk));
+
+    dQ_dVi = simplify(diff(Qi, Vi))
+    % Vk*(Gik*sin(di - dk) - Bik*cos(di - dk))
+    ```
+
+    Which is simply $Q_i / |V_i|$ — the off-diagonal L submatrix entry.
+
+    The diagonal term is different, because $Q_i$ also contains a $-B_{ii}|V_i|^2$
+    self-term that the off-diagonal expression above omits. Deriving both and noticing
+    they differ is exactly the kind of detail that produces a subtly wrong Jacobian and
+    linear convergence.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Derive, then compile">
+  Derive the receiving-end voltage of a short line symbolically, convert to a numerical
+  function, and sweep it over a range of loads.
+
+  <Solution>
+    ```matlab
+    syms Vs P Q R X Vr positive
+
+    % |Vr|^4 + |Vr|^2*(2(PR+QX) - |Vs|^2) + (P^2+Q^2)(R^2+X^2) = 0
+    eqn = Vr^4 + Vr^2*(2*(P*R + Q*X) - Vs^2) + (P^2 + Q^2)*(R^2 + X^2) == 0;
+
+    sols = solve(eqn, Vr);
+    Vr_high = sols(end);                    % the upper (normal) root
+
+    Vr_fun = matlabFunction(Vr_high, 'Vars', {P, Q, R, X, Vs});
+
+    P_sweep = linspace(0.1, 2.0, 200);
+    V_sweep = Vr_fun(P_sweep, 0.5*P_sweep, 0.05, 0.20, 1.0);
+
+    plot(P_sweep, real(V_sweep), 'LineWidth', 1.5);
+    xlabel('P (pu)'); ylabel('|V_r| (pu)');
+    title('P-V curve'); grid on;
+    ```
+
+    The curve turns back on itself — that's the nose. Beyond it the solution becomes
+    complex, which is `solve` telling you no real operating point exists. Take `real()`
+    with care: past the nose there genuinely is no answer, and plotting the real part
+    would hide that.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does matlabFunction do?',
+      options: [
+        'Simplifies a symbolic expression',
+        'Converts a symbolic expression into a fast, vectorised numerical function',
+        'Saves a symbolic expression to disk',
+        'Solves an equation numerically',
+      ],
+      answer: 1,
+      explain:
+        'It is the bridge between the two worlds: derive exactly with symbolics, then compile to ordinary MATLAB for fast repeated evaluation.',
+    },
+    {
+      q: 'Why should you never use symbolic operations inside a loop?',
+      options: [
+        'MATLAB does not allow it',
+        'Symbolic manipulation is orders of magnitude slower than numerical arithmetic',
+        'It produces wrong answers',
+        'It uses too much disk space',
+      ],
+      answer: 1,
+      explain:
+        'Symbolics manipulate expression trees rather than numbers. Derive once outside the loop, convert with matlabFunction, then iterate on the numerical version.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Derive symbolically, compute numerically.** The toolbox is for getting an
+  expression right — Jacobian entries, ABCD parameters, transformations — and
+  `matlabFunction` is how that exact result becomes fast code.
+</KeyIdea>
+
+## Further reading
+
+- `doc symbolic`, `doc matlabFunction`, `doc assume`
+- Next: **optimisation** — economic dispatch and the shape of an OPF

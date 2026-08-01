@@ -1,0 +1,368 @@
+---
+title: Optimisation
+track: matlab
+module: toolboxes
+order: 33
+description: Choosing the best operating point subject to constraints — economic dispatch, why convexity matters, and the shape of an optimal power flow.
+objectives:
+  - Formulate an engineering problem as objective, variables and constraints
+  - Choose the right solver, and know why convexity decides whether the answer is global
+  - Implement economic dispatch with generator and network limits
+prerequisites: [symbolic-math]
+estimatedMinutes: 35
+difficulty: advanced
+toolboxes: ['Optimization Toolbox']
+tags: ['matlab', 'optimization', 'economic-dispatch', 'opf']
+---
+
+Load flow answers "where does the system settle?" Optimisation answers a harder
+question: **"of all the ways we could operate this system, which is best?"**
+
+That question underlies economic dispatch, unit commitment, optimal power flow,
+network reinforcement planning and hosting-capacity maximisation. It's one of the
+most valuable things in this module.
+
+## The three pieces
+
+Every optimisation problem has exactly three parts, and writing them down explicitly
+before touching code is most of the work.
+
+$$
+\min_{\mathbf{x}} \; f(\mathbf{x}) \quad \text{subject to} \quad
+\begin{cases}
+g(\mathbf{x}) \le 0 & \text{inequality constraints} \\
+h(\mathbf{x}) = 0 & \text{equality constraints} \\
+\mathbf{lb} \le \mathbf{x} \le \mathbf{ub} & \text{bounds}
+\end{cases}
+$$
+
+For economic dispatch:
+
+- **Variables** — the power output of each generator
+- **Objective** — total fuel cost, minimised
+- **Equality** — total generation must equal total demand
+- **Bounds** — each generator between its minimum and maximum output
+
+<Callout type="tip" title="Write the formulation in comments first">
+  Before any code, write the three parts in plain English. Most optimisation bugs are
+  formulation errors — a constraint with the wrong sign, or a variable that should
+  have been bounded — and they are far easier to spot in prose than in matrices.
+</Callout>
+
+## Choosing a solver
+
+<Compare
+  headings={['Solver', 'Problem type', 'Guarantee']}
+  rows={[
+    { option: 'linprog', when: 'Linear objective, linear constraints', cost: 'Global optimum', recommended: true },
+    { option: 'quadprog', when: 'Quadratic objective, linear constraints', cost: 'Global if convex — the dispatch case' },
+    { option: 'intlinprog', when: 'Some variables must be integers', cost: 'Global, but much harder — unit commitment' },
+    { option: 'fmincon', when: 'General nonlinear with constraints', cost: 'LOCAL optimum only — the OPF case' },
+    { option: 'fminunc', when: 'Nonlinear, no constraints', cost: 'Local optimum only' },
+    { option: 'fminsearch', when: 'No derivatives available, small problems', cost: 'Slow, local, derivative-free' },
+  ]}
+/>
+
+Always use the **most specific solver that fits**. `fmincon` can technically solve a
+linear program, but `linprog` will do it faster and guarantee a global answer.
+
+## Convexity decides everything
+
+<Analogy>
+  A convex problem is a **single bowl**. Roll a marble in from anywhere and it finds
+  the one lowest point. Where you started doesn't matter.
+
+  A non-convex problem is a **mountain range**. The marble stops in whichever valley
+  it happened to land in — which may not be the deepest one anywhere.
+</Analogy>
+
+This is not a technicality. For a convex problem, the solver's answer *is* the best
+possible. For a non-convex one, it is the best it could find **from your starting
+point**, and a different start may give a different, better answer.
+
+<Callout type="engineering">
+  Economic dispatch with quadratic cost curves is **convex** — `quadprog` returns the
+  true global optimum, and that's why the classical lambda-iteration method works.
+
+  Full AC optimal power flow is **not convex**, because the power flow equations are
+  nonlinear. `fmincon` returns a local solution. This is a genuine open research area:
+  convex relaxations of the OPF problem are actively studied precisely because the
+  non-convexity means nobody can certify that an operating point is globally optimal.
+
+  So "is my problem convex?" is a question with real consequences, not a mathematical
+  formality.
+</Callout>
+
+## Economic dispatch
+
+The classical problem: meet demand at least cost. Each generator has a quadratic cost
+curve $C_i(P_i) = a_i P_i^2 + b_i P_i + c_i$.
+
+<CodeFile name="economic_dispatch.m">
+```matlab
+function [P, cost, lambda] = economic_dispatch(a, b, c, P_min, P_max, demand)
+%ECONOMIC_DISPATCH Minimise total fuel cost subject to meeting demand.
+%
+%   Cost of unit i: a(i)*P^2 + b(i)*P + c(i)
+%   Returns dispatch P, total cost, and lambda — the system marginal price.
+
+    arguments
+        a      (:,1) double {mustBePositive}      % convexity requires a > 0
+        b      (:,1) double
+        c      (:,1) double
+        P_min  (:,1) double
+        P_max  (:,1) double
+        demand (1,1) double {mustBePositive}
+    end
+
+    n = numel(a);
+    assert(sum(P_max) >= demand, ...
+           'Infeasible: capacity %.1f MW < demand %.1f MW', sum(P_max), demand);
+    assert(sum(P_min) <= demand, ...
+           'Infeasible: minimum output %.1f MW > demand %.1f MW', sum(P_min), demand);
+
+    % quadprog minimises 0.5*x'*H*x + f'*x
+    H = 2 * diag(a);              % factor of 2 because of the 0.5 in the form
+    f = b;
+
+    Aeq = ones(1, n);             % sum of generation
+    beq = demand;                 % equals demand
+
+    opts = optimoptions('quadprog', 'Display', 'off');
+    [P, fval, flag, ~, mult] = quadprog(H, f, [], [], Aeq, beq, P_min, P_max, [], opts);
+
+    if flag <= 0
+        error('quadprog failed with exit flag %d', flag);
+    end
+
+    cost   = fval + sum(c);                     % add the constant terms back
+    lambda = mult.eqlin;                        % shadow price of the demand constraint
+end
+```
+</CodeFile>
+
+```matlab
+a = [0.008; 0.009; 0.007];         % $/MW²h
+b = [7.0;   6.3;   6.8];           % $/MWh
+c = [200;   180;   140];           % $/h
+P_min = [ 50;  40;  30];
+P_max = [200; 150; 180];
+
+[P, cost, lambda] = economic_dispatch(a, b, c, P_min, P_max, 400);
+
+fprintf('Dispatch: %s MW\n', mat2str(round(P,2)'));
+fprintf('Total cost: $%.2f/h\n', cost);
+fprintf('System lambda: $%.4f/MWh\n', lambda);
+```
+
+<Callout type="engineering">
+  **Lambda is the interesting output.** It's the Lagrange multiplier on the demand
+  constraint — the marginal cost of supplying one more MW, and in a market it is the
+  system price.
+
+  At the unconstrained optimum, every generator not at a limit operates where its
+  incremental cost $2a_iP_i + b_i$ equals lambda. That's the **equal incremental cost
+  criterion** from your textbook, appearing here as a solver output rather than
+  something you derived by hand.
+
+  Generators pinned at a bound have incremental costs *different* from lambda — which
+  is exactly what the classical lambda-iteration algorithm handles with its awkward
+  limit-checking loop. `quadprog` handles it automatically.
+</Callout>
+
+## Adding constraints
+
+Real dispatch has more than a demand balance. Each new requirement is another row.
+
+```matlab
+% Spinning reserve: total capacity headroom must exceed a requirement
+% sum(P_max - P) >= reserve  ->  -sum(P) >= reserve - sum(P_max)
+%                            ->   sum(P) <= sum(P_max) - reserve
+A = ones(1, n);
+bineq = sum(P_max) - reserve;
+
+% Ramp limits from the previous dispatch
+lb = max(P_min, P_prev - ramp_down);
+ub = min(P_max, P_prev + ramp_up);
+
+[P, fval, flag] = quadprog(H, f, A, bineq, Aeq, beq, lb, ub, [], opts);
+```
+
+Ramp limits fold into the bounds rather than needing new rows — worth spotting,
+because fewer constraints means a faster and better-conditioned problem.
+
+## Nonlinear problems
+
+When the objective or constraints aren't linear or quadratic, `fmincon`:
+
+```matlab
+% Minimise losses subject to the power flow equations holding
+objective   = @(x) total_losses(x);
+constraints = @(x) deal([], power_flow_residual(x));   % [inequality, equality]
+
+opts = optimoptions('fmincon', 'Display', 'iter', ...
+                    'Algorithm', 'interior-point', ...
+                    'MaxFunctionEvaluations', 5000);
+
+[x, fval, flag] = fmincon(objective, x0, [], [], [], [], lb, ub, constraints, opts);
+```
+
+That's the shape of an AC optimal power flow. Two things about it:
+
+**The starting point matters.** Non-convex, so run from several starts and compare —
+if they agree you have some confidence; if they don't, you've found multiple local
+optima and should say so.
+
+**Supply gradients if you can.** `'SpecifyObjectiveGradient', true` with an analytic
+gradient is dramatically faster than finite differences, and the Symbolic Math lesson
+is how you derive it.
+
+## Always check the exit flag
+
+```matlab
+[x, fval, flag, output] = fmincon(...);
+
+switch flag
+    case 1,  fprintf('Converged to a local minimum.\n');
+    case 0,  warning('Hit the iteration limit — result not converged.');
+    case -2, error('Problem appears infeasible — check your constraints.');
+    otherwise, warning('Exit flag %d — inspect output.message', flag);
+end
+```
+
+A negative flag usually means **infeasible**: your constraints contradict each other.
+The commonest cause in dispatch is demand exceeding total capacity, which is why the
+function above asserts that up front with a message naming the numbers.
+
+## Common mistakes
+
+<Callout type="warning" title="Forgetting the 0.5 in quadprog's form">
+  `quadprog` minimises `0.5*x'*H*x + f'*x`. A cost of `a*P²` needs `H = 2*diag(a)`.
+  Forgetting the factor of 2 halves your quadratic term and quietly changes the
+  dispatch.
+</Callout>
+
+<Callout type="warning" title="Wrong inequality direction">
+  MATLAB wants `A*x <= b`. A `>=` constraint must be negated. A sign error here gives
+  a perfectly converged answer to the wrong problem.
+</Callout>
+
+<Callout type="warning" title="Assuming a local solution is global">
+  Only for convex problems. With fmincon, try several starting points.
+</Callout>
+
+<Callout type="warning" title="Not checking the exit flag">
+  The solver returns an `x` whatever happens. Only flag > 0 means you should use it.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Verify equal incremental cost">
+  Run the dispatch above and confirm that every unconstrained generator has incremental
+  cost equal to lambda.
+
+  <Solution>
+    ```matlab
+    [P, cost, lambda] = economic_dispatch(a, b, c, P_min, P_max, 400);
+
+    IC = 2*a.*P + b;                          % incremental cost of each unit
+    at_limit = (P <= P_min + 1e-6) | (P >= P_max - 1e-6);
+
+    for k = 1:numel(P)
+        status = "free";
+        if at_limit(k), status = "at limit"; end
+        fprintf('Unit %d: P = %6.2f MW, IC = %.4f, lambda = %.4f  (%s)\n', ...
+                k, P(k), IC(k), lambda, status);
+    end
+
+    assert(all(abs(IC(~at_limit) - lambda) < 1e-6), ...
+           'Equal incremental cost violated for a free generator');
+    ```
+
+    Free generators all sit at IC = lambda. Any at a bound will differ — a unit pinned
+    at maximum has IC *below* lambda (it would produce more if it could), and one at
+    minimum has IC *above* lambda.
+
+    That assertion is a genuine correctness check on the optimality conditions, not
+    just on the code.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Sweep demand and plot the price curve">
+  Run the dispatch across a range of demand and plot lambda. What causes the kinks?
+
+  <Solution>
+    ```matlab
+    demands = 130 : 5 : 520;
+    lambdas = zeros(size(demands));
+    costs   = zeros(size(demands));
+
+    for k = 1:numel(demands)
+        [~, costs(k), lambdas(k)] = economic_dispatch(a, b, c, P_min, P_max, demands(k));
+    end
+
+    tiledlayout(2,1,'TileSpacing','compact');
+    nexttile; plot(demands, lambdas, 'LineWidth', 1.5);
+    ylabel('\lambda ($/MWh)'); grid on; title('System marginal price');
+    nexttile; plot(demands, costs, 'LineWidth', 1.5);
+    xlabel('Demand (MW)'); ylabel('Total cost ($/h)'); grid on;
+    ```
+
+    Lambda rises with demand — more expensive units get dispatched — and shows
+    **kinks** where a generator hits a limit. Below a kink that unit was adjusting to
+    share the load; above it, it is pinned, so the remaining units must absorb all
+    further increase and the price climbs more steeply.
+
+    Those kinks are the economic signature of a binding constraint, and they are why
+    marginal prices in real markets jump rather than varying smoothly.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why does convexity matter?',
+      options: [
+        'Convex problems solve faster',
+        'For a convex problem any local optimum is the global optimum',
+        'Convex problems need fewer constraints',
+        'Only convex problems can have equality constraints',
+      ],
+      answer: 1,
+      explain:
+        'Convexity means one bowl, so the solver\'s answer is the best possible. Economic dispatch with quadratic costs is convex; AC optimal power flow is not, which is why convex relaxations of OPF are an active research area.',
+    },
+    {
+      q: 'What does the Lagrange multiplier on the demand constraint represent?',
+      options: [
+        'The total system cost',
+        'The marginal cost of supplying one more MW — the system price',
+        'The number of active generators',
+        'The convergence tolerance',
+      ],
+      answer: 1,
+      explain:
+        'Lambda is the shadow price of the demand balance. At the optimum every unconstrained generator operates where its incremental cost equals lambda — the equal incremental cost criterion, produced as a solver output.',
+    },
+    {
+      q: 'quadprog minimises 0.5*x\'*H*x + f\'*x. For a cost of a*P², what is H?',
+      options: ['diag(a)', '2*diag(a)', '0.5*diag(a)', 'a'],
+      answer: 1,
+      explain:
+        'The 0.5 in the standard form must be cancelled, so H = 2*diag(a). Forgetting this halves the quadratic term and silently changes the dispatch.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Write down **variables, objective and constraints** in words before any code — most
+  optimisation bugs are formulation errors. Then ask whether the problem is **convex**,
+  because that decides whether the answer you get is the best one or merely a nearby
+  one.
+</KeyIdea>
+
+## Further reading
+
+- `doc quadprog`, `doc fmincon`, `doc optimoptions`
+- Wood, Wollenberg & Sheblé, *Power Generation, Operation and Control*, Chapters 3–8
+- Next: **control systems** — transfer functions, stability margins and the AVR loop
