@@ -1,0 +1,423 @@
+---
+title: Backward-Forward Sweep
+track: matlab
+module: distribution-protection
+order: 46
+description: The load flow method distribution networks actually use — no Jacobian, no matrix factorisation, and completely indifferent to the R/X ratio that defeats fast decoupled.
+objectives:
+  - Explain why radial structure permits a solver with no Jacobian at all
+  - Implement backward-forward sweep including laterals
+  - Compare its convergence against Newton-Raphson on a resistive feeder
+prerequisites: [project-load-flow-tool]
+estimatedMinutes: 45
+difficulty: advanced
+tags: ['matlab', 'load-flow', 'distribution', 'backward-forward-sweep']
+---
+
+The Hub has told you six times that distribution networks need their own solver. This
+is that solver.
+
+It is also the one your **EE6L017** spends 25 hours on and **Lab Experiment 4** asks
+you to implement — so it is worth doing properly rather than reading about.
+
+## Why a different method exists
+
+Newton-Raphson works on any network. On a distribution feeder it is simply more
+machinery than the problem needs, and fast decoupled actively fails because $R/X$
+approaches 1.
+
+The insight is structural: **a radial network has no loops**. Every bus has exactly one
+path back to the source. So instead of solving a simultaneous system, you can walk the
+tree.
+
+<Analogy>
+  Think of a **river delta run backwards**.
+
+  Start at every tributary tip and walk downstream, adding flows as branches merge —
+  by the time you reach the sea you know the total flow in every channel. That is the
+  **backward sweep**, accumulating currents.
+
+  Then walk back upstream from the sea, and at each point subtract the head loss along
+  the channel you just came down. That gives the level everywhere. That is the
+  **forward sweep**, propagating voltages.
+
+  No simultaneous equations. Just two walks over a tree.
+</Analogy>
+
+## The algorithm
+
+1. **Initialise** every bus voltage to the source voltage — a flat start.
+2. **Backward sweep.** Working from the furthest buses inward, compute each bus's load
+   current from its power and present voltage, add the currents of everything
+   downstream, and assign the total to the branch feeding it.
+3. **Forward sweep.** Working from the source outward, set each bus voltage to its
+   parent's voltage minus the drop across the connecting branch.
+4. **Repeat** until voltages stop changing.
+
+$$
+I_i = \left(\frac{S_i}{V_i}\right)^{*} + \sum_{k \in \text{downstream}(i)} I_k
+$$
+
+$$
+V_i = V_{\text{parent}(i)} - Z_{\text{branch}} I_{\text{branch}}
+$$
+
+That's it. No derivatives, no matrix to factorise, no conditioning to worry about.
+
+## Ordering the buses
+
+Everything depends on visiting buses in the right order. Build a **parent array** and
+a **depth ordering** once, then reuse them every iteration.
+
+<CodeFile name="build_tree.m">
+```matlab
+function tree = build_tree(n_bus, branch, source)
+%BUILD_TREE Parent array and breadth-first ordering for a radial network.
+%
+%   BRANCH columns: from, to, R, X
+%   Returns a struct with parent, order (source first), and branch index
+%   per bus, ready for repeated sweeps.
+
+    arguments
+        n_bus  (1,1) double
+        branch        double
+        source (1,1) double = 1
+    end
+
+    % Adjacency, treating branches as undirected — the data may list either
+    % end first, and a radial feeder does not care.
+    adj = cell(n_bus,1);
+    for k = 1:size(branch,1)
+        f = branch(k,1); t = branch(k,2);
+        adj{f}(end+1,:) = [t k];
+        adj{t}(end+1,:) = [f k];
+    end
+
+    parent      = zeros(n_bus,1);
+    parent_edge = zeros(n_bus,1);
+    order       = zeros(n_bus,1);
+    visited     = false(n_bus,1);
+
+    % Breadth-first from the source: guarantees a parent is always ordered
+    % before its children.
+    queue = source;  visited(source) = true;  count = 0;
+    while ~isempty(queue)
+        b = queue(1);  queue(1) = [];
+        count = count + 1;  order(count) = b;
+
+        for row = 1:size(adj{b},1)
+            nb = adj{b}(row,1);  e = adj{b}(row,2);
+            if ~visited(nb)
+                visited(nb)     = true;
+                parent(nb)      = b;
+                parent_edge(nb) = e;
+                queue(end+1)    = nb; %#ok<AGROW>
+            end
+        end
+    end
+
+    assert(all(visited), 'Network is not connected — bus(es) %s unreachable', ...
+           mat2str(find(~visited)'));
+    assert(size(branch,1) == n_bus - 1, ...
+           'Not radial: %d branches for %d buses (a tree needs exactly n-1)', ...
+           size(branch,1), n_bus);
+
+    tree.parent      = parent;
+    tree.parent_edge = parent_edge;
+    tree.order       = order;          % source first
+    tree.reverse     = flipud(order);  % leaves first
+    tree.source      = source;
+end
+```
+</CodeFile>
+
+<Callout type="tip" title="The radial check is worth having">
+  A tree on $n$ buses has exactly $n-1$ branches. More than that means a loop, and this
+  method does not apply without a compensation step. Asserting it up front turns a
+  confusing non-convergence into a clear message.
+</Callout>
+
+## The solver
+
+<CodeFile name="bfs_load_flow.m">
+```matlab
+function [V, info] = bfs_load_flow(tree, branch, S_load, V_source, opts)
+%BFS_LOAD_FLOW Backward-forward sweep load flow for a radial feeder.
+%
+%   S_LOAD is complex load at each bus in per unit (positive = consumption).
+%   V_SOURCE is the slack voltage in per unit.
+
+    arguments
+        tree           struct
+        branch         double
+        S_load   (:,1) double
+        V_source (1,1) double = 1.0
+        opts.tol      (1,1) double = 1e-8
+        opts.max_iter (1,1) double = 100
+        opts.verbose  (1,1) logical = false
+    end
+
+    n = numel(S_load);
+    Z = branch(:,3) + 1i*branch(:,4);
+
+    V = V_source * ones(n,1);        % flat start
+    history = zeros(opts.max_iter,1);
+    info.converged = false;
+
+    for iter = 1:opts.max_iter
+        V_prev = V;
+
+        % ---- backward sweep: accumulate currents from the leaves inward ----
+        I_bus    = conj(S_load ./ V);        % load current at each bus
+        I_branch = zeros(size(branch,1), 1);
+
+        for b = tree.reverse'                % leaves first
+            if b == tree.source, continue; end
+            e = tree.parent_edge(b);
+            I_branch(e) = I_branch(e) + I_bus(b);
+            % Push the accumulated current up to the parent
+            I_bus(tree.parent(b)) = I_bus(tree.parent(b)) + I_branch(e);
+        end
+
+        % ---- forward sweep: propagate voltages from the source outward -----
+        V(tree.source) = V_source;
+        for b = tree.order'                  % source first
+            if b == tree.source, continue; end
+            e = tree.parent_edge(b);
+            V(b) = V(tree.parent(b)) - Z(e)*I_branch(e);
+        end
+
+        % ---- convergence on voltage change --------------------------------
+        delta = max(abs(V - V_prev));
+        history(iter) = delta;
+        if opts.verbose
+            fprintf('  iter %3d: max |dV| = %.4e\n', iter, delta);
+        end
+
+        if delta < opts.tol
+            info.converged = true;
+            break
+        end
+    end
+
+    % ---- losses, from the converged solution ------------------------------
+    info.iterations   = iter;
+    info.history      = history(1:iter);
+    info.I_branch     = I_branch;
+    info.losses       = sum(abs(I_branch).^2 .* real(Z));
+    info.V_min        = min(abs(V));
+    [~, info.worst_bus] = min(abs(V));
+
+    if ~info.converged
+        warning('BFS did not converge in %d iterations (|dV| = %.3e)', ...
+                opts.max_iter, delta);
+    end
+
+    assert(info.losses >= 0, 'Negative losses — impossible');
+end
+```
+</CodeFile>
+
+<Callout type="engineering">
+  Note what is **absent**: no Jacobian, no `\`, no `cond`, no sparse matrix. The whole
+  solver is two loops over a bus ordering.
+
+  That is why it is indifferent to $R/X$. Fast decoupled fails on a resistive feeder
+  because it *linearises* and assumes $X \gg R$. Backward-forward sweep never
+  linearises anything — it just applies Kirchhoff's laws along a tree, and Kirchhoff
+  does not care about the ratio.
+</Callout>
+
+## Convergence behaviour
+
+BFS converges **linearly** — roughly a constant factor per iteration — where
+Newton-Raphson is quadratic. So it takes more iterations.
+
+But each iteration is $O(n)$ rather than a matrix factorisation, and the iteration
+count is largely independent of system size. On a real feeder it typically converges
+in 4–8 iterations regardless of whether there are 30 buses or 3000.
+
+<Compare
+  headings={['Method', 'On a transmission system', 'On a resistive radial feeder']}
+  rows={[
+    { option: 'Newton-Raphson', when: '4-5 iterations, quadratic', cost: 'Works, but the Jacobian is overkill' },
+    { option: 'Fast decoupled', when: '7-10 iterations', cost: 'Degrades badly or fails — R/X breaks the decoupling' },
+    { option: 'Backward-forward sweep', when: 'Not applicable — needs radial structure', cost: '4-8 iterations, indifferent to R/X', recommended: true },
+  ]}
+/>
+
+<Callout type="warning" title="Where BFS struggles">
+  It is not universally better. Two genuine limits:
+
+  **Loops.** A weakly meshed network needs a compensation step — break the loops,
+  solve radially, then inject compensating currents at the break points until the loop
+  constraints are satisfied.
+
+  **Heavy constant-power loading.** Near the feeder's maximum loading, the
+  $S/V^*$ update becomes unstable and BFS can oscillate or diverge — the same physical
+  limit that makes the Newton-Raphson Jacobian singular, showing up differently. ZIP
+  load models (next lesson) substantially improve this.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Wrong sweep order">
+  The backward sweep must visit leaves first, the forward sweep the source first. Get
+  them the wrong way round and each iteration uses stale values — it may still
+  converge, very slowly, to something close but wrong.
+</Callout>
+
+<Callout type="warning" title="Assuming the branch list is ordered from the source">
+  Real data lists branches in arbitrary order, and sometimes with the buses reversed.
+  Build the tree with a breadth-first search rather than trusting the file.
+</Callout>
+
+<Callout type="warning" title="Converging on power mismatch instead of voltage change">
+  BFS naturally converges on $|\Delta V|$ between iterations. That is not the same as a
+  power mismatch, so a tolerance of 10⁻⁸ here does not mean the same thing as 10⁻⁸ in a
+  Newton-Raphson solver. Compute the power mismatch separately if you need to compare.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="How many branches?">
+  A radial feeder has 33 buses. How many branches must the data contain, and what does
+  it mean if it has 37?
+
+  <Solution>
+    A tree on 33 buses has exactly **32 branches** — every bus except the source has
+    exactly one parent.
+
+    37 branches means **5 loops**. The network is weakly meshed, which is common: those
+    extra branches are usually normally-open **tie switches** between feeders, closed
+    only during reconfiguration or restoration.
+
+    Two options: open the tie switches (set `status = 0`) and solve radially, which is
+    the normal operating configuration; or implement the compensation-based method that
+    handles loops explicitly.
+
+    The IEEE 33-bus test feeder is exactly this case — 32 radial branches plus 5 tie
+    switches, and the reconfiguration literature exists to decide which switches should
+    be closed.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Solve a small feeder and check the losses">
+  Build a 5-bus radial feeder, solve it, and verify the losses two independent ways.
+
+  <Solution>
+    ```matlab
+    % from to    R      X
+    branch = [1 2  0.05  0.03;
+              2 3  0.04  0.02;
+              3 4  0.06  0.03;
+              2 5  0.08  0.04];         % a lateral off bus 2
+
+    S_load = [0; 0.30+0.15i; 0.25+0.12i; 0.20+0.10i; 0.15+0.07i];
+
+    tree = build_tree(5, branch, 1);
+    [V, info] = bfs_load_flow(tree, branch, S_load, 1.0, verbose=true);
+
+    for k = 1:5
+        fprintf('Bus %d: %.5f pu at %+.3f deg\n', k, abs(V(k)), rad2deg(angle(V(k))));
+    end
+
+    % Check 1: I^2 R summed over branches (what the solver reports)
+    % Check 2: source injection minus total load
+    S_source = V(1) * conj(sum(info.I_branch(tree.parent_edge(2:end) == ...
+                              tree.parent_edge(2:end))));
+    P_in  = real(V(1) * conj(info.I_branch(1)));
+    P_out = sum(real(S_load));
+    fprintf('\nlosses from I^2R : %.6f pu\n', info.losses);
+    fprintf('losses from P_in - P_out: %.6f pu\n', P_in - P_out);
+    ```
+
+    The two should agree to solver tolerance. They are genuinely independent
+    calculations — one sums dissipation branch by branch, the other takes the
+    difference between what enters and what is consumed — so agreement is real
+    evidence the solution is right.
+
+    Note bus 5 hangs off bus 2, not off the end of the main line. The breadth-first
+    tree handles that without any special casing, which is the point of building the
+    ordering rather than assuming a chain.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="Race it against Newton-Raphson">
+  Run both solvers on the same resistive feeder and compare.
+
+  <Solution>
+    ```matlab
+    % Same feeder, both methods
+    tic; [V_bfs, i_bfs] = bfs_load_flow(tree, branch, S_load); t_bfs = toc;
+
+    Y = build_ybus(5, [branch, zeros(4,1), ones(4,1), zeros(4,1), ones(4,1)], zeros(5,1));
+    bus = make_bus_table(S_load);          % 1 slack, 4 PQ
+    tic; [V_nr, ~, i_nr] = load_flow(Y, bus); t_nr = toc;
+
+    fprintf('BFS: %2d iterations, %.4f ms\n', i_bfs.iterations, t_bfs*1000);
+    fprintf('NR : %2d iterations, %.4f ms\n', i_nr.iterations,  t_nr*1000);
+    fprintf('max |V| difference: %.3e\n', max(abs(abs(V_bfs) - V_nr)));
+    ```
+
+    Expect BFS to take more iterations and NR fewer, with both reaching the same
+    voltages to solver tolerance. **Agreement between two structurally different
+    methods is the strongest validation you can get** — much stronger than either
+    agreeing with itself.
+
+    Now raise the R/X ratio of every branch and try fast decoupled as well. BFS will be
+    unmoved; fast decoupled will degrade sharply. That is the experiment behind your
+    [post on fast decoupled load flow](/blog/why-fast-decoupled-load-flow-fails-on-distribution-feeders),
+    now runnable in code you wrote.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why is backward-forward sweep indifferent to the R/X ratio?',
+      options: [
+        'It uses a better Jacobian',
+        'It never linearises — it applies Kirchhoff\'s laws along a tree',
+        'It ignores resistance',
+        'It solves in rectangular rather than polar coordinates',
+      ],
+      answer: 1,
+      explain:
+        'Fast decoupled fails because its linearisation assumes X >> R. BFS forms no Jacobian and makes no such assumption; it just accumulates currents and propagates voltage drops.',
+    },
+    {
+      q: 'A 33-bus radial feeder should have how many branches?',
+      options: ['33', '32', '34', 'It depends on the laterals'],
+      answer: 1,
+      explain:
+        'A tree on n buses has exactly n-1 branches, laterals included. Any more means loops, which BFS cannot handle without a compensation step.',
+    },
+    {
+      q: 'What is the main limitation of backward-forward sweep?',
+      options: [
+        'It is slower than Newton-Raphson per iteration',
+        'It requires radial (or weakly meshed with compensation) structure',
+        'It cannot handle complex impedances',
+        'It only works on small systems',
+      ],
+      answer: 1,
+      explain:
+        'The whole method depends on every bus having exactly one path to the source. That holds for distribution feeders and not for meshed transmission networks.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A radial network has **no loops**, so there is nothing simultaneous to solve — walk
+  the tree inward accumulating current, then outward propagating voltage. No Jacobian
+  means no linearisation, which is exactly why $R/X$ stops mattering.
+</KeyIdea>
+
+## Further reading
+
+- Kersting, *Distribution System Modeling and Analysis*, Chapter 10
+- Shirmohammadi et al., 1988 — the compensation method for weakly meshed networks;
+  your [paper note](/research) on it is already on this site
+- Next: **load models** — why constant-power loads are the hardest case, and what ZIP
+  does about it

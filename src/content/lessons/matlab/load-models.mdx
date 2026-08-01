@@ -1,0 +1,340 @@
+---
+title: Load Models
+track: matlab
+module: distribution-protection
+order: 47
+description: ZIP, exponential and composite models — why "constant power" is a modelling choice rather than a fact, and how much it changes your answer.
+objectives:
+  - Implement ZIP, exponential and composite load models
+  - Explain why constant-power loads are the hardest case for any solver
+  - Estimate ZIP coefficients from measured voltage and power data
+prerequisites: [backward-forward-sweep]
+estimatedMinutes: 35
+difficulty: advanced
+tags: ['matlab', 'load-modelling', 'zip', 'distribution']
+---
+
+Every load flow so far has assumed **constant power**: a 500 kW load draws 500 kW
+whatever the voltage. That's convenient, it is what the P and Q columns of a case file
+imply, and it is not true of most real loads.
+
+**EE6L017** gives this its own module, and the reason is that the choice materially
+changes your answer.
+
+## What actually happens when voltage drops
+
+<Analogy>
+  Three loads on the same feeder, and the voltage sags 10%:
+
+  - An **incandescent lamp** is basically a resistor. Power falls as $V^2$ — down 19%.
+  - A **resistive heater with a thermostat** runs longer to deliver the same heat.
+    Over an hour it draws roughly **constant power**.
+  - A **motor driving a fixed mechanical load** must deliver the same torque, so it
+    draws *more current* to compensate. Also roughly constant power — and it draws more
+    current, which sags the voltage further.
+
+  Same 10% sag, three different responses. Modelling all of them as constant power is
+  a choice, and it is the pessimistic one.
+</Analogy>
+
+## The ZIP model
+
+Split the load into three components — constant im**Z**edance, constant **I**urrent,
+constant **P**ower:
+
+$$
+P = P_0\left[ Z_p \left(\frac{V}{V_0}\right)^2 + I_p \left(\frac{V}{V_0}\right) + P_p \right]
+$$
+
+with $Z_p + I_p + P_p = 1$, and the same form for $Q$ with its own coefficients.
+
+<CodeFile name="zip_load.m">
+```matlab
+function S = zip_load(S0, V, V0, zip_p, zip_q)
+%ZIP_LOAD Complex power drawn by a ZIP load at voltage V.
+%
+%   ZIP_P and ZIP_Q are [Z I P] coefficient triples, each summing to 1.
+%   V and V0 are per-unit magnitudes.
+
+    arguments
+        S0    (:,1) double
+        V     (:,1) double
+        V0    (1,1) double = 1.0
+        zip_p (1,3) double = [0 0 1]      % default: constant power
+        zip_q (1,3) double = [0 0 1]
+    end
+
+    assert(abs(sum(zip_p) - 1) < 1e-9, 'P coefficients must sum to 1');
+    assert(abs(sum(zip_q) - 1) < 1e-9, 'Q coefficients must sum to 1');
+
+    v = abs(V) / V0;
+
+    fP = zip_p(1)*v.^2 + zip_p(2)*v + zip_p(3);
+    fQ = zip_q(1)*v.^2 + zip_q(2)*v + zip_q(3);
+
+    S = real(S0).*fP + 1i*imag(S0).*fQ;
+end
+```
+</CodeFile>
+
+Typical coefficient sets, from the modelling literature:
+
+<Compare
+  headings={['Load type', 'ZIP for P  [Z I P]', 'Behaviour']}
+  rows={[
+    { option: 'Incandescent lighting', when: '[1.00  0.00  0.00]', cost: 'Pure resistance — P falls as V²' },
+    { option: 'Fluorescent / LED', when: '[0.30  0.40  0.30]', cost: 'Mixed; electronic ballast draws near-constant power' },
+    { option: 'Resistive heating', when: '[1.00  0.00  0.00]', cost: 'Resistive, but thermostats make it constant-power over hours' },
+    { option: 'Induction motor', when: '[0.10  0.20  0.70]', cost: 'Mostly constant power — draws more current as V falls' },
+    { option: 'Mixed residential', when: '[0.40  0.30  0.30]', cost: 'A reasonable default when you have no data' },
+    { option: 'Constant power', when: '[0.00  0.00  1.00]', cost: 'The pessimistic default in most case files', recommended: true },
+  ]}
+/>
+
+## Why constant power is the hardest case
+
+<Callout type="engineering">
+  It's a **positive feedback loop**.
+
+  Voltage drops → a constant-power load draws more current to hold its power → more
+  current means more voltage drop → repeat.
+
+  With a constant-**impedance** load the feedback is negative: voltage drops, current
+  drops, the drop is limited, everything settles.
+
+  This is why:
+
+  - A load flow that will not converge often converges immediately with ZIP loads.
+  - The voltage-collapse point is *closer* under constant-power modelling.
+  - Modelling everything as constant power is **conservative for planning** and
+    **wrong for realism**.
+
+  It's also the mechanism behind real voltage collapse events: motor loads, which are
+  close to constant power, keep drawing current as voltage falls and drive it lower.
+</Callout>
+
+## The exponential model
+
+A one-parameter alternative, common in stability studies:
+
+$$
+P = P_0 \left(\frac{V}{V_0}\right)^{\alpha}, \qquad Q = Q_0 \left(\frac{V}{V_0}\right)^{\beta}
+$$
+
+```matlab
+function S = exponential_load(S0, V, V0, alpha, beta)
+    v = abs(V)/V0;
+    S = real(S0).*v.^alpha + 1i*imag(S0).*v.^beta;
+end
+```
+
+$\alpha = 0$ is constant power, $\alpha = 1$ constant current, $\alpha = 2$ constant
+impedance. Typical measured values are $\alpha \approx 0.7{-}1.5$ for residential
+feeders and $\beta \approx 2{-}4$ — reactive demand is much more voltage-sensitive
+than real demand, which is worth remembering.
+
+## Putting it into the sweep
+
+The change to the solver is one line — but it changes the physics.
+
+<CodeFile name="bfs_with_zip.m">
+```matlab
+% In the backward sweep, replace the constant-power current calculation:
+
+%   I_bus = conj(S_load ./ V);                       % constant power
+
+% with a voltage-dependent one:
+    S_now = zip_load(S_load, V, 1.0, zip_p, zip_q);
+    I_bus = conj(S_now ./ V);
+```
+</CodeFile>
+
+Because the load is recomputed from the present voltage each iteration, the solver
+naturally converges to the self-consistent operating point.
+
+<Callout type="tip" title="ZIP loads often fix a non-converging feeder">
+  If a heavily loaded feeder refuses to converge under constant power, try
+  `[0.4 0.3 0.3]`. If it converges immediately, the problem was never numerical — the
+  constant-power model was demanding more current than the feeder can physically
+  deliver, and the solver was correctly telling you no solution exists.
+
+  Which model you use is then an engineering judgement, and one you must state.
+</Callout>
+
+## Estimating coefficients from measurements
+
+**EE6L017** asks for load parameter estimation from real data. It's a least-squares fit
+— the linear-systems lesson applied.
+
+<CodeFile name="fit_zip.m">
+```matlab
+function [zip_p, r2] = fit_zip(V_meas, P_meas, V0, P0)
+%FIT_ZIP Least-squares ZIP coefficients from measured voltage and power.
+%
+%   Fits P/P0 = Z*v^2 + I*v + P with the constraint Z + I + P = 1.
+
+    arguments
+        V_meas (:,1) double
+        P_meas (:,1) double
+        V0     (1,1) double = 1.0
+        P0     (1,1) double = NaN
+    end
+
+    if isnan(P0), P0 = mean(P_meas); end
+
+    v = V_meas / V0;
+    y = P_meas / P0;
+
+    % Substitute P = 1 - Z - I to enforce the constraint, leaving two unknowns
+    %   y = Z*v^2 + I*v + (1 - Z - I)
+    %   y - 1 = Z*(v^2 - 1) + I*(v - 1)
+    A = [v.^2 - 1, v - 1];
+    b = y - 1;
+
+    coeff = A \ b;                       % least squares
+    Z = coeff(1);  I = coeff(2);  P = 1 - Z - I;
+
+    zip_p = [Z I P];
+
+    fitted = Z*v.^2 + I*v + P;
+    r2 = 1 - sum((y - fitted).^2) / sum((y - mean(y)).^2);
+
+    if any(zip_p < -0.2) || any(zip_p > 1.2)
+        warning('Coefficients outside [0,1]: %s — fit may be unphysical', ...
+                mat2str(round(zip_p,3)));
+    end
+end
+```
+</CodeFile>
+
+Substituting the constraint before fitting is neater than fitting three coefficients
+and hoping they sum to one. It also means you fit two parameters instead of three,
+which is better conditioned on noisy data.
+
+<Callout type="warning" title="You need voltage variation to fit anything">
+  If the measured voltage barely moves, the three basis functions $v^2$, $v$ and $1$
+  are nearly identical over that range, the fit is ill-conditioned, and the
+  coefficients are meaningless even with an excellent R².
+
+  Check `cond(A)`. If it is large, you don't have enough voltage excursion to
+  distinguish the components — and the honest report is "cannot determine", not a
+  spurious triple.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Coefficients that do not sum to 1">
+  At $V = V_0$ the model must return exactly $P_0$. If the coefficients do not sum to
+  one, your nominal load is silently wrong.
+</Callout>
+
+<Callout type="warning" title="Using the same coefficients for P and Q">
+  Reactive demand is far more voltage-sensitive. Using one set for both understates the
+  reactive swing considerably.
+</Callout>
+
+<Callout type="warning" title="Reporting results without stating the model">
+  A hosting-capacity or voltage-drop result computed under constant power differs
+  materially from one under ZIP. The model is part of the result.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="How much does the load fall?">
+  A 100 kW load sits at 0.92 pu. How much does it actually draw under each model?
+
+  <Solution>
+    With $v = 0.92$:
+
+    - **Constant power** `[0 0 1]` → 100 kW. Unchanged by definition.
+    - **Constant current** `[0 1 0]` → $100 \times 0.92$ = **92 kW**
+    - **Constant impedance** `[1 0 0]` → $100 \times 0.92^2$ = **84.6 kW**
+    - **Mixed residential** `[0.4 0.3 0.3]` → $100(0.4 \times 0.846 + 0.3 \times 0.92 + 0.3)$
+      = **91.4 kW**
+
+    A **15% spread** between the extremes, at a voltage sag well within normal operating
+    limits. On a feeder near its limit that difference decides whether your study
+    reports a violation.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Does the model change the answer?">
+  Solve the same feeder under constant power and under a mixed ZIP model, and compare
+  the minimum voltage and the losses.
+
+  <Solution>
+    ```matlab
+    models = {[0 0 1], [0.4 0.3 0.3], [1 0 0]};
+    names  = ["constant P", "mixed ZIP", "constant Z"];
+
+    for k = 1:3
+        [V, info] = bfs_load_flow_zip(tree, branch, S_load, 1.0, ...
+                                      zip_p=models{k}, zip_q=models{k});
+        fprintf('%-12s  Vmin %.4f pu at bus %2d,  losses %.5f pu,  %2d iters\n', ...
+                names(k), info.V_min, info.worst_bus, info.losses, info.iterations);
+    end
+    ```
+
+    Expect constant power to give the **lowest** minimum voltage and the **highest**
+    losses, constant impedance the opposite, and mixed ZIP in between. Constant power
+    will also take the most iterations, and on a heavily loaded feeder may be the only
+    one that fails to converge.
+
+    The ordering is not a coincidence: constant power keeps demanding current as voltage
+    falls, so it stresses the feeder hardest by construction.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why are constant-power loads the hardest case for a load flow solver?',
+      options: [
+        'They require more memory',
+        'As voltage falls they draw more current, which lowers voltage further — positive feedback',
+        'They make the Y-bus asymmetric',
+        'They cannot be represented in per unit',
+      ],
+      answer: 1,
+      explain:
+        'Constant impedance gives negative feedback and settles. Constant power gives positive feedback, which is why it converges hardest and why it is the mechanism behind real voltage collapse.',
+    },
+    {
+      q: 'What must ZIP coefficients satisfy?',
+      options: [
+        'Each must be between 0 and 1',
+        'They must sum to 1, so the model returns P0 at nominal voltage',
+        'Z must be the largest',
+        'They must be integers',
+      ],
+      answer: 1,
+      explain:
+        'At V = V0 the bracket must evaluate to 1. If the coefficients do not sum to one, the nominal load is silently wrong at every voltage.',
+    },
+    {
+      q: 'Your measured data has almost no voltage variation. What does that mean for fitting ZIP coefficients?',
+      options: [
+        'The fit will be very accurate',
+        'The basis functions become nearly indistinguishable — the fit is ill-conditioned and the coefficients meaningless',
+        'You should use the exponential model instead',
+        'It only affects the Q coefficients',
+      ],
+      answer: 1,
+      explain:
+        'Over a narrow voltage range v², v and 1 are almost the same function. R² can still look excellent while the individual coefficients are arbitrary. Check cond() and report "cannot determine" if it is large.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  "Constant power" is a **modelling choice, not a fact** — and it is the pessimistic
+  one, because it draws more current exactly when voltage is falling. Which model you
+  used is part of your result, not a detail of how you computed it.
+</KeyIdea>
+
+## Further reading
+
+- Kersting, Chapter 9
+- IEEE Task Force on Load Representation for Dynamic Performance — the standard
+  coefficient tables
+- Next: **probabilistic load flow** — when the load itself is a distribution

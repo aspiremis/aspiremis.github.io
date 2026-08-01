@@ -1,0 +1,384 @@
+---
+title: Distance Protection
+track: matlab
+module: distribution-protection
+order: 50
+description: Turning a measured impedance into a trip decision — zone reach, mho and quadrilateral characteristics, and the two things that make a relay under- or over-reach.
+objectives:
+  - Compute apparent impedance from relay voltage and current phasors
+  - Implement mho and quadrilateral characteristics and test a point against them
+  - Explain infeed and fault resistance as the two classic sources of reach error
+prerequisites: [phasor-estimation, fault-analysis]
+estimatedMinutes: 40
+difficulty: advanced
+tags: ['matlab', 'protection', 'distance-relay', 'zones']
+---
+
+A distance relay measures voltage and current at one end of a line, divides one by the
+other, and decides from the resulting impedance whether the fault is close enough to be
+its responsibility.
+
+That's **Lab Experiment 6**, and it's the foundation for **EE6L004** next semester.
+
+## Impedance as a proxy for distance
+
+For a fault at distance $m$ (per unit of line length) along a line of impedance $Z_L$,
+the relay at the sending end sees:
+
+$$
+Z_{seen} = \frac{V_{relay}}{I_{relay}} = m Z_L
+$$
+
+<Analogy>
+  It's an **echo sounder**. You don't measure distance directly — you measure something
+  proportional to it and convert.
+
+  And like an echo sounder, it's fooled by anything that changes the relationship:
+  another vessel's wake, a thermocline. For a distance relay those are **fault
+  resistance** and **infeed**, and both are covered below.
+</Analogy>
+
+## Zones
+
+A distance relay has graded zones, each with a reach and a time delay:
+
+<Compare
+  headings={['Zone', 'Typical reach', 'Delay']}
+  rows={[
+    { option: 'Zone 1', when: '80% of the protected line', cost: 'Instantaneous', recommended: true },
+    { option: 'Zone 2', when: '120% — the whole line plus into the next', cost: '~0.3-0.4 s' },
+    { option: 'Zone 3', when: '~250% — remote backup', cost: '~0.8-1.0 s' },
+    { option: 'Zone 4 (reverse)', when: 'Behind the relay', cost: 'Directional / busbar backup' },
+  ]}
+/>
+
+<Callout type="engineering">
+  **Zone 1 stops at 80%, deliberately.** It never covers the whole line.
+
+  The reason is that the relay's reach is not exact — CT and VT errors, line parameter
+  uncertainty and the phasor estimation error from the previous lesson all blur it. If
+  Zone 1 were set to 100% it could reach past the remote busbar and trip
+  instantaneously for a fault on the *next* line, which belongs to a different relay.
+
+  That 20% margin buys the certainty that an instantaneous trip is always correct. The
+  last 20% of the line is cleared by Zone 2 with a time delay, or faster by a
+  communication-assisted scheme.
+</Callout>
+
+## Computing the apparent impedance
+
+The loop selection matters — a phase-to-ground fault and a phase-to-phase fault need
+different voltage and current combinations to give the correct $mZ_L$.
+
+<CodeFile name="apparent_impedance.m">
+```matlab
+function Z = apparent_impedance(V_abc, I_abc, loop, k0)
+%APPARENT_IMPEDANCE Impedance seen by a distance relay.
+%
+%   LOOP is 'AG','BG','CG' for phase-to-ground or 'AB','BC','CA' for
+%   phase-to-phase. K0 is the residual (zero-sequence) compensation factor
+%   (Z0 - Z1)/(3*Z1), required for ground loops.
+
+    arguments
+        V_abc (3,1) double
+        I_abc (3,1) double
+        loop  (1,2) char
+        k0    (1,1) double = 0
+    end
+
+    idx = containers.Map({'A','B','C'}, {1,2,3});
+
+    if loop(2) == 'G'
+        p  = idx(loop(1));
+        I_res = sum(I_abc);                          % 3*I0
+        Z = V_abc(p) / (I_abc(p) + k0*I_res);        % residual compensation
+    else
+        p = idx(loop(1));  q = idx(loop(2));
+        Z = (V_abc(p) - V_abc(q)) / (I_abc(p) - I_abc(q));
+    end
+end
+```
+</CodeFile>
+
+<Callout type="warning" title="Residual compensation is not optional">
+  For a phase-to-ground fault, the return path is through earth, whose impedance differs
+  from the phase conductor. Without the $k_0$ term the relay measures an impedance too
+  large and **under-reaches** — failing to trip for a fault that is inside its zone.
+
+  $$k_0 = \frac{Z_0 - Z_1}{3 Z_1}$$
+
+  With $Z_0 \approx 3Z_1$ (typical), $k_0 \approx 0.67$ — a large correction, not a
+  refinement. Omitting it is a classic exam mistake and a classic commissioning error.
+</Callout>
+
+## Characteristics
+
+The relay must decide whether a point in the impedance plane is inside a zone.
+
+**Mho** — a circle through the origin, inherently directional:
+
+<CodeFile name="mho_characteristic.m">
+```matlab
+function inside = mho_characteristic(Z, Z_reach, angle_deg)
+%MHO_CHARACTERISTIC Is Z inside a mho circle of the given reach?
+%
+%   The circle has diameter Z_REACH along the maximum-torque angle and
+%   passes through the origin.
+
+    arguments
+        Z         (1,1) double
+        Z_reach   (1,1) double
+        angle_deg (1,1) double = NaN     % defaults to the line angle
+    end
+
+    if isnan(angle_deg), angle_deg = rad2deg(angle(Z_reach)); end
+
+    diameter = abs(Z_reach) * exp(1i*deg2rad(angle_deg));
+    centre   = diameter/2;
+    radius   = abs(diameter)/2;
+
+    inside = abs(Z - centre) <= radius;
+end
+```
+</CodeFile>
+
+**Quadrilateral** — a polygon, with independent resistive and reactive reach:
+
+<CodeFile name="quad_characteristic.m">
+```matlab
+function inside = quad_characteristic(Z, X_reach, R_reach, line_angle_deg, tilt_deg)
+%QUAD_CHARACTERISTIC Quadrilateral distance characteristic.
+%
+%   X_REACH sets the reactive reach, R_REACH the resistive coverage.
+%   TILT_DEG droops the top line slightly to avoid over-reach under load.
+
+    arguments
+        Z              (1,1) double
+        X_reach        (1,1) double
+        R_reach        (1,1) double
+        line_angle_deg (1,1) double = 75
+        tilt_deg       (1,1) double = 3
+    end
+
+    R = real(Z);  X = imag(Z);
+
+    within_R = abs(R) <= R_reach;
+    within_X = X <= X_reach - R*tand(tilt_deg) && X >= -0.1*X_reach;
+
+    % Directional: the fault must be forward of the relay
+    forward = X > 0 || (R > 0 && X > -0.05*X_reach);
+
+    inside = within_R && within_X && forward;
+end
+```
+</CodeFile>
+
+The quadrilateral's advantage is **independent resistive reach** — it can be widened to
+cover arc resistance without extending the reactive reach and risking over-reach. That
+matters most on distribution and short lines, where fault resistance is a large fraction
+of line impedance.
+
+## The two classic reach errors
+
+**Fault resistance** adds a real component to the measured impedance, pushing the point
+to the right in the R–X plane and potentially outside a mho circle. The relay
+under-reaches — it sees the fault as further away than it is.
+
+**Infeed** is the subtler one:
+
+<Callout type="engineering">
+  If another source feeds the fault from an intermediate bus, the relay sees only *part*
+  of the total fault current, but the *full* voltage drop along the line beyond that
+  bus.
+
+  $$Z_{seen} = Z_1 + \left(1 + \frac{I_{infeed}}{I_{relay}}\right) Z_2$$
+
+  With equal infeed, the relay sees roughly **twice** the impedance of the section
+  beyond the tap — so a fault genuinely inside Zone 2 can appear beyond it, and the
+  relay under-reaches.
+
+  Infeed is why Zone 2 is set to 120% rather than 105%, and why reach settings must be
+  checked against the *contingency* system configuration, not just the intact one. A
+  line outage changes the infeed and therefore the reach.
+</Callout>
+
+## Putting it together
+
+<CodeFile name="distance_relay.m">
+```matlab
+function trip = distance_relay(V_abc, I_abc, settings)
+%DISTANCE_RELAY Evaluate all zones and loops, return the fastest valid trip.
+
+    arguments
+        V_abc    (3,1) double
+        I_abc    (3,1) double
+        settings struct
+    end
+
+    loops = {'AG','BG','CG','AB','BC','CA'};
+    trip = struct('zone', NaN, 'loop', "", 'delay', inf, 'Z', NaN);
+
+    for z = 1:numel(settings.zones)
+        zone = settings.zones(z);
+        for k = 1:numel(loops)
+            Z = apparent_impedance(V_abc, I_abc, loops{k}, settings.k0);
+
+            if mho_characteristic(Z, zone.reach * settings.Z_line)
+                if zone.delay < trip.delay
+                    trip = struct('zone', z, 'loop', string(loops{k}), ...
+                                  'delay', zone.delay, 'Z', Z);
+                end
+            end
+        end
+    end
+
+    if isnan(trip.zone)
+        fprintf('No trip — no zone picked up\n');
+    else
+        fprintf('TRIP zone %d (%s loop) after %.2f s, Z = %.4f%+.4fi pu\n', ...
+                trip.zone, trip.loop, trip.delay, real(trip.Z), imag(trip.Z));
+    end
+end
+```
+</CodeFile>
+
+## Common mistakes
+
+<Callout type="warning" title="Omitting residual compensation">
+  Ground loops need $k_0$. Without it the relay under-reaches substantially.
+</Callout>
+
+<Callout type="warning" title="Zone 1 set to 100%">
+  Reach is never exact. Zone 1 must stop short — 80% is the convention — so an
+  instantaneous trip is always within the protected line.
+</Callout>
+
+<Callout type="warning" title="Checking settings only on the intact network">
+  Infeed changes with system configuration. A reach that is correct with all lines in
+  service can under-reach badly with one out.
+</Callout>
+
+<Callout type="warning" title="Ignoring load encroachment">
+  Heavy load looks like a low impedance at a small angle. A large Zone 3 can pick up on
+  load alone — a mechanism implicated in several major blackouts. Quadrilateral
+  characteristics and load-blinders exist for this.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Where does the relay think the fault is?">
+  A 100 km line has $Z_1 = 0.05 + j0.40$ Ω/km. A relay measures
+  $Z_{seen} = 2.1 + j15.9$ Ω. Where is the fault, and which zone picks up?
+
+  <Solution>
+    Total line impedance: $Z_L = 100(0.05 + j0.40) = 5 + j40$ Ω, magnitude 40.31 Ω.
+
+    Measured magnitude: $|2.1 + j15.9| = 16.04$ Ω.
+
+    $$m = 16.04 / 40.31 = 0.398$$
+
+    So about **40% along the line**, roughly 40 km — comfortably inside Zone 1 at 80%,
+    so **instantaneous trip**.
+
+    Sanity check the angle: the line angle is $\arctan(40/5) = 82.9°$; the measured angle
+    is $\arctan(15.9/2.1) = 82.5°$. Very close, so this is a solid fault with little
+    arc resistance. A significantly *smaller* measured angle would indicate fault
+    resistance, and would need checking against the resistive reach.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Plot the zones and a fault trajectory">
+  Draw the mho circles for three zones and mark where several faults along the line
+  appear.
+
+  <Solution>
+    ```matlab
+    Z_line = 5 + 40i;                         % total line impedance, ohms
+    reaches = [0.8 1.2 2.5];
+    labels  = ["Zone 1","Zone 2","Zone 3"];
+
+    figure; hold on;
+    th = linspace(0, 2*pi, 400);
+    for k = 1:3
+        d = reaches(k)*Z_line;  c = d/2;  r = abs(d)/2;
+        plot(real(c)+r*cos(th), imag(c)+r*sin(th), 'LineWidth', 1.3);
+    end
+
+    % Faults at 20%, 50%, 90% of the line, with 2 ohm arc resistance
+    for m = [0.2 0.5 0.9]
+        Z = m*Z_line + 2;
+        plot(real(Z), imag(Z), 'ko', 'MarkerFaceColor','k', 'MarkerSize', 6);
+        text(real(Z)+0.8, imag(Z), sprintf('%.0f%%', m*100), 'FontSize', 9);
+    end
+
+    plot(real(Z_line), imag(Z_line), 'ks', 'MarkerSize', 9);
+    text(real(Z_line)+0.8, imag(Z_line), 'remote bus', 'FontSize', 9);
+
+    hold off; axis equal; grid on;
+    xlabel('R (\Omega)'); ylabel('X (\Omega)');
+    legend(labels, 'Location','northwest');
+    ```
+
+    The 2 Ω arc resistance shifts each point right. Watch whether the 90% fault — which
+    should be in Zone 2 — stays inside its circle. With enough fault resistance it can
+    fall outside, and the relay under-reaches.
+
+    This picture is the whole subject in one figure, and it is worth building yourself
+    rather than reading.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why is Zone 1 set to 80% of the line rather than 100%?',
+      options: [
+        'To save on relay cost',
+        'Reach is not exact — CT/VT errors and parameter uncertainty could otherwise cause instantaneous tripping for faults on the next line',
+        'Because 20% is covered by fuses',
+        'To reduce the fault current seen',
+      ],
+      answer: 1,
+      explain:
+        'The margin guarantees an instantaneous trip is always within the protected line. The last 20% is cleared by Zone 2 with a delay, or faster by a communication-assisted scheme.',
+    },
+    {
+      q: 'What does the k0 residual compensation factor correct for?',
+      options: [
+        'CT saturation',
+        'The earth return path impedance differing from the phase conductor on ground faults',
+        'Frequency deviation',
+        'Load current',
+      ],
+      answer: 1,
+      explain:
+        'k0 = (Z0 - Z1)/(3Z1). With Z0 ≈ 3Z1 it is around 0.67 — a large correction. Omitting it makes the relay under-reach on every ground fault.',
+    },
+    {
+      q: 'How does infeed from an intermediate bus affect the relay?',
+      options: [
+        'It causes over-reach',
+        'It causes under-reach — the relay sees more impedance than the actual distance',
+        'It has no effect',
+        'It only affects Zone 1',
+      ],
+      answer: 1,
+      explain:
+        'The relay carries only part of the fault current but sees the full voltage drop beyond the tap, so the apparent impedance is inflated. It is why Zone 2 is set to 120% and why settings must be checked under contingency configurations.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A distance relay converts **impedance into distance**, and everything hard about it is
+  the ways that conversion misleads — **fault resistance** pushing the point sideways
+  and **infeed** inflating it. Zone 1's 80% reach exists precisely because the
+  measurement is never exact.
+</KeyIdea>
+
+## Further reading
+
+- Phadke & Thorp, *Computer Relaying for Power Systems*
+- Ziegler, *Numerical Distance Protection* — the practical settings reference
+- Next: **state estimation** — turning many noisy measurements into one consistent
+  system state

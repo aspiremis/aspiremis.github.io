@@ -1,0 +1,322 @@
+---
+title: Phasor Estimation
+track: matlab
+module: distribution-protection
+order: 49
+description: The full- and half-cycle Fourier algorithms that turn sampled waveforms into phasors inside every numerical relay — and why the fast one is more fragile.
+objectives:
+  - Implement full-cycle and half-cycle DFT phasor estimation
+  - Explain why the half-cycle algorithm is faster and less robust
+  - Handle DC offset, the dominant error source in fault current measurement
+prerequisites: [signal-processing]
+estimatedMinutes: 35
+difficulty: advanced
+tags: ['matlab', 'phasor-estimation', 'protection', 'dft', 'relaying']
+---
+
+A numerical relay samples voltage and current a few thousand times a second and has to
+decide, within a cycle or two, whether to trip. It cannot do that from raw samples — it
+needs magnitude and angle at the fundamental, updated continuously.
+
+That conversion is **phasor estimation**, it's **Lab Experiment 5**, and it is the
+algorithm sitting inside every protection device you'll ever specify.
+
+## The full-cycle DFT
+
+Take one cycle of samples and correlate against a sine and a cosine at the fundamental:
+
+$$
+X = \frac{2}{N}\sum_{n=0}^{N-1} x[n]\, e^{-j 2\pi n / N}
+$$
+
+The magnitude of $X$ is the peak amplitude; its angle is the phase relative to the
+window start.
+
+<CodeFile name="full_cycle_dft.m">
+```matlab
+function X = full_cycle_dft(x, N)
+%FULL_CYCLE_DFT Fundamental phasor from one cycle of samples.
+%
+%   X is the complex phasor with PEAK magnitude. Divide by sqrt(2) for RMS.
+%   N is samples per fundamental cycle.
+
+    arguments
+        x (:,1) double
+        N (1,1) double {mustBePositive}
+    end
+    assert(numel(x) >= N, 'Need at least one full cycle (%d samples)', N);
+
+    n  = (0:N-1)';
+    w  = exp(-1i*2*pi*n/N);                 % the fundamental basis
+
+    X = (2/N) * sum(x(end-N+1:end) .* w);   % most recent full cycle
+end
+```
+</CodeFile>
+
+Running it as a **sliding window** is what a relay actually does — one new estimate per
+sample:
+
+<CodeFile name="sliding_phasor.m">
+```matlab
+function [mag, ang, t_out] = sliding_phasor(x, fs, f0, half_cycle)
+%SLIDING_PHASOR Continuous phasor estimate, one per sample.
+
+    arguments
+        x          (:,1) double
+        fs         (1,1) double
+        f0         (1,1) double
+        half_cycle (1,1) logical = false
+    end
+
+    N = round(fs/f0);                       % samples per cycle
+    W = N;  if half_cycle, W = N/2; end
+    W = round(W);
+
+    n = (0:W-1)';
+    basis = exp(-1i*2*pi*n/N);              % NOTE: /N even for a half window
+
+    scale = 2/W;
+    mag = nan(numel(x),1);  ang = nan(numel(x),1);
+
+    for k = W:numel(x)
+        X = scale * sum(x(k-W+1:k) .* basis);
+        mag(k) = abs(X);
+        ang(k) = angle(X);
+    end
+
+    t_out = (0:numel(x)-1)'/fs;
+end
+```
+</CodeFile>
+
+<Callout type="warning" title="The half-cycle basis still uses /N, not /W">
+  A half-cycle window samples the *same* fundamental — you are correlating against half
+  a period of it, not against a full period of a doubled frequency.
+
+  Using `exp(-1i*2*pi*n/W)` would estimate the second harmonic. This is the single most
+  common bug in a hand-written half-cycle algorithm, and the symptom is a phasor that
+  looks plausible and is wrong.
+</Callout>
+
+## Full versus half cycle
+
+<Compare
+  headings={['Property', 'Full cycle', 'Half cycle']}
+  rows={[
+    { option: 'Window', when: '20 ms at 50 Hz', cost: '10 ms — twice as fast to respond' },
+    { option: 'Even harmonics', when: 'Rejected completely', cost: 'NOT rejected — they alias into the estimate' },
+    { option: 'DC offset', when: 'Partially rejected', cost: 'Poorly rejected — large transient error' },
+    { option: 'Odd harmonics', when: 'Rejected', cost: 'Rejected' },
+    { option: 'Typical use', when: 'Most protection functions', cost: 'High-speed distance protection Zone 1', recommended: true },
+  ]}
+/>
+
+The trade is speed against immunity. Halving the window halves the response time and
+loses the rejection of everything with even symmetry — which unfortunately includes the
+DC offset that dominates a real fault current.
+
+## DC offset — the real problem
+
+A fault current is not a clean sinusoid. Because the network is inductive and the fault
+occurs at an arbitrary point on the wave, there is an exponentially decaying DC
+component:
+
+$$
+i(t) = I_m\sin(\omega t + \phi) + I_{dc}\,e^{-t/\tau}, \qquad \tau = \frac{L}{R} = \frac{X}{\omega R}
+$$
+
+<CodeFile name="dc_offset_demo.m">
+```matlab
+fs = 4000; f0 = 50;
+t  = (0:1/fs:0.12)';
+N  = round(fs/f0);
+
+X_over_R = 10;                              % typical for a transmission fault
+tau = X_over_R/(2*pi*f0);
+
+fault_on = t >= 0.02;
+i = zeros(size(t));
+i(fault_on) = 10*sin(2*pi*f0*t(fault_on)) ...
+            + 10*exp(-(t(fault_on)-0.02)/tau);    % worst-case full offset
+
+[m_full, ~] = sliding_phasor(i, fs, f0, false);
+[m_half, ~] = sliding_phasor(i, fs, f0, true);
+
+plot(t*1000, m_full/sqrt(2), 'LineWidth', 1.4); hold on;
+plot(t*1000, m_half/sqrt(2), '--', 'LineWidth', 1.4);
+yline(10/sqrt(2), ':', 'true RMS', 'Color', [0.5 0.5 0.5]);
+hold off;
+xlabel('Time (ms)'); ylabel('Estimated RMS current (A)');
+legend({'Full cycle','Half cycle'}, 'Location','southeast');
+grid on;
+```
+</CodeFile>
+
+<Callout type="engineering">
+  Run it and both estimates **overshoot** badly for the first cycle or two, the
+  half-cycle worse. A relay reading that overshoot as fault current can overreach — trip
+  for a fault outside its zone.
+
+  This is why real relays add a **mimic filter**: a digital filter matched to the
+  network's $L/R$ time constant that removes the DC component before phasor estimation.
+
+  ```matlab
+  % Mimic filter: differentiator matched to the network time constant
+  tau_c = X_over_R/(2*pi*f0);
+  K = 1/(1 + fs*tau_c);
+  b = K * [1 + fs*tau_c, -fs*tau_c];
+  i_filtered = filter(b, 1, i);
+  ```
+
+  It's the reason a protection engineer needs the $X/R$ ratio of the network, and why
+  your fault-analysis lesson flagged that quantity as worth reporting.
+</Callout>
+
+## Frequency deviation
+
+The DFT assumes exactly $N$ samples per cycle. If system frequency drifts to 49.5 Hz
+while the relay samples at a rate fixed to 50 Hz, the window no longer spans a whole
+cycle and the estimate develops a slow oscillation — the same **leakage** from the
+signal processing lesson, showing up in a protection context.
+
+Real relays track frequency and adjust the sampling or the window. For coursework,
+knowing the error exists and roughly scales with the deviation is enough.
+
+## Common mistakes
+
+<Callout type="warning" title="Wrong basis for the half-cycle window">
+  `exp(-1i*2*pi*n/N)`, not `/W`. Using the window length estimates the wrong frequency.
+</Callout>
+
+<Callout type="warning" title="Forgetting peak versus RMS">
+  The `2/N` scaling gives **peak** amplitude. Divide by √2 for RMS. Protection settings
+  are in RMS, so this factor matters.
+</Callout>
+
+<Callout type="warning" title="Ignoring DC offset in fault studies">
+  It causes the largest transient error in exactly the situation where the estimate has
+  to be right. Use a mimic filter, or at least know your estimate overshoots.
+</Callout>
+
+<Callout type="warning" title="Reporting an estimate before the window fills">
+  The first N samples have an incomplete window. Return NaN rather than a partial
+  answer — the code above does.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Response time">
+  At 50 Hz with 64 samples per cycle, how long does each algorithm take to produce its
+  first valid estimate, and how many samples?
+
+  <Solution>
+    - **Full cycle:** 64 samples = **20 ms**
+    - **Half cycle:** 32 samples = **10 ms**
+
+    For distance protection Zone 1, which aims to trip in one to one-and-a-half cycles
+    total, saving 10 ms is a meaningful fraction of the budget. That is the entire
+    argument for the half-cycle algorithm.
+
+    The cost is losing even-harmonic and DC rejection — so it is used where speed is
+    critical *and* combined with a mimic filter to remove the DC that would otherwise
+    corrupt it.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Measure the DC overshoot">
+  Quantify the peak error each algorithm makes on a fully offset fault current, and show
+  a mimic filter fixes it.
+
+  <Solution>
+    ```matlab
+    fs = 4000; f0 = 50; N = round(fs/f0);
+    t = (0:1/fs:0.15)';
+    tau = 10/(2*pi*f0);
+
+    on = t >= 0.02;
+    i = zeros(size(t));
+    i(on) = 10*sin(2*pi*f0*(t(on)-0.02)) + 10*exp(-(t(on)-0.02)/tau);
+
+    true_rms = 10/sqrt(2);
+    settled  = t > 0.10;
+
+    for hc = [false true]
+        m = sliding_phasor(i, fs, f0, hc) / sqrt(2);
+        transient = m(t > 0.02 & t < 0.08);
+        fprintf('%-11s peak error %+.1f%%, settled error %+.2f%%\n', ...
+                string(hc)+" cycle", ...
+                100*(max(transient)-true_rms)/true_rms, ...
+                100*(mean(m(settled))-true_rms)/true_rms);
+    end
+
+    % With a mimic filter
+    K = 1/(1 + fs*tau);
+    i_mimic = filter(K*[1+fs*tau, -fs*tau], 1, i);
+    m = sliding_phasor(i_mimic, fs, f0, false) / sqrt(2);
+    fprintf('mimic+full  peak error %+.1f%%\n', ...
+            100*(max(m(t > 0.02 & t < 0.08))-true_rms)/true_rms);
+    ```
+
+    Expect a large transient overshoot without the filter — the half-cycle noticeably
+    worse — and both settling to near zero error after the DC decays. The mimic filter
+    should cut the transient overshoot substantially.
+
+    Note the *settled* error is small either way. The problem is entirely transient,
+    which is exactly the window in which a relay must decide.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why does a half-cycle DFT still use exp(-j2πn/N) rather than /W?',
+      options: [
+        'A convention with no real reason',
+        'You are correlating against half a period of the fundamental, not a full period of a doubled frequency',
+        'To make the scaling work out',
+        'It does use /W',
+      ],
+      answer: 1,
+      explain:
+        'The frequency of interest is unchanged; only the window shortened. Using /W would estimate the second harmonic — a bug that produces a plausible-looking wrong phasor.',
+    },
+    {
+      q: 'What is the main weakness of the half-cycle algorithm?',
+      options: [
+        'It is slower',
+        'It does not reject even harmonics or DC offset, so fault current estimates overshoot',
+        'It cannot handle three-phase signals',
+        'It requires a higher sampling rate',
+      ],
+      answer: 1,
+      explain:
+        'Halving the window buys speed and loses the rejection of everything with even symmetry — including the decaying DC offset that dominates a real fault current.',
+    },
+    {
+      q: 'What does a mimic filter do?',
+      options: [
+        'Simulates a relay for testing',
+        'Removes the decaying DC offset before phasor estimation, using the network X/R',
+        'Duplicates the phasor estimate for redundancy',
+        'Compensates for CT saturation',
+      ],
+      answer: 1,
+      explain:
+        'It is a digital filter matched to the network L/R time constant, applied ahead of the DFT. It is why a protection engineer needs the X/R ratio of the system.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Phasor estimation is a **DFT over a sliding window**. Full cycle is robust, half cycle
+  is twice as fast and loses DC and even-harmonic rejection — and on a real fault
+  current, **DC offset is the error that matters**, which is what the mimic filter is
+  for.
+</KeyIdea>
+
+## Further reading
+
+- Phadke & Thorp, *Computer Relaying for Power Systems* — the standard text, and the
+  origin of most of these algorithms
+- Next: **distance protection** — what the relay does with the phasor once it has it

@@ -1,0 +1,357 @@
+---
+title: Probabilistic Load Flow
+track: matlab
+module: distribution-protection
+order: 48
+description: When load and generation are distributions rather than numbers — Monte Carlo, sampling correctly, and reporting a result that carries its own uncertainty.
+objectives:
+  - Run a Monte Carlo load flow with correlated load and generation samples
+  - Judge how many samples are enough, from the convergence of the estimate
+  - Report a distribution rather than a single deterministic answer
+prerequisites: [load-models]
+estimatedMinutes: 35
+difficulty: advanced
+tags: ['matlab', 'monte-carlo', 'probabilistic', 'distribution', 'hosting-capacity']
+---
+
+A deterministic load flow answers "what happens at *this* operating point?" Planning
+questions are almost never that. They are "how often is the voltage out of limits?" or
+"what is the chance this feeder cannot take the new connection?"
+
+**EE6L017** covers this, and it is also the method behind the hosting-capacity work
+you're scoping.
+
+## The idea
+
+<Analogy>
+  A deterministic study is **one photograph**. A probabilistic study is **the whole
+  album** — you run the same analysis hundreds of times with inputs drawn from their
+  distributions, and look at the spread of the answers.
+
+  The spread *is* the result. Reporting only the average throws away the thing you ran
+  the study to find.
+</Analogy>
+
+## The loop
+
+<CodeFile name="probabilistic_load_flow.m">
+```matlab
+function results = probabilistic_load_flow(tree, branch, S_mean, opts)
+%PROBABILISTIC_LOAD_FLOW Monte Carlo load flow over sampled load and DG.
+%
+%   S_MEAN is the mean complex load per bus, per unit.
+
+    arguments
+        tree            struct
+        branch          double
+        S_mean    (:,1) double
+        opts.n_samples  (1,1) double  = 2000
+        opts.load_cv    (1,1) double  = 0.15   % coefficient of variation
+        opts.dg_buses   (:,1) double  = []
+        opts.dg_capacity(1,1) double  = 0
+        opts.seed       (1,1) double  = 42
+        opts.vmin       (1,1) double  = 0.95
+        opts.vmax       (1,1) double  = 1.05
+    end
+
+    rng(opts.seed);                       % reproducible, always
+    n = numel(S_mean);
+    N = opts.n_samples;
+
+    V_min   = zeros(N,1);
+    V_max   = zeros(N,1);
+    losses  = zeros(N,1);
+    ok      = false(N,1);
+
+    for k = 1:N
+        % --- sample the load -------------------------------------------------
+        % One system-wide factor plus per-bus scatter: loads on a feeder are
+        % correlated (same weather, same time of day), so sampling every bus
+        % independently would cancel out the diversity that actually matters.
+        common = 1 + opts.load_cv * 0.7 * randn;
+        indiv  = 1 + opts.load_cv * 0.7 * randn(n,1);
+        S_k    = S_mean .* max(common .* indiv, 0.05);
+
+        % --- sample DG output ------------------------------------------------
+        if ~isempty(opts.dg_buses) && opts.dg_capacity > 0
+            % Clear-sky index style: mostly high, with a tail of cloudy samples
+            output = min(max(betarnd(4, 1.5), 0), 1);
+            S_k(opts.dg_buses) = S_k(opts.dg_buses) - opts.dg_capacity * output;
+        end
+
+        % --- solve -----------------------------------------------------------
+        [V, info] = bfs_load_flow(tree, branch, S_k, 1.0);
+
+        if info.converged
+            V_min(k)  = min(abs(V));
+            V_max(k)  = max(abs(V));
+            losses(k) = info.losses;
+            ok(k)     = true;
+        end
+    end
+
+    % Non-convergence is a result, not an error — it usually means the sampled
+    % loading exceeded what the feeder can deliver.
+    results.n_converged = sum(ok);
+    results.V_min   = V_min(ok);
+    results.V_max   = V_max(ok);
+    results.losses  = losses(ok);
+
+    results.p_violation = mean(results.V_min < opts.vmin | results.V_max > opts.vmax);
+    results.V_min_p05   = prctile(results.V_min, 5);
+    results.V_min_mean  = mean(results.V_min);
+    results.losses_mean = mean(results.losses);
+    results.losses_p95  = prctile(results.losses, 95);
+    results.seed        = opts.seed;
+end
+```
+</CodeFile>
+
+<Callout type="engineering">
+  The correlation structure matters more than most people expect.
+
+  Loads on one feeder are **correlated** — same weather, same time of day, same
+  working week. Sampling each bus independently makes them cancel, understating the
+  variance of the total, and your study reports a comfortably narrow spread that isn't
+  real.
+
+  The `common × individual` split above is the simplest honest structure: one shared
+  factor for system-wide conditions, one per-bus factor for local diversity. State
+  which you used — it changes the answer materially.
+</Callout>
+
+## How many samples?
+
+Don't guess. Watch the estimate converge.
+
+<CodeFile name="sample_convergence.m">
+```matlab
+function n_needed = sample_convergence(results_fn, max_n, tol)
+%SAMPLE_CONVERGENCE Find how many Monte Carlo samples the estimate needs.
+%
+%   RESULTS_FN(n) runs the study with n samples and returns the quantity
+%   of interest.
+
+    ns  = round(logspace(2, log10(max_n), 12));
+    est = zeros(size(ns));
+
+    for k = 1:numel(ns)
+        est(k) = results_fn(ns(k));
+    end
+
+    % Converged when successive estimates stop moving by more than tol
+    rel = abs(diff(est)) ./ max(abs(est(2:end)), eps);
+    idx = find(rel < tol, 1);
+    n_needed = ns(min(idx+1, numel(ns)));
+
+    semilogx(ns, est, '-o', 'LineWidth', 1.4);
+    xlabel('Monte Carlo samples'); ylabel('Estimate');
+    yline(est(end), '--', 'Color', [0.6 0.6 0.6]);
+    xline(n_needed, ':', sprintf('n = %d', n_needed));
+    grid on;
+end
+```
+</CodeFile>
+
+The Monte Carlo standard error falls as $1/\sqrt{N}$ — so halving it costs **four
+times** the samples. That is the fundamental economics of the method, and it is why
+2000 samples is common and 200,000 rarely worth it.
+
+For a **tail** quantity — a 95th percentile, or a violation probability of 1% — you
+need far more samples than for a mean, because few samples land in the tail. A rough
+guide: to estimate a probability $p$ to within 10% relative error you need roughly
+$100/p$ samples. For $p = 0.01$ that is **10,000**.
+
+<Callout type="warning" title="Always seed, and always record the seed">
+  ```matlab
+  rng(opts.seed);
+  results.seed = opts.seed;
+  ```
+
+  Without it, every run gives different numbers and you cannot investigate a surprising
+  one. Recording the seed **with the results** is what makes the study reproducible six
+  months later — the discipline from the scripts lesson, applied where it matters most.
+</Callout>
+
+## Reporting
+
+The output of a probabilistic study is a **distribution**, and reporting only its mean
+defeats the purpose.
+
+<CodeFile name="report_probabilistic.m">
+```matlab
+function report_probabilistic(r, vmin)
+    fprintf('Converged: %d samples\n', r.n_converged);
+    fprintf('Violation probability: %.2f%%\n', 100*r.p_violation);
+    fprintf('Minimum voltage — mean %.4f, 5th percentile %.4f pu\n', ...
+            r.V_min_mean, r.V_min_p05);
+    fprintf('Losses — mean %.4f, 95th percentile %.4f pu\n', ...
+            r.losses_mean, r.losses_p95);
+
+    figure;
+    tiledlayout(1,2,'TileSpacing','compact');
+
+    nexttile;
+    histogram(r.V_min, 40, 'FaceColor', [0.00 0.45 0.70], 'EdgeColor','none');
+    xline(vmin, '--', 'Limit', 'Color', [0.7 0.2 0.2], 'LineWidth', 1.2);
+    xline(r.V_min_p05, ':', '5th pct', 'Color', [0.4 0.4 0.4]);
+    xlabel('Minimum feeder voltage (pu)'); ylabel('Samples'); grid on;
+
+    nexttile;
+    [f, x] = ecdf(r.V_min);
+    plot(x, f, 'LineWidth', 1.5);
+    xline(vmin, '--', 'Color', [0.7 0.2 0.2]);
+    xlabel('Minimum voltage (pu)'); ylabel('Cumulative probability'); grid on;
+    title('Exceedance');
+end
+```
+</CodeFile>
+
+The **CDF is the more useful plot**. It answers "what fraction of the time is voltage
+below the limit?" directly, by reading off the height where the curve crosses the limit
+line. A histogram makes the reader estimate that by eye.
+
+## Analytical alternatives
+
+Monte Carlo is not the only method, and for a first-pass screen it can be overkill.
+
+<Compare
+  headings={['Method', 'Use when', 'Cost']}
+  rows={[
+    { option: 'Monte Carlo', when: 'Nonlinear effects and correlations matter; you want the full distribution', cost: 'Thousands of solves', recommended: true },
+    { option: 'Point estimate (2m+1)', when: 'A quick estimate of mean and variance', cost: 'Only 2m+1 solves for m inputs' },
+    { option: 'Cumulant / convolution', when: 'The system is near-linear around the operating point', cost: 'Very fast, assumes linearity' },
+    { option: 'Worst-case snapshot', when: 'A conservative screen before a full study', cost: 'One solve — but tells you nothing about frequency' },
+  ]}
+/>
+
+<Callout type="engineering">
+  This is exactly the gap your hosting-capacity project identified. A worst-case
+  snapshot — peak PV, minimum load — says *the worst hour is bad*. A probabilistic
+  study says *violations occur in 0.3% of hours*, which is a far more actionable
+  statement for someone deciding whether to approve a connection.
+
+  The first costs one solve. The second costs ten thousand. Knowing when the extra
+  information is worth the compute is the engineering judgement.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Sampling buses independently">
+  Understates the variance of total feeder load, because the independent samples cancel.
+  Real loads are correlated.
+</Callout>
+
+<Callout type="warning" title="Not seeding the RNG">
+  Irreproducible results. You cannot investigate an outlier you cannot recreate.
+</Callout>
+
+<Callout type="warning" title="Too few samples for a tail quantity">
+  A 1% violation probability estimated from 500 samples rests on about five events. The
+  estimate is almost meaningless. Roughly 100/p samples.
+</Callout>
+
+<Callout type="warning" title="Discarding non-converged samples silently">
+  Non-convergence usually means the sampled loading exceeded what the feeder can
+  deliver — which is itself a violation. Dropping those samples quietly biases the
+  result optimistic. Count them and report them.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="How many samples?">
+  You want to estimate a violation probability you expect to be about 2%, to within 10%
+  relative error. Roughly how many samples?
+
+  <Solution>
+    Using $\approx 100/p$: $100/0.02 =$ **5,000 samples**.
+
+    The reasoning: the number of violation events is roughly $Np$, and the relative
+    standard error of a count is about $1/\sqrt{Np}$. For 10% error you need
+    $Np \approx 100$, so $N \approx 100/p$.
+
+    Note this scales badly. For a 0.1% probability you need 100,000 samples. That is
+    when importance sampling — deliberately over-sampling the stressed region and
+    reweighting — becomes worth the complexity.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Compare snapshot against probabilistic">
+  Run a worst-case snapshot and a Monte Carlo study on the same feeder, and quantify how
+  conservative the snapshot is.
+
+  <Solution>
+    ```matlab
+    % Worst case: peak load, no DG
+    [V_worst, ~] = bfs_load_flow(tree, branch, S_mean * 1.5, 1.0);
+    snapshot_min = min(abs(V_worst));
+
+    % Probabilistic
+    r = probabilistic_load_flow(tree, branch, S_mean, n_samples=5000);
+
+    fprintf('Worst-case snapshot minimum : %.4f pu\n', snapshot_min);
+    fprintf('Monte Carlo 5th percentile  : %.4f pu\n', r.V_min_p05);
+    fprintf('Monte Carlo mean            : %.4f pu\n', r.V_min_mean);
+    fprintf('Violation probability       : %.2f%%\n', 100*r.p_violation);
+    fprintf('\nSnapshot is %.4f pu more pessimistic than the 5th percentile\n', ...
+            r.V_min_p05 - snapshot_min);
+    ```
+
+    The snapshot will be meaningfully lower than even the 5th percentile, because it
+    combines several worst cases that rarely co-occur — peak load *and* no generation
+    *and* every bus at maximum simultaneously.
+
+    That gap is the conservatism, and quantifying it is the point. If the snapshot says
+    "violation" and the probabilistic study says "0.05% of hours", those support very
+    different decisions about spending money on reinforcement.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why sample a common load factor as well as per-bus variation?',
+      options: [
+        'It runs faster',
+        'Loads on a feeder are correlated; independent sampling cancels and understates total variance',
+        'It is required for reproducibility',
+        'It avoids negative loads',
+      ],
+      answer: 1,
+      explain:
+        'Same weather, same time of day. Sampling every bus independently lets the variations cancel, so the total looks far less variable than it is and the study reports a falsely narrow spread.',
+    },
+    {
+      q: 'Monte Carlo standard error falls as 1/sqrt(N). What does halving the error cost?',
+      options: ['Twice the samples', 'Four times the samples', 'The same', 'Ten times'],
+      answer: 1,
+      explain:
+        'Error ∝ 1/√N, so halving it needs 4× the samples. That relationship is why 2000 samples is common and 200,000 rarely justified.',
+    },
+    {
+      q: 'What should you do with samples where the load flow does not converge?',
+      options: [
+        'Discard them silently',
+        'Count and report them — non-convergence usually means loading exceeded what the feeder can deliver',
+        'Retry with a looser tolerance',
+        'Treat them as violations of exactly the limit',
+      ],
+      answer: 1,
+      explain:
+        'Silently dropping them biases the result optimistic, because the discarded samples are precisely the stressed ones. Non-convergence is information.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A probabilistic study reports a **distribution, and the spread is the result**.
+  Sample with realistic correlation, seed the generator and record the seed, size the
+  sample count to the quantity you're estimating — and remember a tail needs far more
+  samples than a mean.
+</KeyIdea>
+
+## Further reading
+
+- Your own [post on hosting capacity](/blog/hosting-capacity-is-not-a-number), which
+  makes the same argument
+- Next: **phasor estimation** — the algorithm inside every numerical relay

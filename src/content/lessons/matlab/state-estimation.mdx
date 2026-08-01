@@ -1,0 +1,394 @@
+---
+title: State Estimation
+track: matlab
+module: distribution-protection
+order: 51
+description: Turning redundant, noisy measurements into one consistent system state — weighted least squares, observability, and detecting bad data.
+objectives:
+  - Formulate and solve the weighted least squares state estimation problem
+  - Check observability before attempting a solve
+  - Detect and identify bad measurements from normalised residuals
+prerequisites: [load-flow, linear-systems]
+estimatedMinutes: 40
+difficulty: advanced
+tags: ['matlab', 'state-estimation', 'wls', 'scada', 'bad-data']
+---
+
+A load flow assumes you know the injections exactly. A control centre knows nothing
+exactly — it has hundreds of SCADA measurements, each with error, some redundant, and
+occasionally one badly wrong.
+
+State estimation turns that into a single consistent picture of the network. It is
+**EE6L001 Module 2**, fourteen hours of it, and it is what every real control room runs
+every few seconds.
+
+## The problem
+
+<Analogy>
+  Three people measure a room with different tape measures and get 4.02 m, 3.98 m and
+  4.01 m.
+
+  You don't pick one. You don't average blindly either — if you know the third person's
+  tape is the good one, you weight it more heavily.
+
+  State estimation is that, for a few thousand measurements and a few hundred unknowns,
+  with the added complication that the measurements relate to the unknowns through the
+  nonlinear power flow equations.
+</Analogy>
+
+Formally:
+
+$$
+\mathbf{z} = \mathbf{h}(\mathbf{x}) + \mathbf{e}
+$$
+
+- $\mathbf{z}$ — measurements: injections, line flows, voltage magnitudes
+- $\mathbf{x}$ — the state: voltage magnitude and angle at every bus
+- $\mathbf{h}$ — the power flow equations relating them
+- $\mathbf{e}$ — measurement error, assumed zero-mean with known variance
+
+Minimise the weighted sum of squared residuals:
+
+$$
+J(\mathbf{x}) = \sum_i \frac{\left(z_i - h_i(\mathbf{x})\right)^2}{\sigma_i^2}
+$$
+
+Weighting by $1/\sigma^2$ is the whole point: a good meter counts for more than a poor
+one.
+
+## The solution
+
+Because $\mathbf{h}$ is nonlinear, solve iteratively — Newton again, in a different
+costume:
+
+$$
+\mathbf{G}\,\Delta\mathbf{x} = \mathbf{H}^T \mathbf{W} \left(\mathbf{z} - \mathbf{h}(\mathbf{x})\right), \qquad
+\mathbf{G} = \mathbf{H}^T \mathbf{W} \mathbf{H}
+$$
+
+where $\mathbf{H} = \partial\mathbf{h}/\partial\mathbf{x}$ and $\mathbf{W} =
+\text{diag}(1/\sigma_i^2)$. $\mathbf{G}$ is the **gain matrix**.
+
+<CodeFile name="state_estimation.m">
+```matlab
+function [x, info] = state_estimation(Y, meas, x0, opts)
+%STATE_ESTIMATION Weighted least squares state estimation.
+%
+%   MEAS is a struct array with fields: type ('Pinj','Qinj','Pflow','Qflow',
+%   'Vmag'), bus (and to_bus for flows), value, sigma.
+%   X is [delta(non-slack); V(all)].
+
+    arguments
+        Y                double
+        meas             struct
+        x0         (:,1) double
+        opts.tol     (1,1) double = 1e-6
+        opts.max_iter(1,1) double = 20
+        opts.verbose (1,1) logical = true
+    end
+
+    m = numel(meas);
+    n = numel(x0);
+
+    assert(m >= n, ...
+        'Under-determined: %d measurements for %d states — system is unobservable', m, n);
+
+    z = [meas.value].';
+    W = diag(1 ./ ([meas.sigma].').^2);
+
+    x = x0;
+    info.converged = false;
+
+    for iter = 1:opts.max_iter
+        h = measurement_function(Y, x, meas);      % predicted measurements
+        H = measurement_jacobian(Y, x, meas);      % m-by-n
+
+        r = z - h;
+        G = H.' * W * H;
+
+        c = condest(G);
+        if c > 1e12
+            warning('Gain matrix condition %.2e — likely unobservable or nearly so', c);
+        end
+
+        dx = G \ (H.' * W * r);
+        x  = x + dx;
+
+        step = max(abs(dx));
+        if opts.verbose
+            fprintf('  iter %2d: max|dx| = %.3e, J = %.4f\n', iter, step, r.'*W*r);
+        end
+
+        if step < opts.tol
+            info.converged = true;
+            break
+        end
+    end
+
+    % --- final statistics -------------------------------------------------
+    h = measurement_function(Y, x, meas);
+    r = z - h;
+
+    info.iterations = iter;
+    info.residuals  = r;
+    info.J          = r.' * W * r;
+    info.dof        = m - n;                    % degrees of freedom
+    info.redundancy = m / n;
+    info.G          = G;
+    info.H          = H;
+    info.W          = W;
+end
+```
+</CodeFile>
+
+## Observability
+
+Before solving, check the problem is solvable at all.
+
+<Callout type="warning" title="More measurements than states is necessary, not sufficient">
+  You can have 200 measurements and still be unobservable if they are all clustered in
+  one part of the network and nothing measures another part.
+
+  The real test is the **rank of H**:
+
+  ```matlab
+  if rank(full(H)) < n
+      unobserved = n - rank(full(H));
+      error('Unobservable: %d state(s) not determined by any measurement', unobserved);
+  end
+  ```
+
+  On a large system, use a numerically robust check rather than `rank` — the gain
+  matrix condition number in the code above is the practical proxy, and a near-singular
+  $\mathbf{G}$ means a region is effectively unobservable even if technically it isn't.
+</Callout>
+
+**Redundancy** — measurements divided by states — is the quantity operators care about.
+Below about 1.5 you cannot reliably detect bad data; real control centres aim for 2 to 4.
+
+## Detecting bad data
+
+This is where state estimation earns its place. A stuck transducer or a wrong sign gives
+one measurement that disagrees with everything else, and the residuals expose it.
+
+<CodeFile name="detect_bad_data.m">
+```matlab
+function bad = detect_bad_data(info, meas, threshold)
+%DETECT_BAD_DATA Chi-square test, then largest normalised residual.
+
+    arguments
+        info      struct
+        meas      struct
+        threshold (1,1) double = 3.0        % normalised residual threshold
+    end
+
+    % --- chi-square test: is there bad data at all? ------------------------
+    chi2_crit = chi2inv(0.99, info.dof);
+    bad.present = info.J > chi2_crit;
+
+    fprintf('J = %.2f, chi2(0.99, %d) = %.2f  ->  %s\n', ...
+            info.J, info.dof, chi2_crit, ...
+            string(bad.present)+" bad data suspected");
+
+    if ~bad.present
+        bad.index = []; bad.normalised = [];
+        return
+    end
+
+    % --- normalised residuals ----------------------------------------------
+    % Omega = residual covariance. Only the diagonal is needed.
+    Rm    = inv(info.W);
+    Omega = Rm - info.H * (info.G \ info.H.') ;
+    d     = max(diag(Omega), eps);           % guard against tiny negatives
+
+    rN = abs(info.residuals) ./ sqrt(d);
+
+    [worst, idx] = max(rN);
+    bad.normalised = rN;
+    bad.index      = find(rN > threshold);
+
+    if worst > threshold
+        m = meas(idx);
+        fprintf('Largest normalised residual %.2f at measurement %d (%s, bus %d)\n', ...
+                worst, idx, m.type, m.bus);
+        fprintf('  -> most likely bad. Remove it and re-estimate.\n');
+    end
+end
+```
+</CodeFile>
+
+<Callout type="engineering">
+  The procedure a control centre actually follows:
+
+  1. Estimate.
+  2. Chi-square test on $J$. If it passes, accept the state.
+  3. If it fails, find the **largest normalised residual**, remove that measurement, and
+     re-estimate.
+  4. Repeat until the chi-square test passes.
+
+  Remove **one at a time**. Removing several together often discards good measurements
+  whose residuals were inflated by the single genuinely bad one — bad data "smears"
+  across correlated measurements.
+
+  There is a limit: a measurement with no redundancy — the only thing observing some
+  part of the network — is **critical**. Its residual is always zero, so a bad value
+  there is undetectable. Identifying critical measurements is part of designing the
+  measurement system.
+</Callout>
+
+## The DC approximation
+
+For a fast first pass, linearise: assume flat voltages, ignore losses, and keep only the
+angle–real-power relationship.
+
+```matlab
+% DC state estimation: linear, one solve, no iteration
+B = -imag(Y);  B(slack,:) = [];  B(:,slack) = [];
+H_dc = build_dc_measurement_matrix(B, meas);
+
+theta = (H_dc.' * W * H_dc) \ (H_dc.' * W * z);
+```
+
+One linear solve, no iteration, and it is robust. It is also blind to voltage magnitude
+and reactive power. Useful for a fast screen or as a starting point for the full AC
+estimator.
+
+## Common mistakes
+
+<Callout type="warning" title="Counting measurements instead of checking rank">
+  Redundancy in one region does not make another observable. Check `rank(H)`.
+</Callout>
+
+<Callout type="warning" title="Equal weights for everything">
+  The weighting is the entire reason to use WLS. A voltage transducer with 0.5% error
+  and a power measurement with 3% error should not count equally.
+</Callout>
+
+<Callout type="warning" title="Removing several bad measurements at once">
+  Bad data inflates the residuals of neighbouring good measurements. Remove the largest,
+  re-estimate, repeat.
+</Callout>
+
+<Callout type="warning" title="Forgetting that critical measurements are undetectable">
+  A measurement with zero redundancy always has zero residual. No test will flag it.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Is it observable?">
+  A 5-bus system has measurements: voltage magnitude at bus 1; real and reactive
+  injection at buses 2 and 3; real and reactive flow on line 1–2. Observable?
+
+  <Solution>
+    **States:** 4 angles (5 buses minus the slack reference) + 5 voltage magnitudes =
+    **9 unknowns**.
+
+    **Measurements:** 1 + 4 + 2 = **7**.
+
+    7 < 9, so the system is **under-determined and unobservable** — no amount of
+    cleverness recovers a state nothing measures.
+
+    Specifically, nothing observes buses 4 and 5 at all. You would need at least two
+    more measurements, and they must be *there* — adding two more at bus 2 changes
+    nothing.
+
+    This is why the code asserts `m >= n` before starting, and then checks
+    `rank(H)`: the count is necessary, the rank is sufficient.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Plant a bad measurement and find it">
+  Take a converged load flow, generate measurements from it with noise, corrupt one, and
+  confirm the estimator identifies it.
+
+  <Solution>
+    ```matlab
+    rng(42);
+
+    % Truth from a converged load flow
+    [V_true, delta_true] = load_flow(Y, bus);
+
+    % Synthesise measurements with realistic noise
+    meas = make_measurements(Y, V_true, delta_true);
+    for k = 1:numel(meas)
+        meas(k).value = meas(k).value + meas(k).sigma * randn;
+    end
+
+    % Corrupt one badly — a sign error, the classic transducer fault
+    victim = 7;
+    fprintf('Corrupting measurement %d (%s at bus %d)\n', ...
+            victim, meas(victim).type, meas(victim).bus);
+    meas(victim).value = -meas(victim).value;
+
+    [x, info] = state_estimation(Y, meas, x0, verbose=false);
+    bad = detect_bad_data(info, meas);
+
+    if ismember(victim, bad.index)
+        fprintf('CORRECTLY identified measurement %d\n', victim);
+    else
+        fprintf('MISSED it. Flagged: %s\n', mat2str(bad.index'));
+    end
+    ```
+
+    A sign error should be flagged easily — its normalised residual will be far above
+    3. Try a subtler corruption, say +10%, and watch the detection become unreliable.
+
+    That is the real characteristic of bad-data detection: gross errors are caught
+    routinely, and small biases hide in the noise. Which is why measurement *calibration*
+    matters as much as estimation.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does weighting by 1/sigma² achieve in WLS?',
+      options: [
+        'It normalises the units',
+        'Accurate measurements influence the estimate more than poor ones',
+        'It guarantees convergence',
+        'It makes the gain matrix symmetric',
+      ],
+      answer: 1,
+      explain:
+        'That weighting is the entire reason to use weighted rather than ordinary least squares. Treating a 0.5% voltage transducer the same as a 3% power measurement throws away information.',
+    },
+    {
+      q: 'Why remove suspected bad measurements one at a time?',
+      options: [
+        'It is computationally cheaper',
+        'A single bad measurement inflates the residuals of neighbouring good ones, so removing a batch discards good data',
+        'The standard requires it',
+        'The chi-square test only handles one at a time',
+      ],
+      answer: 1,
+      explain:
+        'Bad data smears across correlated measurements. Remove the largest normalised residual, re-estimate, and repeat until the chi-square test passes.',
+    },
+    {
+      q: 'Why can a "critical" measurement never be detected as bad?',
+      options: [
+        'It is always accurate',
+        'It has no redundancy, so its residual is always zero regardless of its value',
+        'It is excluded from the chi-square test',
+        'Critical measurements are always voltage magnitudes',
+      ],
+      answer: 1,
+      explain:
+        'With nothing else observing that part of the network, the estimator simply fits it exactly. No statistical test can flag a value it has no independent information about — which is a measurement-system design problem, not an algorithm one.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  State estimation converts **redundant noisy measurements into one consistent state**,
+  weighted by how much each is trusted. Its real value is not the state — it is
+  **detecting the measurement that's wrong**, which is only possible where redundancy
+  exists.
+</KeyIdea>
+
+## Further reading
+
+- Abur & Expósito, *Power System State Estimation: Theory and Implementation* — the
+  standard text
+- Next: the **module project** — a radial feeder analyser tying this module together

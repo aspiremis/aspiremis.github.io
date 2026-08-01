@@ -79,6 +79,20 @@
   },
 
   {
+    "id": "matlab-distribution-protection",
+    "track": "matlab",
+    "slug": "distribution-protection",
+    "title": "Distribution and Protection",
+    "description": "The half of the syllabus that transmission-oriented methods do not reach — radial solvers, load models, probabilistic studies, and the algorithms inside a numerical relay.",
+    "order": 7,
+    "project": {
+      "title": "Radial feeder analyser",
+      "description": "A backward-forward sweep solver with ZIP load models, validated on the IEEE 33-bus feeder, then extended into a Monte Carlo DG placement study. Covers Lab Experiment 4 and most of EE6L017's load flow module.",
+      "capstone": false
+    }
+  },
+
+  {
     "id": "python-foundations",
     "track": "python",
     "slug": "foundations",

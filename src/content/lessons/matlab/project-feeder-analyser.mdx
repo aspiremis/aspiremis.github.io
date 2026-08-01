@@ -1,0 +1,387 @@
+---
+title: 'Project: Radial Feeder Analyser'
+track: matlab
+module: distribution-protection
+order: 52
+description: A backward-forward sweep solver with ZIP loads, validated on the IEEE 33-bus feeder, extended into a Monte Carlo DG placement study — Lab Experiment 4, done properly.
+objectives:
+  - Build and validate a BFS solver against published IEEE 33-bus results
+  - Add ZIP load models and quantify how much they change the answer
+  - Run a probabilistic DG hosting study and report a distribution
+prerequisites: [backward-forward-sweep, load-models, probabilistic-load-flow]
+estimatedMinutes: 70
+difficulty: advanced
+tags: ['matlab', 'project', 'distribution', 'hosting-capacity', 'bfs']
+---
+
+This project is **Lab Experiment 4** with the rigour the lab sheet doesn't have room
+for, and it covers most of **EE6L017**'s load flow module.
+
+It's also the direct MATLAB ancestor of the PV hosting-capacity work you're scoping for
+your thesis — the same study, in the language your coursework uses.
+
+## The test system
+
+The **IEEE 33-bus** feeder (Baran and Wu, 1989) is the standard distribution benchmark:
+12.66 kV, 33 buses, 32 radial branches plus 5 normally-open tie switches, total load
+3715 kW + 2300 kVAr.
+
+It's small enough to check by hand and published widely enough that you can validate
+against someone else's numbers — which is the point.
+
+<CodeFile name="ieee33.m">
+```matlab
+function [branch, S_load, base] = ieee33()
+%IEEE33 The IEEE 33-bus radial distribution test feeder.
+%
+%   Baran & Wu (1989). Returns the 32 radial branches (tie switches
+%   excluded), complex loads in per unit, and the base struct.
+%
+%   Source the numeric data from the IEEE PES Test Feeder working group or
+%   MATPOWER's case33bw — do not retype it from a paper, and do not trust a
+%   version you have not checked against the published totals.
+
+    base.MVA = 10;         % common choice for this feeder
+    base.kV  = 12.66;
+
+    % branch: from  to  R(ohm)  X(ohm)
+    branch = load_ieee33_branch_data();       % 32 rows
+
+    % load: bus  P(kW)  Q(kVAr)
+    load_data = load_ieee33_load_data();      % 32 rows, bus 1 is the source
+
+    % Convert to per unit on the chosen base
+    Z_base = base.kV^2 / base.MVA;            % ohms
+    branch(:,3:4) = branch(:,3:4) / Z_base;
+
+    S_load = zeros(33,1);
+    S_load(load_data(:,1)) = (load_data(:,2) + 1i*load_data(:,3)) / (base.MVA*1000);
+
+    % Validate against the published totals before returning
+    P_total = sum(real(S_load)) * base.MVA * 1000;
+    Q_total = sum(imag(S_load)) * base.MVA * 1000;
+    assert(abs(P_total - 3715) < 1, 'Total P is %.1f kW, expected 3715', P_total);
+    assert(abs(Q_total - 2300) < 1, 'Total Q is %.1f kVAr, expected 2300', Q_total);
+end
+```
+</CodeFile>
+
+<Callout type="tip" title="Assert on the published totals as you load the data">
+  3715 kW and 2300 kVAr are stated in the original paper and repeated everywhere. A
+  single mistyped digit in 32 rows of load data is otherwise invisible — and it would
+  quietly invalidate every result that follows.
+
+  This is the cheapest test in the whole project.
+</Callout>
+
+## Stage 1 — solve and validate
+
+<CodeFile name="stage1_validate.m">
+```matlab
+%% IEEE 33-bus: solve and check against published results
+clear; clc;
+
+[branch, S_load, base] = ieee33();
+tree = build_tree(33, branch, 1);
+
+[V, info] = bfs_load_flow(tree, branch, S_load, 1.0, verbose=true);
+
+fprintf('\nConverged in %d iterations\n', info.iterations);
+fprintf('Minimum voltage : %.4f pu at bus %d\n', info.V_min, info.worst_bus);
+fprintf('Total losses    : %.4f pu = %.2f kW\n', ...
+        info.losses, info.losses*base.MVA*1000);
+
+%% Published reference values for the base case
+%   Minimum voltage  ~0.9131 pu at bus 18
+%   Total real losses ~202.7 kW
+% These are widely reported; confirm against your own source before relying
+% on them, and treat any disagreement as a bug in YOUR code first.
+
+assert(info.worst_bus == 18, 'Expected the worst bus to be 18, got %d', info.worst_bus);
+assert(abs(info.V_min - 0.9131) < 2e-3, ...
+       'Minimum voltage %.4f differs from the published 0.9131', info.V_min);
+assert(abs(info.losses*base.MVA*1000 - 202.7) < 2.0, ...
+       'Losses %.1f kW differ from the published 202.7 kW', info.losses*base.MVA*1000);
+
+fprintf('\nValidated against published results.\n');
+```
+</CodeFile>
+
+<Callout type="warning" title="If your numbers disagree, suspect your code — then your data">
+  In order of likelihood: the per-unit base (this feeder is quoted on 10 MVA and 100 MVA
+  bases in different papers, which changes the per-unit impedances), a transposed R and
+  X column, the tie switches accidentally included, or a mistyped load value.
+
+  Reproducing a published number is the point of this stage. Don't move on until it does.
+</Callout>
+
+## Stage 2 — voltage profile figure
+
+<CodeFile name="stage2_profile.m">
+```matlab
+%% Voltage profile along the main feeder and its laterals
+depth = zeros(33,1);
+for b = tree.order'
+    if b ~= tree.source
+        depth(b) = depth(tree.parent(b)) + 1;
+    end
+end
+
+fig = figure('Units','centimeters','Position',[2 2 16 10],'Color','w');
+t = tiledlayout(2,1,'TileSpacing','compact');
+
+nexttile;
+stem(1:33, abs(V), 'filled', 'MarkerSize', 3.5, 'LineWidth', 1.0);
+yline(0.95, '--', 'Statutory limit', 'Color', [0.7 0.2 0.2]);
+ylabel('|V| (pu)'); ylim([0.90 1.01]); xlim([0 34]); grid on;
+title('Bus voltage magnitude');
+
+nexttile;
+scatter(depth, abs(V), 26, 'filled');
+xlabel('Electrical depth from source (branches)');
+ylabel('|V| (pu)'); grid on;
+title('Voltage against distance from the substation');
+
+title(t, 'IEEE 33-bus feeder — base case', 'FontWeight','bold');
+exportgraphics(fig, 'feeder_base_case.pdf', 'ContentType','vector');
+
+fprintf('%d bus(es) below 0.95 pu\n', sum(abs(V) < 0.95));
+```
+</CodeFile>
+
+The depth plot is the more informative one. Voltage falls monotonically with electrical
+distance along any single path, and the scatter shows the laterals separating from the
+main feeder — the physical structure made visible.
+
+## Stage 3 — does the load model matter?
+
+<CodeFile name="stage3_load_models.m">
+```matlab
+%% How much does the load model change the answer?
+models = { [0 0 1],        "constant power";
+           [0.4 0.3 0.3],  "mixed residential";
+           [1 0 0],        "constant impedance" };
+
+fprintf('%-22s %10s %8s %10s %6s\n', 'Model', 'Vmin', 'bus', 'Loss kW', 'iters');
+fprintf('%s\n', repmat('-', 1, 60));
+
+for k = 1:size(models,1)
+    zip = models{k,1};
+    [Vk, ik] = bfs_load_flow_zip(tree, branch, S_load, 1.0, ...
+                                 zip_p=zip, zip_q=zip);
+    fprintf('%-22s %10.4f %8d %10.2f %6d\n', models{k,2}, ...
+            ik.V_min, ik.worst_bus, ik.losses*base.MVA*1000, ik.iterations);
+end
+```
+</CodeFile>
+
+Expect constant power to give the lowest voltage, highest losses and most iterations,
+and constant impedance the opposite. The spread between them on this feeder is
+substantial — and it is the reason a hosting-capacity number without a stated load model
+is incomplete.
+
+## Stage 4 — DG hosting study
+
+Now the study your thesis direction actually needs.
+
+<CodeFile name="stage4_hosting.m">
+```matlab
+function results = dg_hosting_study(tree, branch, S_load, base, opts)
+%DG_HOSTING_STUDY Monte Carlo DG placement across penetration levels.
+
+    arguments
+        tree   struct
+        branch double
+        S_load (:,1) double
+        base   struct
+        opts.penetrations (1,:) double = 0:0.1:1.0
+        opts.n_scenarios  (1,1) double = 300
+        opts.vmax         (1,1) double = 1.05
+        opts.vmin         (1,1) double = 0.95
+        opts.seed         (1,1) double = 42
+    end
+
+    rng(opts.seed);
+    total_load = sum(real(S_load));
+    load_buses = find(real(S_load) > 0);
+
+    n_p = numel(opts.penetrations);
+    p_violation = zeros(n_p,1);
+    v_max_mean  = zeros(n_p,1);
+    loss_mean   = zeros(n_p,1);
+
+    for i = 1:n_p
+        target = opts.penetrations(i) * total_load;
+        viol = false(opts.n_scenarios,1);
+        vmax = zeros(opts.n_scenarios,1);
+        loss = zeros(opts.n_scenarios,1);
+
+        for s = 1:opts.n_scenarios
+            S_k = S_load;
+            placed = 0;
+
+            % Random siting, sized in proportion to local load
+            for b = load_buses(randperm(numel(load_buses)))'
+                if placed >= target, break; end
+                size_b = min(real(S_load(b)) * (0.5 + rand), target - placed);
+                S_k(b) = S_k(b) - size_b;         % generation is negative load
+                placed = placed + size_b;
+            end
+
+            [Vs, is] = bfs_load_flow(tree, branch, S_k, 1.0);
+            if is.converged
+                vmax(s) = max(abs(Vs));
+                loss(s) = is.losses;
+                viol(s) = max(abs(Vs)) > opts.vmax || min(abs(Vs)) < opts.vmin;
+            else
+                viol(s) = true;                    % non-convergence counts
+            end
+        end
+
+        p_violation(i) = mean(viol);
+        v_max_mean(i)  = mean(vmax(vmax > 0));
+        loss_mean(i)   = mean(loss(loss > 0));
+
+        fprintf('penetration %5.0f%%: %5.1f%% of scenarios violate, mean Vmax %.4f\n', ...
+                opts.penetrations(i)*100, 100*p_violation(i), v_max_mean(i));
+    end
+
+    results = table(opts.penetrations', p_violation, v_max_mean, ...
+                    loss_mean*base.MVA*1000, ...
+                    'VariableNames', {'Penetration','P_violation','V_max_mean','Loss_kW'});
+    results.Properties.UserData = struct('seed', opts.seed, ...
+                                          'n_scenarios', opts.n_scenarios);
+end
+```
+</CodeFile>
+
+<Callout type="engineering">
+  Plot `P_violation` against penetration and you get the **hosting capacity curve** —
+  not a single number, but the probability of a violation as a function of how much DG
+  is connected.
+
+  Watch for two things:
+
+  **Losses fall then rise.** Modest DG reduces losses by serving load locally. Past
+  roughly 60–70% of feeder load, reverse flow takes over and losses climb again. The
+  minimum is a real design insight.
+
+  **Overvoltage binds before thermal.** On this feeder the conductor has ample current
+  headroom; what runs out is voltage margin, because $\Delta V \approx (RP + XQ)/V$ and
+  $R$ is not small on a distribution feeder.
+
+  That is the same conclusion your hosting-capacity project reaches, now reproducible in
+  code you wrote from first principles.
+</Callout>
+
+## Extend it
+
+<Exercise n={1} kind="practice" title="Find the loss-minimising DG penetration">
+  Locate the penetration at which losses are lowest, and explain the shape.
+
+  <Solution>
+    ```matlab
+    r = dg_hosting_study(tree, branch, S_load, base, ...
+                         penetrations=0:0.05:1.2, n_scenarios=400);
+
+    [min_loss, idx] = min(r.Loss_kW);
+    fprintf('Losses minimised at %.0f%% penetration: %.1f kW\n', ...
+            r.Penetration(idx)*100, min_loss);
+
+    yyaxis left;  plot(r.Penetration*100, r.Loss_kW, 'LineWidth', 1.5);
+    ylabel('Mean losses (kW)');
+    yyaxis right; plot(r.Penetration*100, r.P_violation*100, 'LineWidth', 1.5);
+    ylabel('Violation probability (%)');
+    xlabel('DG penetration (% of feeder load)'); grid on;
+    ```
+
+    The U shape has a clear physical cause. Losses scale with $I^2R$; DG serving load
+    locally cuts the current flowing from the substation, so losses fall. Past the point
+    where local generation exceeds local load, current flows *back* toward the
+    substation and grows again — and $I^2$ does not care about direction.
+
+    This is one of the few defensible uses of `yyaxis`: the two quantities are genuinely
+    coupled through the same current.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Does inverter power factor help?">
+  Rerun with DG at 0.95 leading instead of unity and quantify the change.
+
+  <Solution>
+    ```matlab
+    % Absorbing reactive power counters the voltage rise from real injection
+    pf = 0.95;
+    Q_per_P = tan(acos(pf));
+    S_k(b) = S_k(b) - size_b * (1 - 1i*Q_per_P);   % absorb Q while exporting P
+    ```
+
+    Expect the violation curve to shift meaningfully to the right — more DG can be
+    accommodated before overvoltage.
+
+    The mechanism is directly in $\Delta V \approx (RP + XQ)/V$: injecting $P$ raises
+    voltage, and absorbing $Q$ (making $Q$ negative) pulls it back down. Because $X$ is
+    typically larger than $R$ even on distribution feeders, a modest amount of reactive
+    absorption offsets a lot of real injection.
+
+    That is the entire basis of **volt-var control** in IEEE 1547-2018, and quantifying
+    it here is a genuinely useful result — it is the controllable variable, so it
+    deserves more attention than most modelling choices.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="Add the tie switches">
+  The feeder has 5 normally-open tie switches. Close one and the network is no longer
+  radial. What breaks, and what would you do?
+
+  <Solution>
+    `build_tree` asserts immediately: 33 branches for 33 buses, not the 32 a tree
+    requires. That assertion is doing its job.
+
+    Two honest options:
+
+    **Reconfigure.** Closing a tie usually accompanies opening another branch, keeping
+    the network radial in a different shape. That is exactly the distribution
+    *reconfiguration* problem in EE6L017's fourth module — search over which switches
+    are open to minimise losses, subject to staying radial.
+
+    ```matlab
+    branch_alt = branch;
+    branch_alt(open_branch, :) = [];          % open one
+    branch_alt(end+1, :) = tie_switch(k, :);  % close a tie
+    tree_alt = build_tree(33, branch_alt, 1); % still a tree — assertion passes
+    ```
+
+    **Compensation.** Genuinely solve the meshed network: break the loop, solve radially,
+    inject a compensating current at the break, iterate until the loop voltage constraint
+    is satisfied. That is Shirmohammadi's method — the paper already in your
+    [research notes](/research).
+
+    Reconfiguration is the more useful exercise, and it is a small combinatorial search
+    you could run with the optimisation lesson's tools.
+  </Solution>
+</Exercise>
+
+## What you built
+
+- A validated backward-forward sweep solver, checked against published IEEE 33-bus results
+- ZIP load modelling, with the sensitivity quantified rather than assumed
+- A Monte Carlo DG hosting study reporting a curve rather than a number
+- Publication-quality figures of the voltage profile and hosting capacity
+
+That covers **Lab Experiment 4** entirely, most of EE6L017's load flow module, and it is
+the MATLAB counterpart of the Python hosting-capacity toolkit on your projects page.
+
+<KeyIdea>
+  The distribution equivalent of the capstone: a solver that is **validated before it is
+  trusted**, a load model that is **stated because it changes the answer**, and a study
+  that reports a **distribution rather than a single figure**. The methods differ from
+  transmission; the discipline does not.
+</KeyIdea>
+
+## Further reading
+
+- Baran & Wu (1989), *Network reconfiguration in distribution systems for loss reduction
+  and load balancing* — the origin of this test feeder
+- Kersting, Chapter 10
+- Your own [post on hosting capacity](/blog/hosting-capacity-is-not-a-number)
