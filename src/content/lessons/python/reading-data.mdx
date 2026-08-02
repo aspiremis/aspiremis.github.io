@@ -1,0 +1,419 @@
+---
+title: Reading Real Data
+track: python
+module: pandas
+order: 20
+description: read_csv and the arguments that matter, Excel files, and the specific ways a real SCADA export will misrepresent itself.
+objectives:
+  - Read a CSV correctly on the first attempt rather than the fourth
+  - Parse dates and specify dtypes explicitly instead of trusting inference
+  - Choose a storage format for data you will read more than once
+prerequisites: [pandas-indexing]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['python', 'pandas', 'csv', 'io', 'data-cleaning']
+---
+
+`pd.read_csv('data.csv')` works on a clean file. Real files are not clean, and the ways
+they fail are consistent enough to be worth memorising.
+
+## The arguments that matter
+
+```python
+df = pd.read_csv(
+    'feeder_2024.csv',
+    parse_dates=['timestamp'],       # actual datetimes, not strings
+    index_col='timestamp',           # straight into the index
+    dtype={'feeder_id': 'str'},      # keep leading zeros
+    na_values=['N/A', '--', 'NULL', 'BAD', -999],
+    thousands=',',                   # "1,234.5" becomes a number
+    comment='#',                     # skip comment lines
+    encoding='utf-8',
+)
+```
+
+Each of these solves a real problem:
+
+<Compare
+  headings={['Symptom', 'Argument', 'What went wrong']}
+  rows={[
+    { option: 'Timestamps are strings', when: 'parse_dates=[...]', cost: 'pandas does not infer dates by default', recommended: true },
+    { option: 'Feeder "007" became 7', when: "dtype={'id': 'str'}", cost: 'Leading zeros lost to integer inference' },
+    { option: 'A numeric column is object', when: 'na_values=[...]', cost: 'Sentinels like -999 or "N/A" block conversion' },
+    { option: 'UnicodeDecodeError', when: "encoding='latin-1'", cost: 'The file is not UTF-8 — often Windows-1252' },
+    { option: 'Everything in one column', when: "sep=';'", cost: 'European CSVs use semicolons' },
+    { option: 'Header rows of metadata', when: 'skiprows=4', cost: 'The export tool wrote a preamble' },
+  ]}
+/>
+
+<Callout type="warning" title="-999 is not a number">
+  Instrumentation writes sentinel values for missing data: `-999`, `-9999`, `9999`, or a
+  suspiciously round `0`. pandas reads them as perfectly valid numbers.
+
+  A year of feeder data with a hundred `-999` entries gives a mean that is quietly wrong
+  and a minimum that is obviously wrong. The minimum is the tell — always look at
+  `df.describe()` and ask whether the extremes are physically possible.
+
+  ```python
+  na_values=[-999, -9999, 9999]
+  ```
+
+  Zero is the hard case, because zero is sometimes real. A feeder current of exactly
+  `0.000` for six consecutive hours is a dead sensor; the same value at 3 a.m. on a
+  switched-off spur is a fact. That one needs judgement, not an argument.
+</Callout>
+
+## Dates
+
+Date parsing deserves its own attention because getting it wrong is silent.
+
+```python
+pd.read_csv(f, parse_dates=['timestamp'])              # ISO format, usually fine
+pd.read_csv(f, parse_dates=['date'], dayfirst=True)    # 03/04/2024 is 3 April
+pd.to_datetime(df.ts, format='%d-%m-%Y %H:%M')         # explicit, fastest, safest
+pd.to_datetime(df.ts, errors='coerce')                 # bad values become NaT
+```
+
+<Callout type="warning" title="03/04/2024 is ambiguous and pandas will guess">
+  In India and most of the world that is 3 April. In the United States it is 4 March. A
+  file written by an American tool and read with Indian assumptions gives dates that are
+  wrong for twelve days a month and *valid* for the rest — so nothing raises.
+
+  Pass `format=` explicitly whenever you know it. It is faster too, since pandas stops
+  inferring per row.
+
+  The giveaway that inference went wrong: sort by timestamp and look for days that appear
+  out of order, or a month with 31 entries where the day never exceeds 12.
+</Callout>
+
+## Excel
+
+```python
+pd.read_excel('data.xlsx', sheet_name='Feeder1')
+pd.read_excel('data.xlsx', sheet_name=None)    # ALL sheets, as a dict
+
+xl = pd.ExcelFile('data.xlsx')                 # open once, read many
+print(xl.sheet_names)
+df = xl.parse('Feeder1', skiprows=3)
+```
+
+Requires `openpyxl` for `.xlsx`. Reading Excel is roughly twenty times slower than CSV, so
+open the file once with `ExcelFile` rather than calling `read_excel` per sheet.
+
+<Callout type="engineering">
+  Excel files from utilities carry predictable damage. Merged cells become `NaN` in every
+  row but the first. Numbers stored as text sort as `'1', '10', '2'`. A column of feeder
+  IDs like `1E5` gets read as `100000`. And Excel's own date handling has an intentional
+  bug — it believes 1900 was a leap year — that shifts early dates by a day.
+
+  None of these raise. All of them are why `df.info()` and `df.describe()` come before
+  analysis, not after a confusing result.
+</Callout>
+
+## Large files
+
+```python
+# Only the columns you need
+pd.read_csv(f, usecols=['timestamp', 'v_pu', 'i_a'])
+
+# In chunks, when it will not fit in memory
+total = 0
+for chunk in pd.read_csv(f, chunksize=100_000):
+    total += chunk.energy_kwh.sum()
+
+# Smaller dtypes
+pd.read_csv(f, dtype={'v_pu': 'float32', 'zone': 'category'})
+```
+
+`category` is the big win on text columns. A million rows of `'North'`/`'South'`/`'East'`
+stored as strings is roughly 60 MB; as a category it is about 1 MB, because pandas stores
+the three distinct values once and an integer code per row.
+
+## Writing
+
+```python
+df.to_csv('out.csv')                    # index included by default
+df.to_csv('out.csv', index=False)       # usually what you want for a plain table
+df.to_parquet('out.parquet')            # typed, compressed, fast
+df.to_excel('out.xlsx', sheet_name='Results')
+```
+
+<Callout type="tip" title="Use Parquet for anything you will read twice">
+  CSV has no types. Every read re-parses text and re-infers dtypes, and every write throws
+  the types away — which is why a datetime index survives a round trip only if you
+  remember `parse_dates` again.
+
+  Parquet stores the schema, compresses well, and loads roughly ten times faster on a
+  large file. Read the messy CSV once, clean it, save Parquet, and work from that.
+
+  Keep the CSV for anything a colleague or a supervisor needs to open.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Not passing parse_dates">
+  Timestamps stay strings, and every time-series operation then fails or gives nonsense.
+</Callout>
+
+<Callout type="warning" title="Letting sentinel values through">
+  `-999` in a mean is invisible. Check `describe()` for impossible extremes.
+</Callout>
+
+<Callout type="warning" title="Trusting dayfirst inference">
+  Ambiguous dates are wrong for twelve days a month and silently valid otherwise. Pass
+  `format=`.
+</Callout>
+
+<Callout type="warning" title="Writing CSV as an intermediate format">
+  It loses every dtype. Use Parquet between steps of your own pipeline.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="Diagnose four broken reads">
+  Each of these produces a wrong result rather than an error. Say what went wrong.
+
+  ```python
+  # a) df.v_pu.mean() is 1.02 but df.v_pu.min() is -999
+  # b) df.feeder_id.unique() gives [1, 7, 23] but the file said 001, 007, 023
+  # c) df.shape is (8760, 1) for a file with six columns
+  # d) df.index.dtype is object, and df.resample('h') raises
+  ```
+
+  <Solution>
+    **a) Sentinel values.** `-999` is the instrument's code for missing. It is inside the
+    mean, dragging it down invisibly.
+
+    ```python
+    pd.read_csv(f, na_values=[-999])
+    ```
+
+    **b) Integer inference dropped leading zeros.** Feeder `007` became `7`, and now it
+    will not join against any other table that kept the string form.
+
+    ```python
+    pd.read_csv(f, dtype={'feeder_id': 'str'})
+    ```
+
+    **c) Wrong separator.** Six columns collapsed into one means pandas split on commas
+    and the file used semicolons or tabs.
+
+    ```python
+    pd.read_csv(f, sep=';')      # or sep=None, engine='python' to sniff it
+    ```
+
+    **d) Dates never parsed.** The index holds strings, so `resample` has nothing
+    temporal to work with.
+
+    ```python
+    pd.read_csv(f, parse_dates=['timestamp'], index_col='timestamp')
+    ```
+
+    All four are silent. That is the point of the lesson: reading is where bad data
+    enters, and none of these announce themselves. `df.info()` catches (b) and (d),
+    `df.describe()` catches (a), and `df.shape` catches (c) — which is why those three
+    lines belong immediately after every read.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: a defensive SCADA loader">
+  Write a loader for feeder measurement files that validates as it reads.
+
+  <Solution>
+    ```python
+    import pandas as pd
+    from pathlib import Path
+
+    SENTINELS = [-999, -9999, 9999, 'N/A', 'NA', '--', 'BAD', 'NULL']
+
+    LIMITS = {          # physically plausible ranges
+        'v_pu': (0.5, 1.5),
+        'i_a': (0.0, 2000.0),
+        'p_mw': (-50.0, 50.0),
+        'pf': (-1.0, 1.0),
+    }
+
+
+    def load_scada(path, freq='15min', strict=False):
+        """Read a SCADA export, flagging anything implausible.
+
+        Args:
+            path: CSV file.
+            freq: Expected sampling interval, for the completeness check.
+            strict: Raise on implausible values instead of nulling them.
+
+        Returns:
+            (df, report) — the data and a dict describing what was found.
+        """
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"No such file: {path}")
+
+        df = pd.read_csv(
+            path,
+            parse_dates=['timestamp'],
+            index_col='timestamp',
+            na_values=SENTINELS,
+        )
+
+        report = {'file': path.name, 'rows': len(df), 'issues': []}
+
+        if not df.index.is_monotonic_increasing:
+            report['issues'].append('timestamps out of order — sorted')
+            df = df.sort_index()
+
+        dupes = df.index.duplicated().sum()
+        if dupes:
+            report['issues'].append(f'{dupes} duplicate timestamps')
+
+        # Range checks against physics, not statistics
+        for col, (lo, hi) in LIMITS.items():
+            if col not in df.columns:
+                continue
+            bad = ~df[col].between(lo, hi) & df[col].notna()
+            if bad.any():
+                msg = f'{bad.sum()} values of {col} outside [{lo}, {hi}]'
+                if strict:
+                    raise ValueError(f'{path.name}: {msg}')
+                report['issues'].append(msg)
+                df.loc[bad, col] = pd.NA
+
+        # Completeness against the expected sampling rate
+        if len(df) > 1:
+            expected = pd.date_range(df.index.min(), df.index.max(), freq=freq)
+            missing = len(expected) - df.index.nunique()
+            report['completeness'] = 1 - missing / len(expected)
+            if missing:
+                report['issues'].append(f'{missing} missing intervals')
+
+        return df, report
+    ```
+
+    The range checks come from **physics, not statistics**. An outlier detector would flag
+    a genuine fault current as anomalous and pass a 3.0 pu voltage as merely extreme. A
+    fixed plausible range gets both right, because 3.0 pu is not a rare event — it is a
+    broken instrument.
+
+    Returning a report rather than printing means the caller decides what to do with it —
+    log it, aggregate it across a hundred files, or assert on it in a test. Printing from
+    inside a library function is a habit worth breaking early.
+
+    The `strict` flag exists because the right response differs by context. In an
+    exploratory notebook you want the bad values nulled and the analysis to continue; in a
+    pipeline feeding a published result you want it to stop.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: compare storage formats">
+  Measure CSV, Parquet and pickle on the same data and decide what to use.
+
+  <Solution>
+    ```python
+    import time
+    from pathlib import Path
+    import numpy as np
+    import pandas as pd
+
+
+    def compare_formats(df, tmpdir='.'):
+        tmp = Path(tmpdir)
+        formats = {
+            'csv':          (lambda p: df.to_csv(p),
+                             lambda p: pd.read_csv(p, index_col=0, parse_dates=[0])),
+            'csv.gz':       (lambda p: df.to_csv(p, compression='gzip'),
+                             lambda p: pd.read_csv(p, index_col=0, parse_dates=[0])),
+            'parquet':      (lambda p: df.to_parquet(p),
+                             lambda p: pd.read_parquet(p)),
+            'pickle':       (lambda p: df.to_pickle(p),
+                             lambda p: pd.read_pickle(p)),
+        }
+
+        print(f"{'format':>10}{'write s':>10}{'read s':>9}{'MB':>8}{'types kept':>12}")
+        for name, (write, read) in formats.items():
+            p = tmp / f'bench.{name}'
+
+            t0 = time.perf_counter(); write(p); t_w = time.perf_counter() - t0
+            t0 = time.perf_counter(); back = read(p); t_r = time.perf_counter() - t0
+
+            same = back.dtypes.equals(df.dtypes)
+            print(f"{name:>10}{t_w:>10.2f}{t_r:>9.2f}"
+                  f"{p.stat().st_size/1e6:>8.1f}{str(same):>12}")
+            p.unlink()
+
+
+    rng = np.random.default_rng(0)
+    n = 500_000
+    df = pd.DataFrame({
+        'v_pu': rng.normal(1.0, 0.02, n),
+        'zone': pd.Categorical(rng.choice(['N', 'S', 'E', 'W'], n)),
+    }, index=pd.date_range('2024-01-01', periods=n, freq='min'))
+
+    compare_formats(df)
+    ```
+
+    Expect Parquet to write and read several times faster than CSV at a fraction of the
+    size, and to be the only format besides pickle that preserves the `category` dtype —
+    CSV round-trips it back to plain strings.
+
+    The `types kept` column is the one that matters more than the timings. A format that
+    loses your dtypes means re-specifying them on every read, which means eventually
+    forgetting.
+
+    On pickle: it is fast and preserves everything, but it is Python-specific, tied to
+    library versions, and **executes arbitrary code on load**. Never unpickle a file you
+    did not create. Parquet has none of those problems and is readable from R, Julia and
+    Spark, so use it for anything you might share or keep.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'A column of feeder IDs like 001, 007 comes back as 1, 7. What fixes it?',
+      options: [
+        'na_values',
+        "dtype={'feeder_id': 'str'}",
+        'parse_dates',
+        'Nothing — the values are equivalent',
+      ],
+      answer: 1,
+      explain:
+        'Integer inference dropped the leading zeros, and the IDs will no longer join against any table that kept the string form. Specify the dtype at read time.',
+    },
+    {
+      q: 'Why check df.describe() immediately after reading?',
+      options: [
+        'To see the column names',
+        'Because impossible extremes reveal sentinel values like -999 that pandas read as valid numbers',
+        'To count the rows',
+        'It is not necessary',
+      ],
+      answer: 1,
+      explain:
+        'A -999 inside a mean is invisible; as a minimum it is obvious. The extremes are where instrument sentinels announce themselves.',
+    },
+    {
+      q: 'Why prefer Parquet over CSV between steps of your own pipeline?',
+      options: [
+        'It is human-readable',
+        'It stores the schema, so dtypes survive the round trip, and it is smaller and faster',
+        'It is the only format pandas supports',
+        'CSV cannot hold floats',
+      ],
+      answer: 1,
+      explain:
+        'CSV has no types — every read re-parses and re-infers. Keep CSV for what colleagues need to open; use Parquet for anything you will read twice.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Reading is where bad data enters, and it almost never raises. `parse_dates`, explicit
+  `dtype`, and `na_values` at read time — then `info()`, `describe()` and `shape`
+  immediately after, because a `-999` in a mean is invisible but obvious in a minimum.
+</KeyIdea>
+
+## Further reading
+
+- pandas: *IO tools* — the full argument list for every reader
+- Next: **missing data** — and when filling a gap is dishonest

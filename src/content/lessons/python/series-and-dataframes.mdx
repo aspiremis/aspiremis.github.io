@@ -1,0 +1,360 @@
+---
+title: Series and DataFrames
+track: python
+module: pandas
+order: 18
+description: The labelled array — why an index changes what alignment means, and when a DataFrame is the right tool rather than a NumPy array.
+objectives:
+  - Explain what a pandas index is and why alignment follows from it
+  - Choose between a NumPy array and a DataFrame deliberately
+  - Inspect an unfamiliar dataset before doing anything to it
+prerequisites: [project-ybus-vectorised]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['python', 'pandas', 'dataframe', 'series']
+---
+
+A NumPy array knows its values. A pandas Series knows its values **and what each one is
+called**.
+
+That single addition — the index — is where everything else in this module comes from.
+
+```python
+import numpy as np
+import pandas as pd
+
+v_array = np.array([1.02, 0.98, 1.06])
+v_series = pd.Series([1.02, 0.98, 1.06], index=['Bus1', 'Bus2', 'Bus3'])
+
+v_array[1]              # 0.98 — by position
+v_series['Bus2']        # 0.98 — by name
+v_series.iloc[1]        # 0.98 — by position, still available
+```
+
+## Why the index matters
+
+Because operations align on it. This is the behaviour that makes pandas worth learning and
+the behaviour that surprises people:
+
+```python
+a = pd.Series([1, 2, 3], index=['x', 'y', 'z'])
+b = pd.Series([10, 20, 30], index=['z', 'y', 'x'])   # reversed order
+
+a + b
+# x    31
+# y    22
+# z    13
+```
+
+NumPy would have added position to position and given `[11, 22, 33]`. pandas matched the
+labels first. Whether that is a feature or a hazard depends entirely on whether you
+expected it.
+
+<Callout type="engineering">
+  Consider merging a voltage measurement series with a load series when one feeder was
+  offline for two hours.
+
+  With NumPy you would align by position, silently pairing 14:00 voltage with 12:00 load
+  for every row after the gap — and the plot would look fine. With pandas the timestamps
+  are the index, so the two hours become `NaN` and everything else lines up correctly.
+
+  That is the entire argument for pandas on measurement data. The index carries the
+  meaning that position alone cannot.
+</Callout>
+
+## DataFrame
+
+A DataFrame is a dict of Series sharing one index — a table where each column has its own
+dtype.
+
+```python
+df = pd.DataFrame({
+    'v_pu': [1.02, 0.98, 1.06],
+    'p_mw': [12.5, 8.3, 15.1],
+    'zone': ['North', 'North', 'South'],
+})
+df.index = ['Bus1', 'Bus2', 'Bus3']
+```
+
+<Compare
+  headings={['Concept', 'MATLAB', 'pandas']}
+  rows={[
+    { option: 'Table of mixed types', when: 'table', cost: 'DataFrame', recommended: true },
+    { option: 'Column by name', when: "T.v_pu or T{:,'v_pu'}", cost: "df['v_pu'] or df.v_pu" },
+    { option: 'Row by label', when: "T('Bus2', :)", cost: "df.loc['Bus2']" },
+    { option: 'Row by position', when: 'T(2, :)', cost: 'df.iloc[1]' },
+    { option: 'Summary statistics', when: 'summary(T)', cost: 'df.describe()' },
+    { option: 'First rows', when: 'head(T)', cost: 'df.head()' },
+  ]}
+/>
+
+MATLAB's `table` is genuinely the closest analogue, and if you have used one this will feel
+familiar. The difference is that pandas' index is a first-class object you will manipulate
+constantly, where MATLAB's `RowNames` is an afterthought most people never touch.
+
+## Look before you leap
+
+The first thing to do with any unfamiliar dataset, every time:
+
+```python
+df.shape            # (rows, columns)
+df.head(10)         # the first ten rows
+df.tail()           # the last five — often where the corruption is
+df.dtypes           # what pandas thinks each column is
+df.info()           # dtypes, non-null counts and memory in one view
+df.describe()       # count, mean, std, min, quartiles, max
+df.columns          # the column names, including the ones with trailing spaces
+df.index            # what the rows are keyed on
+```
+
+`df.info()` is the one to run first. It tells you the dtypes **and** the non-null counts
+together, which means it answers "is this column numeric?" and "how much is missing?" in a
+single line.
+
+<Callout type="warning" title="An object dtype on a numeric column means something went wrong">
+  If `df.dtypes` says `object` where you expected `float64`, the column contains something
+  non-numeric — a stray `'N/A'`, a `'-'`, a number with a comma, a trailing space.
+
+  pandas will not tell you. It will happily hold strings in that column, and arithmetic
+  will either raise or concatenate. Check dtypes before trusting any number.
+
+  ```python
+  pd.to_numeric(df['v_pu'], errors='coerce')   # non-numeric becomes NaN
+  ```
+</Callout>
+
+## When not to use pandas
+
+pandas is not a replacement for NumPy. It sits on top of it.
+
+<Compare
+  headings={['Data', 'Use', 'Because']}
+  rows={[
+    { option: 'A Y-bus, a Jacobian', when: 'NumPy / SciPy sparse', cost: 'Homogeneous numeric; labels add overhead, not meaning', recommended: true },
+    { option: 'Timestamped measurements', when: 'pandas', cost: 'The timestamp IS the meaning' },
+    { option: 'A results table with mixed types', when: 'pandas', cost: 'Columns have different dtypes' },
+    { option: 'Inside a solver loop', when: 'NumPy', cost: 'pandas overhead per operation is large' },
+    { option: 'Reading a messy CSV', when: 'pandas', cost: 'read_csv is worth the dependency on its own' },
+  ]}
+/>
+
+<Callout type="tip" title="Drop to NumPy inside hot loops">
+  `df['v'].values` (or `.to_numpy()`) hands you the underlying array with no copy in most
+  cases. Do the arithmetic there, put the answer back as a column.
+
+  A per-element pandas operation carries far more overhead than the NumPy equivalent —
+  each access goes through the index machinery. Read and write with pandas; compute with
+  NumPy.
+</Callout>
+
+## Creating them
+
+```python
+pd.Series([1, 2, 3])                             # default integer index
+pd.Series({'Bus1': 1.02, 'Bus2': 0.98})          # from a dict — keys become the index
+
+pd.DataFrame({'a': [1, 2], 'b': [3, 4]})         # dict of columns
+pd.DataFrame([[1, 3], [2, 4]], columns=['a','b'])# list of rows
+pd.DataFrame(arr, columns=['v', 'p'])            # from a NumPy array
+
+df.set_index('timestamp')                         # promote a column to the index
+df.reset_index()                                  # demote the index back to a column
+```
+
+`set_index` and `reset_index` are the two you will use most. Getting a timestamp column
+into the index is the precondition for everything in the time-series lesson.
+
+## Common mistakes
+
+<Callout type="warning" title="Expecting positional alignment">
+  `a + b` matches labels, not positions. If you want positional behaviour, use
+  `a.values + b.values` and be explicit about it.
+</Callout>
+
+<Callout type="warning" title="Not checking dtypes">
+  An `object` column that should be numeric is the single most common cause of a confusing
+  pandas error. `df.info()` first, always.
+</Callout>
+
+<Callout type="warning" title="Using pandas inside a numerical loop">
+  Convert to NumPy, compute, convert back. The index machinery is not free.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What does alignment do here?">
+  ```python
+  a = pd.Series([1, 2, 3], index=['x', 'y', 'z'])
+  b = pd.Series([10, 20], index=['y', 'w'])
+  print(a + b)
+  ```
+
+  <Solution>
+    ```
+    w     NaN
+    x     NaN
+    y    22.0
+    z     NaN
+    dtype: float64
+    ```
+
+    Three things happen at once, and each surprises someone:
+
+    - The result index is the **union** of both — `w` appears even though it is absent
+      from `a`.
+    - Anything unmatched becomes `NaN`. Only `y` exists in both.
+    - The dtype became `float64`, because `NaN` is a float and integer columns cannot
+      hold it.
+
+    If you wanted only the shared labels, be explicit:
+
+    ```python
+    a.add(b, fill_value=0)      # treat missing as zero
+    a[a.index.intersection(b.index)] + b[...]   # or restrict first
+    ```
+
+    `fill_value=0` is right for something additive like energy. It is wrong for a voltage
+    — a missing measurement is not zero volts. The choice is engineering, not syntax.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: a bus results table">
+  Build a DataFrame of load-flow results and add a column flagging limit violations.
+
+  <Solution>
+    ```python
+    import numpy as np
+    import pandas as pd
+
+    def results_table(bus_ids, v_mag, v_ang, p_mw, q_mvar,
+                      v_min=0.95, v_max=1.05):
+        """Assemble load-flow results with violation flags."""
+        df = pd.DataFrame({
+            'v_pu': v_mag,
+            'angle_deg': np.rad2deg(v_ang),
+            'p_mw': p_mw,
+            'q_mvar': q_mvar,
+        }, index=pd.Index(bus_ids, name='bus'))
+
+        df['violation'] = np.select(
+            [df.v_pu < v_min, df.v_pu > v_max],
+            ['undervoltage', 'overvoltage'],
+            default='',
+        )
+        df['margin_pu'] = np.minimum(df.v_pu - v_min, v_max - df.v_pu)
+        return df.sort_values('margin_pu')
+    ```
+
+    Naming the index (`name='bus'`) is a small habit worth forming — it survives into
+    plots, `groupby` results and CSV exports, so the label appears wherever the data goes.
+
+    `np.select` handles the two-sided limit in one pass. The alternative — two chained
+    `np.where` calls — works but reads worse as soon as a third condition appears.
+
+    `margin_pu` is the more useful column. A boolean violation flag tells you a bus
+    failed; the margin tells you which bus is *closest* to failing, which is what you
+    actually want when deciding where to act. Sorting by it puts the worst case first.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: profile an unfamiliar CSV">
+  Write a function that reports everything you would want to know before analysing a
+  dataset you have never seen.
+
+  <Solution>
+    ```python
+    import pandas as pd
+
+    def profile(df, max_unique=10):
+        """Summarise an unfamiliar DataFrame."""
+        print(f"shape: {df.shape[0]:,} rows x {df.shape[1]} columns")
+        print(f"memory: {df.memory_usage(deep=True).sum() / 1e6:.1f} MB\n")
+
+        summary = pd.DataFrame({
+            'dtype': df.dtypes,
+            'non_null': df.notna().sum(),
+            'null_pct': (df.isna().mean() * 100).round(1),
+            'unique': df.nunique(),
+        })
+        print(summary.to_string(), "\n")
+
+        # Columns with few distinct values are probably categorical
+        for col in df.columns:
+            n = df[col].nunique()
+            if 0 < n <= max_unique:
+                print(f"{col}: {sorted(df[col].dropna().unique())}")
+
+        # A numeric column stored as text is the classic trap
+        for col in df.select_dtypes('object'):
+            coerced = pd.to_numeric(df[col], errors='coerce')
+            if coerced.notna().mean() > 0.8:
+                bad = df.loc[coerced.isna() & df[col].notna(), col].unique()[:5]
+                print(f"\n! '{col}' is text but {coerced.notna().mean():.0%} numeric")
+                print(f"  blockers: {list(bad)}")
+    ```
+
+    The last check is the one that repays writing this. It finds columns that are *almost*
+    numeric and tells you exactly which values are blocking the conversion — usually a
+    handful of `'N/A'`, `'--'` or `'<0.01'` entries among a million good numbers.
+
+    `deep=True` on `memory_usage` matters: without it, an object column reports only the
+    size of its pointers, not the strings they point at, which can understate memory by
+    a factor of ten.
+
+    Run this before anything else on a new dataset. Ten seconds here saves an afternoon
+    of confusing results later.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What distinguishes a pandas Series from a NumPy array?',
+      options: [
+        'It is faster',
+        'It carries an index, so operations align on labels rather than positions',
+        'It can only hold floats',
+        'It is two-dimensional',
+      ],
+      answer: 1,
+      explain:
+        'The index is the whole point. Adding two Series matches labels first — which correctly handles a gap in measurement data that positional alignment would silently corrupt.',
+    },
+    {
+      q: 'df.dtypes shows object for a column of voltages. What does that mean?',
+      options: [
+        'It is stored efficiently',
+        'The column contains non-numeric values — a stray string, a comma, a dash',
+        'It is a datetime',
+        'Nothing, that is normal for floats',
+      ],
+      answer: 1,
+      explain:
+        'object means Python objects, usually strings. Something non-numeric is in there. pd.to_numeric(col, errors="coerce") converts and turns the blockers into NaN so you can find them.',
+    },
+    {
+      q: 'When should you prefer NumPy over pandas?',
+      options: [
+        'Always — pandas is deprecated',
+        'For homogeneous numeric arrays and anything inside a hot loop, where labels add overhead rather than meaning',
+        'Only for one-dimensional data',
+        'When reading CSV files',
+      ],
+      answer: 1,
+      explain:
+        'A Y-bus or a Jacobian has no meaningful labels, and per-element pandas access carries index overhead. Read and write with pandas; compute with NumPy.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A DataFrame is a NumPy array **plus labels**, and the labels change what arithmetic
+  means: operations align on the index, not on position. That is what makes pandas correct
+  on measurement data with gaps — and what makes `df.info()` the first thing you run on
+  anything unfamiliar.
+</KeyIdea>
+
+## Further reading
+
+- pandas: *10 minutes to pandas* — genuinely takes about forty
+- Next: **selecting data** — `.loc`, `.iloc`, and the copy warning everyone hits

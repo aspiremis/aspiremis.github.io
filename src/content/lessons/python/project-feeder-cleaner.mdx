@@ -1,0 +1,586 @@
+---
+title: 'Project: Feeder Measurement Cleaner'
+track: python
+module: pandas
+order: 24
+description: Turn a messy year of SCADA-style data into a clean hourly series you would be willing to publish from — with a provenance record for every point.
+objectives:
+  - Build a validating pipeline from raw file to analysis-ready series
+  - Record provenance so every value can be traced to measurement or estimate
+  - Report data quality alongside results rather than hiding it
+prerequisites: [grouping-and-reshaping, missing-data, time-series]
+estimatedMinutes: 90
+difficulty: intermediate
+tags: ['python', 'project', 'pandas', 'data-cleaning', 'scada']
+---
+
+The output of this project is not a number. It is a **clean series plus a record of what
+was done to it** — because a cleaned dataset without provenance is unusable in a thesis,
+and you cannot reconstruct provenance after the fact.
+
+## What you are cleaning
+
+Real SCADA exports carry a consistent set of defects. The generator below produces all of
+them deliberately, so you can test against ground truth:
+
+<CodeFile name="make_messy_data.py">
+```python
+"""Generate a year of realistically broken feeder data."""
+
+import numpy as np
+import pandas as pd
+
+
+def make_messy(seed=0, out='feeder_raw.csv'):
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range('2024-01-01', '2024-12-31 23:45', freq='15min')
+
+    # A plausible load: daily cycle, weekly cycle, seasonal trend, noise
+    t = np.arange(len(idx))
+    daily = 1 + 0.35 * np.sin(2 * np.pi * (t / 96 - 0.25))
+    weekly = np.where(idx.dayofweek < 5, 1.0, 0.82)
+    seasonal = 1 + 0.20 * np.sin(2 * np.pi * (idx.dayofyear - 100) / 365)
+    p_mw = 8.0 * daily * weekly * seasonal * rng.normal(1, 0.04, len(idx))
+
+    v_pu = 1.02 - 0.03 * (p_mw / p_mw.max()) + rng.normal(0, 0.004, len(idx))
+    df = pd.DataFrame({'timestamp': idx, 'p_mw': p_mw.round(3),
+                       'v_pu': v_pu.round(4), 'feeder_id': '007'})
+
+    # --- now break it, the way real exports are broken ---
+
+    # 1. Scattered single dropouts (flaky comms)
+    df.loc[rng.choice(len(df), 400, replace=False), ['p_mw', 'v_pu']] = np.nan
+
+    # 2. One long outage (RTU down for five days in July)
+    outage = (df.timestamp >= '2024-07-08') & (df.timestamp < '2024-07-13')
+    df = df[~outage]                                  # rows simply absent
+
+    # 3. Sentinel values
+    df.loc[rng.choice(df.index, 60, replace=False), 'p_mw'] = -999
+
+    # 4. A stuck sensor (identical value for 8 hours)
+    stuck = df.index[5000:5032]
+    df.loc[stuck, 'v_pu'] = 1.0134
+
+    # 5. Duplicate timestamps (a re-transmitted batch)
+    df = pd.concat([df, df.iloc[8000:8100]]).sort_values('timestamp')
+
+    # 6. Out-of-order rows
+    df = pd.concat([df.iloc[500:520], df.drop(df.index[500:520])])
+
+    # 7. A spike (instrument glitch, not a fault)
+    df.loc[df.index[12345], 'p_mw'] = 480.0
+
+    # 8. Numbers written with thousands separators, as text
+    df['energy_kwh'] = [f"{v:,.1f}" for v in df.p_mw * 250]
+
+    df.to_csv(out, index=False)
+    print(f"wrote {len(df):,} rows to {out}")
+    return df
+
+
+if __name__ == '__main__':
+    make_messy()
+```
+</CodeFile>
+
+<Callout type="engineering">
+  Each defect maps to a real cause worth recognising.
+
+  **Scattered dropouts** — a flaky radio link. **A five-day absence** — the RTU lost power;
+  note the rows are *missing*, not `NaN`, so `isna()` cannot see them until you reindex.
+  **`-999`** — the instrument's own missing-data code. **A stuck value** — a frozen
+  transducer, which reads as perfectly valid data. **Duplicate timestamps** — a batch
+  re-transmitted after a comms failure. **A 480 MW spike on an 8 MW feeder** — an
+  instrument glitch, distinguishable from a fault by being physically impossible rather
+  than merely extreme.
+
+  The stuck sensor is the interesting one. Nothing about `1.0134` is wrong. Only its
+  *repetition* is, and no range check will find it.
+</Callout>
+
+## Stage 1 — read and normalise the index
+
+<CodeFile name="clean.py">
+```python
+"""Feeder measurement cleaning pipeline."""
+
+import numpy as np
+import pandas as pd
+
+SENTINELS = [-999, -9999, 9999, 'N/A', 'NA', '--', 'NULL', 'BAD']
+
+LIMITS = {          # physically plausible, not statistically unusual
+    'p_mw': (0.0, 50.0),
+    'v_pu': (0.80, 1.20),
+}
+
+
+def load_raw(path, freq='15min'):
+    """Read the export and produce a regular, unique, sorted DatetimeIndex."""
+    df = pd.read_csv(
+        path,
+        parse_dates=['timestamp'],
+        dtype={'feeder_id': 'str'},       # keep the leading zeros in '007'
+        na_values=SENTINELS,
+        thousands=',',                     # "2,145.8" becomes a number
+    )
+
+    report = {'rows_read': len(df)}
+
+    # Duplicates: keep the last transmission of each timestamp
+    dupes = df.timestamp.duplicated().sum()
+    if dupes:
+        df = df.drop_duplicates(subset='timestamp', keep='last')
+    report['duplicates_dropped'] = int(dupes)
+
+    df = df.sort_values('timestamp').set_index('timestamp')
+
+    # Reindex onto the complete grid — this is what makes absent rows visible
+    full = pd.date_range(df.index.min(), df.index.max(), freq=freq)
+    report['rows_absent'] = int(len(full) - len(df))
+    df = df.reindex(full)
+    df.index.name = 'timestamp'
+
+    return df, report
+```
+</CodeFile>
+
+<Callout type="warning" title="Reindexing is the step people skip">
+  Rows that were never written to the file are not `NaN` — they are *nothing*. `isna()`
+  returns nothing for them, `len(df)` looks reasonable, and `resample('h').mean()` happily
+  produces an average over the two readings that survived in that hour.
+
+  `reindex` onto a complete `date_range` turns absence into an explicit gap. Every
+  completeness figure downstream depends on it.
+</Callout>
+
+## Stage 2 — flag the bad values
+
+The order matters: find everything before changing anything.
+
+<CodeFile name="clean.py (continued)">
+```python
+def flag_invalid(df, freq='15min', stuck_hours=2, spike_sigma=8):
+    """Return a boolean frame of per-column, per-row problems."""
+    flags = {}
+
+    for col, (lo, hi) in LIMITS.items():
+        if col not in df:
+            continue
+        present = df[col].notna()
+
+        # Out of physical range
+        out_of_range = present & ~df[col].between(lo, hi)
+
+        # Stuck: the value has not changed for a long time
+        window = int(stuck_hours * pd.Timedelta('1h') / pd.Timedelta(freq))
+        rolling_std = df[col].rolling(window, min_periods=window).std()
+        stuck = present & (rolling_std == 0)
+        # Mark the whole run, not just its last point
+        stuck = stuck[::-1].rolling(window, min_periods=1).max()[::-1].astype(bool)
+
+        # Spike: a large jump that immediately reverses
+        d = df[col].diff()
+        scale = 1.4826 * d.abs().median()
+        spike = present & (d.abs() > spike_sigma * scale) & \
+                (d.shift(-1).abs() > spike_sigma * scale) & \
+                (np.sign(d) != np.sign(d.shift(-1)))
+
+        flags[f'{col}_out_of_range'] = out_of_range
+        flags[f'{col}_stuck'] = stuck.fillna(False)
+        flags[f'{col}_spike'] = spike.fillna(False)
+
+    return pd.DataFrame(flags, index=df.index)
+```
+</CodeFile>
+
+<Callout type="engineering">
+  **The spike test asks whether the jump reverses.** A 480 MW reading followed immediately
+  by a return to 8 MW is an instrument glitch. A jump to 480 MW that *persists* is a
+  different event entirely, and a rule that only looked at magnitude would delete a
+  genuine fault record.
+
+  Requiring a large jump, a large jump back, and **opposite signs** distinguishes them.
+  That is the whole difference between filtering noise and destroying evidence.
+
+  Same reasoning for the stuck detector: it looks for zero variance over hours, because a
+  frozen transducer produces values that are individually plausible and collectively
+  impossible.
+</Callout>
+
+## Stage 3 — clean, with provenance
+
+<CodeFile name="clean.py (continued)">
+```python
+PROVENANCE = ['measured', 'interpolated', 'seasonal', 'unfilled']
+
+
+def clean_column(df, flags, col, freq='15min',
+                 max_interp='1h', max_seasonal='1D'):
+    """Null the flagged values, fill by gap length, and record what was done."""
+    s = df[col].copy()
+
+    bad = flags.filter(like=f'{col}_').any(axis=1)
+    s[bad] = np.nan
+
+    provenance = pd.Series('measured', index=s.index, dtype='object')
+    provenance[s.isna()] = 'unfilled'
+
+    missing = s.isna()
+    interval = pd.Timedelta(freq)
+
+    # Length of the NaN run each missing point belongs to
+    run_id = (~missing).cumsum()
+    run_len = run_id[missing].map(run_id[missing].value_counts()) * interval
+
+    short = pd.Series(False, index=s.index)
+    short[missing] = run_len <= pd.Timedelta(max_interp)
+
+    medium = pd.Series(False, index=s.index)
+    medium[missing] = ((run_len > pd.Timedelta(max_interp)) &
+                       (run_len <= pd.Timedelta(max_seasonal)))
+
+    # Short gaps: linear on the timestamp
+    s[short] = s.interpolate(method='time')[short]
+    provenance[short] = 'interpolated'
+
+    # Medium gaps: same weekday and time of day, median across the year
+    profile = s.groupby([s.index.dayofweek, s.index.time]).median()
+    keys = pd.MultiIndex.from_arrays([s.index.dayofweek, s.index.time])
+    s[medium] = pd.Series(profile.reindex(keys).values, index=s.index)[medium]
+    provenance[medium] = 'seasonal'
+
+    # Long gaps stay NaN and stay labelled 'unfilled'
+    return s, provenance
+```
+</CodeFile>
+
+## Stage 4 — aggregate honestly
+
+<CodeFile name="clean.py (continued)">
+```python
+def to_hourly(s, provenance, min_coverage=0.75):
+    """Hourly series, suppressed where too little of the hour was measured."""
+    hourly = pd.DataFrame({
+        'mean': s.resample('h').mean(),
+        'max': s.resample('h').max(),
+        'min': s.resample('h').min(),
+        'n_valid': s.resample('h').count(),
+        'n_expected': s.resample('h').size(),
+        'n_measured': (provenance == 'measured').resample('h').sum(),
+    })
+
+    hourly['coverage'] = hourly.n_valid / hourly.n_expected
+    hourly['measured_frac'] = hourly.n_measured / hourly.n_expected
+
+    # An hour built from one reading out of four is not an hourly average
+    insufficient = hourly.coverage < min_coverage
+    hourly.loc[insufficient, ['mean', 'max', 'min']] = np.nan
+    hourly['suppressed'] = insufficient
+
+    return hourly
+```
+</CodeFile>
+
+<Callout type="warning" title="resample().mean() will average one reading without complaining">
+  An hour with three of its four intervals missing still produces a number, and that number
+  goes into your annual mean weighted exactly the same as an hour with four good readings.
+
+  The `min_coverage` threshold is what stops that. Suppressing to `NaN` rather than
+  quietly accepting it means the shortfall stays visible all the way to the final figure.
+</Callout>
+
+## Stage 5 — test it
+
+Because the generator knows the truth, you can test against it.
+
+<CodeFile name="test_clean.py">
+```python
+import numpy as np
+import pandas as pd
+import pytest
+
+from clean import load_raw, flag_invalid, clean_column, to_hourly
+from make_messy_data import make_messy
+
+
+@pytest.fixture(scope='module')
+def raw(tmp_path_factory):
+    path = tmp_path_factory.mktemp('data') / 'feeder_raw.csv'
+    make_messy(out=path)
+    return load_raw(path)
+
+
+def test_index_is_regular_unique_sorted(raw):
+    df, report = raw
+    assert df.index.is_monotonic_increasing
+    assert df.index.is_unique
+    assert (df.index.to_series().diff().dropna() == pd.Timedelta('15min')).all()
+    assert report['duplicates_dropped'] == 100
+
+
+def test_absent_rows_became_visible(raw):
+    """The five-day July outage is 480 intervals, absent from the file."""
+    df, report = raw
+    assert report['rows_absent'] >= 480
+    july = df.loc['2024-07-08':'2024-07-12', 'p_mw']
+    assert july.isna().all()
+
+
+def test_sentinels_did_not_survive(raw):
+    df, _ = raw
+    assert not (df.p_mw == -999).any()
+    assert df.p_mw.min() >= 0
+
+
+def test_thousands_separator_parsed(raw):
+    df, _ = raw
+    assert pd.api.types.is_numeric_dtype(df.energy_kwh)
+
+
+def test_spike_flagged(raw):
+    df, _ = raw
+    flags = flag_invalid(df)
+    assert flags.p_mw_spike.sum() >= 1
+    assert df.loc[flags.p_mw_spike, 'p_mw'].max() > 100
+
+
+def test_stuck_sensor_flagged(raw):
+    df, _ = raw
+    flags = flag_invalid(df)
+    assert flags.v_pu_stuck.sum() >= 24        # the 8-hour frozen run
+
+
+def test_long_outage_is_not_filled(raw):
+    """Five days must stay NaN — filling it would be fabrication."""
+    df, _ = raw
+    flags = flag_invalid(df)
+    s, prov = clean_column(df, flags, 'p_mw')
+    july = slice('2024-07-08', '2024-07-12')
+    assert s.loc[july].isna().all()
+    assert (prov.loc[july] == 'unfilled').all()
+
+
+def test_short_gaps_are_interpolated(raw):
+    df, _ = raw
+    flags = flag_invalid(df)
+    s, prov = clean_column(df, flags, 'p_mw')
+    assert (prov == 'interpolated').sum() > 0
+    assert s[prov == 'interpolated'].notna().all()
+
+
+def test_provenance_accounts_for_every_point(raw):
+    df, _ = raw
+    flags = flag_invalid(df)
+    s, prov = clean_column(df, flags, 'p_mw')
+    assert len(prov) == len(s)
+    assert prov.isin(['measured', 'interpolated', 'seasonal', 'unfilled']).all()
+    # Exactly the unfilled points are NaN
+    assert (prov == 'unfilled').equals(s.isna())
+
+
+def test_low_coverage_hours_are_suppressed(raw):
+    df, _ = raw
+    flags = flag_invalid(df)
+    s, prov = clean_column(df, flags, 'p_mw')
+    hourly = to_hourly(s, prov)
+    assert hourly.loc[hourly.suppressed, 'mean'].isna().all()
+    assert hourly.loc['2024-07-09'].suppressed.all()
+```
+</CodeFile>
+
+<Callout type="tip" title="test_provenance_accounts_for_every_point is the important one">
+  It asserts that the provenance labels and the data agree completely — every point has a
+  label, every label is valid, and the `unfilled` points are exactly the `NaN` points.
+
+  That invariant is what makes provenance trustworthy rather than decorative. Without it,
+  the record can drift out of step with the data during a refactor and nothing notices.
+</Callout>
+
+## Stage 6 — report
+
+<CodeFile name="report.py">
+```python
+def quality_report(s, provenance, hourly):
+    """The paragraph that belongs in the methodology section."""
+    counts = provenance.value_counts()
+    total = len(provenance)
+
+    print(f"Period: {s.index.min():%Y-%m-%d} to {s.index.max():%Y-%m-%d}")
+    print(f"Intervals expected: {total:,}\n")
+
+    for label in ['measured', 'interpolated', 'seasonal', 'unfilled']:
+        n = counts.get(label, 0)
+        print(f"  {label:<14} {n:>8,}  {n / total:>6.1%}")
+
+    measured_only = s[provenance == 'measured']
+    print(f"\nPeak (measured only): {measured_only.max():.2f} MW "
+          f"at {measured_only.idxmax():%Y-%m-%d %H:%M}")
+    print(f"Peak (all values):    {s.max():.2f} MW")
+    print(f"Load factor:          {measured_only.mean() / measured_only.max():.3f}")
+    print(f"Hours suppressed:     {hourly.suppressed.sum():,} of {len(hourly):,}")
+```
+</CodeFile>
+
+Reporting the peak twice — measured only, and including estimates — is the honest form. If
+they differ, the reader learns something. If they agree, the estimates did not affect the
+headline figure and you have said so.
+
+## Extend it
+
+<Exercise n={1} kind="practice" title="Cross-validate with a second measurement">
+  If you have both power and current, each is a check on the other.
+
+  <Solution>
+    ```python
+    def cross_check(df, v_nominal_kv=11.0, tol=0.15):
+        """Flag rows where P, V and I are mutually inconsistent."""
+        # Three-phase apparent power implied by the current measurement
+        s_implied = np.sqrt(3) * v_nominal_kv * df.v_pu * df.i_a / 1000
+
+        # P cannot exceed S; the ratio is the implied power factor
+        implied_pf = df.p_mw / s_implied
+
+        return pd.DataFrame({
+            's_implied_mva': s_implied,
+            'implied_pf': implied_pf,
+            'impossible': implied_pf > 1 + tol,       # P > S: something is wrong
+            'suspicious': implied_pf < 0.5,           # implausibly poor for a feeder
+        })
+    ```
+
+    An implied power factor above 1.0 is physically impossible, so it localises the fault
+    to one of the three channels without needing a reference dataset. That is a
+    qualitatively better check than any range test: it uses a *relationship* the data must
+    satisfy rather than a bound you guessed.
+
+    This is the same principle as the Y-bus row-sum test from the NumPy project.
+    Redundancy in the measurements is what makes validation possible, and it is why
+    state estimation exists as a discipline.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="General: make it a command-line tool">
+  Wrap the pipeline so it runs from a terminal on any file.
+
+  <Solution>
+    ```python
+    import argparse
+    import sys
+    from pathlib import Path
+
+
+    def main(argv=None):
+        p = argparse.ArgumentParser(description='Clean SCADA feeder measurements.')
+        p.add_argument('input', type=Path)
+        p.add_argument('-o', '--output', type=Path, default=None)
+        p.add_argument('--freq', default='15min')
+        p.add_argument('--max-interp', default='1h',
+                       help='Longest gap to fill by interpolation')
+        p.add_argument('--min-coverage', type=float, default=0.75)
+        p.add_argument('--fail-under', type=float, default=None,
+                       help='Exit non-zero if measured fraction is below this')
+        args = p.parse_args(argv)
+
+        df, report = load_raw(args.input, freq=args.freq)
+        flags = flag_invalid(df, freq=args.freq)
+        s, prov = clean_column(df, flags, 'p_mw',
+                               freq=args.freq, max_interp=args.max_interp)
+        hourly = to_hourly(s, prov, min_coverage=args.min_coverage)
+
+        out = args.output or args.input.with_suffix('.clean.parquet')
+        hourly.to_parquet(out)
+
+        quality_report(s, prov, hourly)
+
+        measured = (prov == 'measured').mean()
+        if args.fail_under is not None and measured < args.fail_under:
+            print(f"\nFAIL: {measured:.1%} measured, below {args.fail_under:.1%}",
+                  file=sys.stderr)
+            return 1
+        return 0
+
+
+    if __name__ == '__main__':
+        raise SystemExit(main())
+    ```
+
+    `--fail-under` with a non-zero exit code is what makes this usable in a pipeline. A
+    scheduled job that silently produces a cleaned file from 30% real data is worse than
+    one that stops, because the file looks exactly as trustworthy as a good one.
+
+    Returning from `main` rather than calling `sys.exit` inside it keeps the function
+    testable: `assert main(['data.csv', '--fail-under', '0.9']) == 1` works in pytest,
+    while a bare `sys.exit` would need `pytest.raises(SystemExit)` at every call site.
+
+    Writing Parquet rather than CSV preserves the dtypes, per the reading lesson — and
+    means the next stage does not re-parse a single timestamp.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: benchmark against a naive pipeline">
+  Quantify what the careful version bought you.
+
+  <Solution>
+    ```python
+    def compare_pipelines(path):
+        """Naive versus careful cleaning, on the same file."""
+        naive = pd.read_csv(path, parse_dates=['timestamp'],
+                            index_col='timestamp').p_mw
+        naive_hourly = naive.resample('h').mean()
+
+        df, _ = load_raw(path)
+        flags = flag_invalid(df)
+        s, prov = clean_column(df, flags, 'p_mw')
+        careful = to_hourly(s, prov)
+
+        print(f"{'metric':<22}{'naive':>12}{'careful':>12}")
+        print(f"{'annual peak MW':<22}{naive.max():>12.2f}"
+              f"{s[prov == 'measured'].max():>12.2f}")
+        print(f"{'annual mean MW':<22}{naive.mean():>12.3f}"
+              f"{s[prov == 'measured'].mean():>12.3f}")
+        print(f"{'hours in series':<22}{len(naive_hourly):>12,}"
+              f"{len(careful):>12,}")
+        print(f"{'hours flagged unusable':<22}{0:>12,}"
+              f"{careful.suppressed.sum():>12,}")
+    ```
+
+    The peak is where the gap is widest. The naive pipeline reports the 480 MW spike as
+    the annual peak of an 8 MW feeder — off by a factor of sixty, and it would propagate
+    into any sizing decision made from that table.
+
+    The mean moves too, in the opposite direction, because the naive version silently
+    includes the `-999` sentinels.
+
+    The row that matters most is the last one. The naive pipeline reports **zero** unusable
+    hours, because it has no concept of one. It is not that it handled the five-day outage
+    badly — it never knew there was an outage, since those rows were absent from the file
+    rather than null.
+
+    That is the argument for the whole project. The cost of the careful version is an
+    afternoon; the cost of the naive one is a result you cannot defend when someone asks
+    how you handled the gaps.
+  </Solution>
+</Exercise>
+
+## What you built
+
+A pipeline that reads a broken export, normalises the index, distinguishes glitches from
+events, fills only what it can justify, suppresses hours it cannot support, and records the
+provenance of every single point — with a test suite that checks the provenance and the
+data can never disagree.
+
+<KeyIdea>
+  A cleaned dataset without a provenance record is not reusable, and provenance cannot be
+  reconstructed later. Reindex so absence becomes visible, distinguish a glitch from an
+  event by whether it reverses, fill only what gap length justifies, and report the peak
+  from measured values alongside the peak from everything.
+</KeyIdea>
+
+## Further reading
+
+- Hampel, *The Influence Curve* — why median and MAD, and not mean and standard deviation
+- IEEE 1159 — power quality event classification, if you want the formal taxonomy
+- Next module: **Matplotlib** — and the difference between a figure for you and a figure
+  for a reader

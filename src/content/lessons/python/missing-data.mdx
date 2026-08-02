@@ -1,0 +1,432 @@
+---
+title: Missing Data
+track: python
+module: pandas
+order: 21
+description: Detecting, dropping, filling and interpolating gaps — and the engineering judgement about when filling one is legitimate and when it is fabrication.
+objectives:
+  - Detect and quantify missing data before deciding anything
+  - Choose between dropping, filling and interpolating on defensible grounds
+  - Record what you did so a result stays reproducible
+prerequisites: [reading-data]
+estimatedMinutes: 35
+difficulty: intermediate
+tags: ['python', 'pandas', 'missing-data', 'nan', 'interpolation']
+---
+
+Every real measurement dataset has gaps. Communications drop, instruments fail, someone
+reboots the RTU during a storm.
+
+The mechanics of handling them take ten minutes to learn. The judgement about *which*
+mechanic is honest takes longer, and it is the part that shows up in a thesis viva.
+
+## Finding them
+
+```python
+df.isna()                    # boolean frame
+df.isna().sum()              # count per column
+df.isna().mean()             # FRACTION per column — usually more useful
+df.isna().any(axis=1)        # rows with any gap
+df.notna()                   # the inverse
+
+df.info()                    # non-null counts per column, in one line
+```
+
+`df.isna().mean()` beats a raw count because 400 missing values means nothing until you
+know whether the file has 500 rows or 500,000.
+
+But the count is the wrong question anyway. **Where** the gaps are matters more than how
+many:
+
+```python
+gap_id = df.v_pu.notna().cumsum()               # increments at each valid value
+runs = df.index.to_series().groupby(gap_id).agg(['first', 'last', 'size'])
+longest = runs['size'].max() - 1                # -1 for the valid row that starts it
+```
+
+<Callout type="engineering">
+  Two datasets, both 2% missing.
+
+  In the first, single readings are scattered randomly across the year — a flaky comms
+  link. Interpolating across one 15-minute interval is entirely defensible; the load did
+  not change much in that window and you can say so.
+
+  In the second, the whole of one week in July is absent — the RTU was down. Interpolating
+  across seven days invents a week of demand, and if that week contained the summer peak
+  your annual maximum is now fiction.
+
+  **Same percentage, completely different decisions.** Always look at the distribution of
+  gap lengths, not just the total.
+</Callout>
+
+## Dropping
+
+```python
+df.dropna()                          # any row with any NaN
+df.dropna(subset=['v_pu'])           # only rows missing THIS column
+df.dropna(how='all')                 # only rows that are entirely empty
+df.dropna(axis=1, thresh=1000)       # drop columns with under 1000 valid values
+```
+
+<Callout type="warning" title="A bare dropna() on a wide table can delete almost everything">
+  With twenty columns each 5% missing and gaps landing independently, roughly two thirds of
+  rows contain at least one `NaN` — and `df.dropna()` removes all of them.
+
+  Always pass `subset=` naming the columns your analysis actually needs. And check the
+  shape before and after:
+
+  ```python
+  before = len(df)
+  df = df.dropna(subset=['v_pu', 'p_mw'])
+  print(f"dropped {before - len(df):,} of {before:,} ({1 - len(df)/before:.1%})")
+  ```
+</Callout>
+
+## Filling
+
+```python
+df.fillna(0)                          # a constant — rarely right
+df.fillna(df.mean())                  # column mean — destroys variance
+df.ffill()                            # carry the last value forward
+df.bfill()                            # carry the next value backward
+df.ffill(limit=4)                     # at most four consecutive — the important one
+```
+
+<Compare
+  headings={['Method', 'Right for', 'Wrong for']}
+  rows={[
+    { option: 'ffill(limit=n)', when: 'Slowly varying signals over short gaps', cost: 'Long gaps — it makes a flat line that looks like real data', recommended: true },
+    { option: 'interpolate(method="time")', when: 'Smooth quantities: voltage, temperature', cost: 'Anything with a peak inside the gap' },
+    { option: 'fillna(0)', when: 'Genuinely additive counts', cost: 'Voltage, current, price — zero is a physical claim' },
+    { option: 'fillna(mean)', when: 'Almost nothing', cost: 'Shrinks variance and biases every downstream statistic' },
+    { option: 'Seasonal (same hour, other days)', when: 'Load profiles with daily structure', cost: 'Holidays, faults, anything unusual' },
+    { option: 'Leaving it NaN', when: 'When you cannot justify a fill', cost: 'Nothing — this is the honest default' },
+  ]}
+/>
+
+<Callout type="warning" title="fillna(0) is a claim about physics">
+  Filling a missing voltage with zero asserts the bus was dead. Filling a missing price
+  with zero asserts electricity was free.
+
+  Both then propagate into means, minima and every plot. Zero is only right when the
+  quantity is genuinely additive and absence genuinely means none — a count of outage
+  events, say, or metered energy from a feeder that was confirmed de-energised.
+</Callout>
+
+## Interpolating
+
+```python
+df.interpolate()                          # linear on POSITION — wrong for irregular data
+df.interpolate(method='time')             # linear on the TIMESTAMP — what you want
+df.interpolate(method='spline', order=3)  # smooth, can overshoot
+df.interpolate(limit=4)                   # bounded, again the important argument
+df.interpolate(limit_direction='both')    # also fill leading NaNs
+```
+
+<Callout type="warning" title="Use method='time' on a DatetimeIndex">
+  Plain `interpolate()` treats rows as evenly spaced. If your data has gaps — which is
+  precisely why you are interpolating — the rows around a gap are *not* evenly spaced, and
+  linear-on-position puts the interpolated value in the wrong place.
+
+  `method='time'` uses the actual timestamps. On regular data the two agree; on irregular
+  data only one of them is right.
+</Callout>
+
+## The limit argument is the whole lesson
+
+```python
+# Reasonable: fill up to one hour of 15-minute data
+df['v_pu'] = df.v_pu.interpolate(method='time', limit=4)
+
+# Not reasonable: fill anything, however long
+df['v_pu'] = df.v_pu.interpolate(method='time')
+```
+
+Without `limit`, one valid reading either side of a three-week outage produces three weeks
+of smooth, plausible, entirely invented data. It will pass every sanity check you write,
+because it *is* smooth and plausible. That is what makes it dangerous.
+
+<Callout type="tip" title="Record what you filled">
+  Add a column. It costs nothing and it means the provenance travels with the data.
+
+  ```python
+  df['v_imputed'] = df.v_pu.isna()
+  df['v_pu'] = df.v_pu.interpolate(method='time', limit=4)
+  ```
+
+  Then you can exclude imputed points from a validation set, shade them differently on a
+  plot, or report "annual peak, computed from measured values only". A reviewer asking
+  "how did you handle the gaps?" gets an answer instead of a shrug.
+</Callout>
+
+## NaN and NA
+
+```python
+np.nan            # the float NaN — what pandas has traditionally used
+pd.NA             # the newer, dtype-agnostic missing value
+pd.NaT            # missing datetime
+
+np.nan == np.nan  # False! Never compare with ==
+df.v_pu.isna()    # always use this
+```
+
+An integer column cannot hold `np.nan`, which is why adding a gap to an int column
+silently promotes it to float. The nullable dtypes fix this:
+
+```python
+pd.Series([1, 2, None], dtype='Int64')    # capital I — nullable integer
+```
+
+Useful for counts and IDs where turning `007` into `7.0` would be wrong.
+
+## Common mistakes
+
+<Callout type="warning" title="Interpolating without limit">
+  Fills arbitrarily long gaps with invented data that looks entirely real.
+</Callout>
+
+<Callout type="warning" title="Plain interpolate() on irregular time series">
+  Use `method='time'`.
+</Callout>
+
+<Callout type="warning" title="fillna(0) on a physical quantity">
+  Zero volts is a claim, not a placeholder.
+</Callout>
+
+<Callout type="warning" title="Comparing with == np.nan">
+  Always False. Use `.isna()`.
+</Callout>
+
+<Callout type="warning" title="Not recording what was filled">
+  Six months later you cannot tell measurement from imputation. Add the flag column.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Domain: characterise the gaps before filling">
+  Before choosing any method, report the gap structure of a year of feeder data.
+
+  <Solution>
+    ```python
+    import pandas as pd
+
+    def gap_report(s, freq='15min'):
+        """Describe the missing-data structure of a time series."""
+        expected = pd.date_range(s.index.min(), s.index.max(), freq=freq)
+        s = s.reindex(expected)              # absent rows become explicit NaN
+
+        missing = s.isna()
+        if not missing.any():
+            return {'complete': True}
+
+        # Consecutive runs of NaN share a value of this cumulative counter
+        run_id = (~missing).cumsum()[missing]
+        runs = run_id.groupby(run_id).size()
+
+        interval = pd.Timedelta(freq)
+        return {
+            'total_pct': round(missing.mean() * 100, 2),
+            'n_gaps': len(runs),
+            'longest': str(runs.max() * interval),
+            'median': str(int(runs.median()) * interval),
+            'over_1h': int((runs * interval > pd.Timedelta('1h')).sum()),
+            'over_1d': int((runs * interval > pd.Timedelta('1d')).sum()),
+        }
+    ```
+
+    The `reindex` on a full date range is the step people skip. Missing rows that were
+    never written to the file do not show up as `NaN` — they show up as *nothing*, and
+    `isna()` cannot see them. Reindexing turns absence into an explicit gap.
+
+    The `(~missing).cumsum()` trick is worth keeping: the counter only increments on valid
+    values, so every run of consecutive `NaN`s shares one value and `groupby` gives run
+    lengths without a loop.
+
+    Read the output as a decision, not a statistic. Many short gaps and none over an hour
+    means `interpolate(method='time', limit=4)` is defensible. One gap of four days means
+    you exclude that period and say so, because nothing you fill it with is a measurement.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: a defensible fill strategy">
+  Implement a gap-length-aware filler: interpolate short gaps, leave long ones alone, and
+  flag everything.
+
+  <Solution>
+    ```python
+    import pandas as pd
+
+    def fill_by_gap_length(s, freq='15min', max_interp='1h', max_seasonal='1D'):
+        """Fill short gaps by interpolation, medium ones seasonally, long ones not at all.
+
+        Returns (filled, method) where `method` records what was done to each point.
+        """
+        s = s.reindex(pd.date_range(s.index.min(), s.index.max(), freq=freq))
+        interval = pd.Timedelta(freq)
+        missing = s.isna()
+
+        method = pd.Series('measured', index=s.index)
+        method[missing] = 'unfilled'
+
+        run_id = (~missing).cumsum()
+        lengths = run_id[missing].map(run_id[missing].value_counts()) * interval
+
+        short = missing.copy()
+        short[missing] = lengths <= pd.Timedelta(max_interp)
+
+        medium = missing.copy()
+        medium[missing] = ((lengths > pd.Timedelta(max_interp)) &
+                           (lengths <= pd.Timedelta(max_seasonal)))
+
+        out = s.copy()
+
+        # Short: linear on the timestamp
+        interpolated = s.interpolate(method='time')
+        out[short] = interpolated[short]
+        method[short] = 'interpolated'
+
+        # Medium: the median of the same time of day on other days
+        profile = s.groupby([s.index.dayofweek, s.index.time]).median()
+        keys = pd.MultiIndex.from_arrays([s.index.dayofweek, s.index.time])
+        seasonal = pd.Series(profile.reindex(keys).values, index=s.index)
+        out[medium] = seasonal[medium]
+        method[medium] = 'seasonal'
+
+        # Long gaps stay NaN, labelled 'unfilled'
+        return out, method
+    ```
+
+    Three tiers, each with a stated justification:
+
+    - **Under an hour** — the load genuinely did not move much, and linear interpolation
+      between two real measurements is a defensible estimate.
+    - **An hour to a day** — linear is no longer credible across a daily cycle, but the
+      same weekday and time of day on other weeks carries real information.
+    - **Over a day** — nothing you write there is a measurement. Leave it `NaN` and
+      exclude the period explicitly.
+
+    Grouping by `dayofweek` as well as `time` matters: a Sunday afternoon load profile is
+    not a Wednesday afternoon one, and filling one with the other introduces exactly the
+    bias you were trying to avoid.
+
+    Returning `method` alongside the data is the part that makes this publishable. It
+    turns "I handled the missing data" into a per-point record you can plot, count, or
+    filter on — and a peak computed on `method == 'measured'` only is a claim you can
+    defend.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: show what imputation costs">
+  Demonstrate empirically why mean-filling is a bad default, by measuring what it does to
+  the statistics.
+
+  <Solution>
+    ```python
+    import numpy as np
+    import pandas as pd
+
+    def imputation_damage(s, missing_frac=0.15, seed=0):
+        """Remove values at random, fill them several ways, compare against truth."""
+        rng = np.random.default_rng(seed)
+        truth = s.dropna()
+
+        holes = rng.choice(len(truth), int(len(truth) * missing_frac), replace=False)
+        damaged = truth.copy()
+        damaged.iloc[holes] = np.nan
+
+        strategies = {
+            'drop':          damaged.dropna(),
+            'zero':          damaged.fillna(0),
+            'mean':          damaged.fillna(damaged.mean()),
+            'ffill':         damaged.ffill(),
+            'interp(time)':  damaged.interpolate(method='time'),
+        }
+
+        rows = []
+        for name, filled in strategies.items():
+            row = {
+                'method': name,
+                'mean': filled.mean(),
+                'std': filled.std(),
+                'p99': filled.quantile(0.99),
+                'max': filled.max(),
+            }
+            if len(filled) == len(truth):        # error only where comparable
+                row['rmse'] = np.sqrt(((filled - truth) ** 2).mean())
+            rows.append(row)
+
+        out = pd.DataFrame(rows).set_index('method')
+        out.loc['TRUTH'] = [truth.mean(), truth.std(),
+                            truth.quantile(0.99), truth.max(), 0.0]
+        return out.round(4)
+    ```
+
+    Run it on a load series and read down the `std` column. Mean-filling leaves the mean
+    almost exactly right — which is why it seems appealing — while visibly shrinking the
+    standard deviation, because 15% of the data is now exactly at the centre.
+
+    That matters more than it looks. Every downstream statistic inherits it: confidence
+    intervals narrow, a fitted model looks better than it is, and a hosting-capacity study
+    that depends on the *tails* of the load distribution understates the risk.
+
+    Note the `rmse` is only computed where the output is the same length as the truth —
+    `drop` produces a shorter series, so a point-by-point error is undefined for it. That
+    is itself the honest position: dropping does not estimate the missing values, so it
+    cannot be scored on them.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Two datasets are both 2% missing. Why might they need different treatment?',
+      options: [
+        'They should be treated the same',
+        'Because gap structure matters: scattered single points can be interpolated, but one continuous week cannot',
+        'Because one is larger',
+        'Percentage is the only thing that matters',
+      ],
+      answer: 1,
+      explain:
+        'Interpolating across a 15-minute gap estimates; interpolating across a week invents. Always look at the distribution of gap lengths, not just the total.',
+    },
+    {
+      q: 'Why pass limit= to interpolate()?',
+      options: [
+        'To make it faster',
+        'Without it, arbitrarily long gaps get filled with smooth, plausible, entirely invented data',
+        'It is required',
+        'To control the interpolation order',
+      ],
+      answer: 1,
+      explain:
+        'The danger is that the fabrication looks real — it is smooth and passes every sanity check. limit= bounds how far you are willing to estimate.',
+    },
+    {
+      q: 'What does fillna(df.mean()) do to your statistics?',
+      options: [
+        'Nothing — it is the safest default',
+        'It preserves the mean but shrinks the variance, biasing everything downstream',
+        'It increases the variance',
+        'It only affects the median',
+      ],
+      answer: 1,
+      explain:
+        'Every filled point sits exactly at the centre. Confidence intervals narrow, models look better than they are, and any analysis that depends on the tails understates risk.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Gap structure matters more than gap percentage.** Interpolate short gaps with
+  `method='time'` and an explicit `limit`, leave long ones as `NaN`, and record what you
+  filled in a flag column — so "annual peak from measured values only" is a claim you can
+  defend.
+</KeyIdea>
+
+## Further reading
+
+- pandas: *Working with missing data*
+- Little & Rubin, *Statistical Analysis with Missing Data* — the theory behind the
+  judgement calls
+- Next: **time series** — resampling, rolling windows and timezones

@@ -1,0 +1,357 @@
+---
+title: Selecting Data
+track: python
+module: pandas
+order: 19
+description: .loc, .iloc and the plain bracket — three ways to select that behave differently, plus the chained-assignment trap that silently discards your edit.
+objectives:
+  - Choose between .loc, .iloc and [] without guessing
+  - Recognise and avoid chained assignment
+  - Filter with boolean masks and query()
+prerequisites: [series-and-dataframes]
+estimatedMinutes: 35
+difficulty: intermediate
+tags: ['python', 'pandas', 'indexing', 'loc', 'iloc']
+---
+
+pandas gives you several ways to select data and they do not agree with each other. This
+lesson is about picking the right one on purpose.
+
+## The three accessors
+
+```python
+df['v_pu']              # a COLUMN, as a Series
+df[['v_pu', 'p_mw']]    # several COLUMNS, as a DataFrame
+df[0:3]                 # ROWS by position — inconsistent, avoid
+
+df.loc['Bus2']              # row by LABEL
+df.loc['Bus2', 'v_pu']      # one cell by label
+df.loc['Bus1':'Bus3']       # label slice — INCLUSIVE of the endpoint
+df.loc[:, 'v_pu':'p_mw']    # column slice by label
+
+df.iloc[1]                  # row by POSITION
+df.iloc[1, 0]               # one cell by position
+df.iloc[0:3]                # position slice — EXCLUSIVE, like Python
+```
+
+<Callout type="warning" title="A .loc slice includes its endpoint; .iloc does not">
+  ```python
+  df.loc['Bus1':'Bus3']    # Bus1, Bus2, Bus3 — three rows
+  df.iloc[0:3]             # positions 0, 1, 2 — three rows, ending BEFORE 3
+  ```
+
+  This is deliberate. A label slice that excluded its endpoint would be nearly useless —
+  you would have to know what label comes next. But it means `df.loc['2024-01':'2024-03']`
+  includes all of March, which is almost always what you want and occasionally not.
+</Callout>
+
+<Compare
+  headings={['Want', 'Use', 'Note']}
+  rows={[
+    { option: 'A column', when: "df['v_pu']", cost: 'Bare brackets mean columns', recommended: true },
+    { option: 'A row by name', when: "df.loc['Bus2']", cost: 'Never bare brackets' },
+    { option: 'A row by position', when: 'df.iloc[1]', cost: 'Positional, exclusive slices' },
+    { option: 'Rows matching a condition', when: 'df[mask] or df.loc[mask]', cost: 'Use .loc when also assigning' },
+    { option: 'One scalar, fast', when: "df.at['Bus2', 'v_pu']", cost: 'Faster than .loc for a single cell' },
+    { option: 'To assign', when: 'df.loc[...] = value', cost: 'ALWAYS .loc — see below' },
+  ]}
+/>
+
+<Callout type="tip" title="The rule that resolves most confusion">
+  **Bare brackets select columns. `.loc` and `.iloc` select rows.**
+
+  The exception — `df[0:3]` giving rows — exists for historical reasons and is exactly the
+  kind of inconsistency worth avoiding. Write `df.iloc[0:3]` and the ambiguity disappears.
+</Callout>
+
+## Boolean selection
+
+```python
+df[df.v_pu < 0.95]                              # undervoltage buses
+df[(df.v_pu < 0.95) & (df.zone == 'North')]     # & and |, parentheses required
+df[~df.zone.isin(['North', 'South'])]           # negation and membership
+df[df.v_pu.between(0.95, 1.05)]                 # inclusive by default
+```
+
+The same rules as NumPy: `&` and `|`, never `and` and `or`, and parentheses around each
+comparison because `&` binds more tightly than `<`.
+
+`query()` is an alternative that reads better for complex conditions:
+
+```python
+df.query('v_pu < 0.95 and zone == "North"')
+df.query('v_pu < @threshold')                   # @ refers to a Python variable
+```
+
+It is slower on small frames and faster on very large ones, but the real reason to use it
+is legibility when a condition has four clauses.
+
+## The chained assignment trap
+
+This is the pandas mistake that costs people the most time.
+
+```python
+df[df.v_pu < 0.95]['flag'] = 'low'      # DOES NOTHING (or warns)
+```
+
+The selection produced a new object; you assigned to that, and it was discarded. Depending
+on your pandas version you get a `SettingWithCopyWarning`, a `ChainedAssignmentError`, or
+in older versions silence.
+
+The fix is a single `.loc` with both parts:
+
+```python
+df.loc[df.v_pu < 0.95, 'flag'] = 'low'   # one operation, works
+```
+
+<Callout type="warning" title="Two brackets in a row on the left of = is always wrong">
+  That is the whole heuristic. `df[...][...] = ` or `df[...].loc[...] = ` — if you see two
+  selections before the `=`, rewrite it as one `.loc[rows, cols] = `.
+
+  pandas 3.0 makes this an error rather than a warning, via copy-on-write. That is an
+  improvement: an exception you must fix beats a warning you learn to ignore.
+</Callout>
+
+## Copy or view
+
+Same question as NumPy, with a less predictable answer.
+
+```python
+sub = df[df.v_pu < 0.95]        # may be a view or a copy
+sub['flag'] = 'low'             # may warn, may not affect df
+
+sub = df[df.v_pu < 0.95].copy() # explicit — no ambiguity
+sub['flag'] = 'low'             # definitely safe
+```
+
+<Callout type="tip" title="When you intend a separate object, say .copy()">
+  It costs memory and buys certainty. If you are about to modify a subset and you do not
+  want the original touched, `.copy()` removes the entire question.
+
+  Under copy-on-write (the default from pandas 3.0) the semantics are finally consistent —
+  every selection behaves like a copy — but `.copy()` remains the clearest statement of
+  intent, and code that reads on an older version still needs it.
+</Callout>
+
+## Selecting columns by type
+
+```python
+df.select_dtypes('number')                  # numeric columns only
+df.select_dtypes(include=['float64'])
+df.select_dtypes(exclude=['object'])
+
+df.filter(like='v_')                        # columns whose name contains 'v_'
+df.filter(regex=r'^p_.*_mw$')               # by pattern
+```
+
+`select_dtypes('number')` is genuinely useful — it is how you apply a numeric operation to
+a table that also contains names and zones without listing the columns by hand.
+
+## Common mistakes
+
+<Callout type="warning" title="Chained assignment">
+  `df[mask]['col'] = x` silently fails. Use `df.loc[mask, 'col'] = x`.
+</Callout>
+
+<Callout type="warning" title="Using and / or on Series">
+  `(a < 1) and (b < 2)` raises "truth value of a Series is ambiguous". Use `&` with
+  parentheses.
+</Callout>
+
+<Callout type="warning" title="Assuming .loc slices exclude the endpoint">
+  They include it. `.iloc` excludes. Different by design.
+</Callout>
+
+<Callout type="warning" title="df[0:3] to get rows">
+  It works, but bare brackets mean columns everywhere else. Write `df.iloc[0:3]`.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="Why did nothing change?">
+  ```python
+  df = pd.DataFrame({'v_pu': [1.02, 0.93, 1.07], 'bus': ['A', 'B', 'C']})
+  df[df.v_pu < 0.95]['status'] = 'undervoltage'
+  print(df.columns)      # no 'status' column. Why?
+  ```
+
+  <Solution>
+    `df[df.v_pu < 0.95]` created a **new DataFrame**. The assignment added a column to
+    that temporary object, which was then discarded. The original `df` never saw it.
+
+    ```python
+    df.loc[df.v_pu < 0.95, 'status'] = 'undervoltage'
+    ```
+
+    One `.loc` with rows and column together. This works because `.loc.__setitem__`
+    receives both parts and can write into the original.
+
+    Two related patterns worth having:
+
+    ```python
+    # A default for every row, then override the exceptions
+    df['status'] = 'ok'
+    df.loc[df.v_pu < 0.95, 'status'] = 'undervoltage'
+    df.loc[df.v_pu > 1.05, 'status'] = 'overvoltage'
+
+    # Or vectorised, which handles all cases in one pass
+    df['status'] = np.select(
+        [df.v_pu < 0.95, df.v_pu > 1.05],
+        ['undervoltage', 'overvoltage'],
+        default='ok',
+    )
+    ```
+
+    The `np.select` version is better when the conditions might overlap, because it makes
+    the precedence explicit — first match wins — rather than depending on the order you
+    happened to write the assignments.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: find the worst-loaded hours">
+  From a year of feeder measurements, extract the hours where any phase exceeded 90% of
+  the conductor rating, with context.
+
+  <Solution>
+    ```python
+    import pandas as pd
+
+    def overload_hours(df, rating_a, threshold=0.90, context=2):
+        """Rows where any phase current exceeds a fraction of the rating.
+
+        df has columns i_a, i_b, i_c and a DatetimeIndex.
+        Returns the overload rows plus `context` hours either side.
+        """
+        phases = ['i_a', 'i_b', 'i_c']
+        limit = threshold * rating_a
+
+        exceeded = (df[phases] > limit).any(axis=1)     # axis=1: across phases
+        if not exceeded.any():
+            return df.iloc[:0]                           # empty, same columns
+
+        # Widen the mask by `context` rows either side
+        window = 2 * context + 1
+        widened = (exceeded.rolling(window, center=True, min_periods=1)
+                           .max().astype(bool))
+
+        out = df.loc[widened].copy()
+        out['overloaded'] = exceeded[widened]
+        out['max_phase_pct'] = df.loc[widened, phases].max(axis=1) / rating_a * 100
+        return out
+    ```
+
+    Three points worth extracting.
+
+    `.any(axis=1)` collapses across the phase columns, leaving one boolean per timestamp
+    — the axis rule from NumPy, unchanged. Getting `axis=0` here would ask "did any
+    timestamp exceed?" for each phase, which is a different and much less useful question.
+
+    Returning `df.iloc[:0]` rather than `None` when nothing is found means the caller can
+    always do `len(result)` or concatenate it without a special case. An empty frame with
+    the right columns is a better empty answer than nothing.
+
+    The rolling trick for context is the neat part: `rolling(...).max()` on a boolean
+    Series spreads each `True` across the window, which turns "the overloaded rows" into
+    "the overloaded rows and their neighbours" without any loop. Seeing what was happening
+    two hours before an overload is usually more informative than the overload itself.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: a reusable filter builder">
+  Write a function that applies a dictionary of filter conditions to any DataFrame and
+  reports what each one removed.
+
+  <Solution>
+    ```python
+    import operator
+    import pandas as pd
+
+    OPS = {'<': operator.lt, '<=': operator.le, '>': operator.gt,
+           '>=': operator.ge, '==': operator.eq, '!=': operator.ne}
+
+
+    def apply_filters(df, filters, verbose=True):
+        """Apply {column: (op, value)} filters, reporting each step.
+
+        >>> apply_filters(df, {'v_pu': ('>', 0.9), 'zone': ('==', 'North')})
+        """
+        mask = pd.Series(True, index=df.index)
+        start = len(df)
+
+        for col, (op, value) in filters.items():
+            if col not in df.columns:
+                raise KeyError(f"No column '{col}'. Available: {list(df.columns)}")
+            if op not in OPS:
+                raise ValueError(f"Unknown operator '{op}'. Use one of {list(OPS)}")
+
+            before = mask.sum()
+            mask &= OPS[op](df[col], value)
+            if verbose:
+                removed = before - mask.sum()
+                print(f"  {col} {op} {value!r}: removed {removed:,} "
+                      f"({removed / start:.1%}), {mask.sum():,} remain")
+
+        return df.loc[mask].copy()
+    ```
+
+    The per-step report is why this is worth more than a chain of brackets. When a filter
+    chain unexpectedly leaves four rows out of a million, this tells you immediately
+    *which* condition did it — usually one with a units mismatch or a stale threshold.
+
+    Accumulating into a single `mask` rather than re-filtering at each step matters too:
+    the counts stay comparable because every condition is evaluated against the original
+    index, and there is only one actual selection at the end.
+
+    The `KeyError` listing available columns is a small kindness to your future self. A
+    bare `KeyError: 'v_up'` when the column is `v_pu` takes a minute to diagnose; one that
+    prints the real names takes a second.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does df[mask][\'col\'] = value do?',
+      options: [
+        'Sets the column for the masked rows',
+        'Modifies a temporary object and discards the change — use df.loc[mask, \'col\'] = value',
+        'Raises immediately',
+        'Sets the column for all rows',
+      ],
+      answer: 1,
+      explain:
+        'Chained assignment. The heuristic: two selections before an = is always wrong. Rewrite as one .loc[rows, cols] = value.',
+    },
+    {
+      q: 'How many rows does df.loc[\'A\':\'C\'] return, given rows A, B, C, D?',
+      options: ['Two — A and B', 'Three — A, B and C', 'Four', 'Depends on the dtype'],
+      answer: 1,
+      explain:
+        'Label slices INCLUDE the endpoint, unlike .iloc and unlike Python generally. Otherwise you would need to know which label comes after C.',
+    },
+    {
+      q: 'What does df[\'v_pu\'] return?',
+      options: [
+        'The row labelled v_pu',
+        'The column v_pu, as a Series',
+        'A DataFrame with one column',
+        'An error',
+      ],
+      answer: 1,
+      explain:
+        'Bare brackets select columns; .loc and .iloc select rows. Use df[[\'v_pu\']] with a nested list if you want a one-column DataFrame instead of a Series.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Bare brackets select columns, `.loc` and `.iloc` select rows** — and any assignment
+  needs a single `.loc[rows, cols] = value`, never two selections in a row. Label slices
+  include their endpoint; positional slices do not.
+</KeyIdea>
+
+## Further reading
+
+- pandas: *Indexing and selecting data*
+- pandas: *Copy-on-Write* — the 3.0 semantics that finally make this predictable
+- Next: **reading real data** — and the ways a CSV lies to you

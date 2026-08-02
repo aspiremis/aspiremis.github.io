@@ -1,0 +1,397 @@
+---
+title: Time Series
+track: python
+module: pandas
+order: 22
+description: DatetimeIndex, resampling, rolling windows and timezones — the part of pandas that has no MATLAB equivalent worth using, and the part load data needs most.
+objectives:
+  - Build and slice a DatetimeIndex confidently
+  - Resample and roll without confusing the two
+  - Handle timezones and DST without corrupting a year of data
+prerequisites: [missing-data]
+estimatedMinutes: 40
+difficulty: intermediate
+tags: ['python', 'pandas', 'time-series', 'resample', 'timezone']
+---
+
+This is the lesson that justifies the whole module. Everything pandas does with time is
+better than the alternatives, and load data is nothing but time.
+
+## DatetimeIndex
+
+```python
+df = pd.read_csv(f, parse_dates=['timestamp'], index_col='timestamp')
+
+df.index.year, df.index.month, df.index.hour
+df.index.dayofweek           # Monday is 0
+df.index.dayofyear
+df.index.is_month_end
+
+pd.date_range('2024-01-01', '2024-12-31', freq='15min')
+pd.date_range('2024-01-01', periods=8760, freq='h')
+```
+
+Slicing with strings is the feature you will use hourly:
+
+```python
+df['2024']                       # the whole year
+df['2024-07']                    # July
+df['2024-07-15']                 # one day
+df['2024-07-15 08:00':'2024-07-15 18:00']
+df.between_time('09:00', '17:00')     # these hours on EVERY day
+df.at_time('12:00')                   # noon on every day
+```
+
+`between_time` has no concise equivalent anywhere else. "Every weekday evening peak across
+a year" is one line:
+
+```python
+df[df.index.dayofweek < 5].between_time('18:00', '22:00')
+```
+
+<Callout type="tip" title="Frequency strings">
+  `min`, `h`, `D`, `W`, `MS` (month start), `ME` (month end), `QS`, `YS`. Multiples work:
+  `15min`, `2h`, `7D`.
+
+  Lowercase `h` and `min` are current; older code uses `H` and `T`, which now warn. If you
+  are reading a tutorial that writes `freq='H'`, it predates pandas 2.2.
+</Callout>
+
+## Resampling
+
+Resampling changes the **sampling rate**. It is a groupby where the groups are time bins.
+
+```python
+df.resample('h').mean()        # 15-minute data to hourly averages
+df.resample('D').max()         # daily peak
+df.resample('ME').sum()        # monthly total
+df.resample('h').agg({'v_pu': 'mean', 'p_mw': 'max', 'i_a': ['mean', 'max']})
+```
+
+<Callout type="engineering">
+  **The aggregation function is an engineering decision, not a default.**
+
+  Downsampling load from 15-minute to hourly with `.mean()` gives average power, which is
+  what you want for energy. With `.max()` it gives the peak within each hour, which is what
+  you want for equipment rating.
+
+  These differ by 10–20% on a real feeder, and the gap widens with more distributed
+  generation. A transformer sized on hourly averages is undersized for the 15-minute peak
+  it actually sees.
+
+  Which is right depends on the question. Stating which you used is part of the answer.
+</Callout>
+
+Upsampling needs a fill rule:
+
+```python
+df.resample('15min').ffill()                    # hold the last value
+df.resample('15min').interpolate()              # smooth between
+df.resample('15min').asfreq()                   # leave NaN — honest
+```
+
+`asfreq()` is worth knowing about. Upsampling creates no new information, and leaving the
+new points `NaN` says so.
+
+## Rolling windows
+
+Rolling keeps the sampling rate and computes over a moving window. This is the distinction
+people confuse.
+
+```python
+df.v_pu.rolling(24).mean()                  # 24 ROWS
+df.v_pu.rolling('24h').mean()               # 24 HOURS — correct with gaps
+df.v_pu.rolling(24, center=True).mean()     # centred, not trailing
+df.v_pu.rolling(24, min_periods=1).mean()   # emit a value from the first row
+
+df.v_pu.expanding().mean()                  # everything so far
+df.v_pu.ewm(span=24).mean()                 # exponentially weighted
+```
+
+<Compare
+  headings={['Operation', 'Changes rate?', 'Use for']}
+  rows={[
+    { option: 'resample("h").mean()', when: 'Yes — fewer rows out', cost: 'Reducing 15-minute data to hourly', recommended: true },
+    { option: 'rolling("24h").mean()', when: 'No — same rows out', cost: 'Smoothing, moving averages, trend' },
+    { option: 'expanding().max()', when: 'No', cost: 'Running record, e.g. peak so far this year' },
+    { option: 'ewm(span=n).mean()', when: 'No', cost: 'Smoothing that weights recent values more' },
+  ]}
+/>
+
+<Callout type="warning" title="rolling(24) counts rows; rolling('24h') counts time">
+  On complete data they agree. On data with gaps they do not — and measurement data has
+  gaps by definition.
+
+  `rolling(24)` on a series missing six hours will average across a window that spans
+  thirty hours of wall-clock time while calling it a daily average. `rolling('24h')` uses
+  the actual timestamps and is correct either way.
+
+  Prefer the string form on any time-indexed data. It costs nothing and removes a whole
+  category of quiet error.
+</Callout>
+
+## Shifting and differences
+
+```python
+df.v_pu.shift(1)              # previous value
+df.v_pu.shift(-1)             # next value
+df.v_pu.shift(freq='1D')      # shift the INDEX by a day, not the values
+
+df.p_mw.diff()                # change from the previous row
+df.p_mw.pct_change()          # fractional change
+df.p_mw - df.p_mw.shift(freq='7D')    # same time last week
+```
+
+`shift(freq=...)` moving the index rather than the values is the one to remember. It makes
+week-on-week comparison correct even when rows are missing, because it matches on
+timestamps rather than counting rows.
+
+## Timezones
+
+```python
+df.index = df.index.tz_localize('Asia/Kolkata')     # naive -> aware, no values change
+df.index = df.index.tz_convert('UTC')               # aware -> aware, values shift
+df.index.tz_localize(None)                          # drop the timezone
+```
+
+<Callout type="engineering">
+  **India is unusually easy here.** IST is UTC+5:30 with no daylight saving, so a naive
+  local timestamp is unambiguous all year. Every hour exists exactly once.
+
+  That stops being true the moment you touch a European or American dataset. Under DST, one
+  local hour each spring **does not exist** and one each autumn happens **twice** — so a
+  year of hourly data has 8759 or 8761 rows, not 8760.
+
+  ```python
+  df.index.tz_localize('Europe/London', ambiguous='infer',
+                       nonexistent='shift_forward')
+  ```
+
+  Without those arguments, `tz_localize` raises on the duplicated autumn hour rather than
+  guessing. That is correct behaviour and worth appreciating — silently picking one of the
+  two would corrupt an hour of data invisibly.
+
+  The rule that avoids all of it: **store and compute in UTC, convert to local only for
+  display.** Almost every timezone bug is someone doing arithmetic in local time.
+</Callout>
+
+## Periods
+
+```python
+pd.Period('2024-07', freq='M')        # July 2024 as a SPAN, not an instant
+df.index.to_period('M')
+df.to_period('M').groupby(level=0).sum()
+```
+
+A `Timestamp` is a point; a `Period` is an interval. "July 2024" is a period; "2024-07-01
+00:00" is a timestamp. Billing months, tariff seasons and financial years are periods, and
+modelling them as such avoids off-by-one-day errors at boundaries.
+
+## Common mistakes
+
+<Callout type="warning" title="rolling(n) on data with gaps">
+  Use `rolling('24h')` so the window is defined in time.
+</Callout>
+
+<Callout type="warning" title="Doing arithmetic in local time">
+  Store UTC, convert for display. This is the origin of most timezone bugs.
+</Callout>
+
+<Callout type="warning" title="Assuming a year has 8760 hours">
+  Leap years have 8784. DST zones have 8759 or 8761.
+</Callout>
+
+<Callout type="warning" title="Resampling with a default aggregation">
+  Mean and max differ by 10–20% on load data, and they answer different questions.
+</Callout>
+
+<Callout type="warning" title="Forgetting resample bins are left-closed">
+  The `'h'` bin at 09:00 covers 09:00:00 to 09:59:59. Pass `closed=` and `label=` if you
+  need the other convention.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Resample or roll?">
+  For 15-minute data over a year, what does each produce?
+
+  ```python
+  df.resample('D').max()
+  df.rolling('1D').max()
+  df.resample('D').mean().rolling(7).mean()
+  ```
+
+  <Solution>
+    - `resample('D').max()` → **365 rows**, the peak within each calendar day.
+    - `rolling('1D').max()` → **35,040 rows**, unchanged, each the maximum over the
+      preceding 24 hours. A sliding maximum, not a daily one.
+    - The third → **365 rows**: daily means, then a 7-row moving average over those daily
+      values, which is a weekly trend line.
+
+    The first two answer genuinely different questions. "The highest load on 15 July" is a
+    resample. "The highest load in any 24-hour window" is a rolling maximum, and it is
+    always at least as large, because a peak spanning midnight is captured by one and
+    split by the other.
+
+    Note the third mixes both forms deliberately: `rolling(7)` counts rows, which is
+    correct *here* because the resample already guaranteed one row per day. Chaining a
+    resample first is the standard way to make row-counting windows safe.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: build a load duration curve">
+  Produce the load duration curve and the load factor from a year of feeder measurements.
+
+  <Solution>
+    ```python
+    import numpy as np
+    import pandas as pd
+
+    def load_duration(s, freq='15min'):
+        """Load duration curve plus the standard descriptive figures.
+
+        Returns a dict with the curve and the metrics a report would quote.
+        """
+        s = s.dropna()
+        if s.empty:
+            raise ValueError("No valid measurements")
+
+        interval_h = pd.Timedelta(freq).total_seconds() / 3600
+        sorted_load = np.sort(s.values)[::-1]                 # descending
+
+        hours = np.arange(1, len(sorted_load) + 1) * interval_h
+        pct_time = hours / hours[-1] * 100
+
+        peak = sorted_load[0]
+        average = s.mean()
+        energy = s.sum() * interval_h                          # MWh if s is MW
+
+        return {
+            'curve': pd.DataFrame({'pct_time': pct_time, 'load': sorted_load}),
+            'peak': peak,
+            'average': average,
+            'load_factor': average / peak,
+            'energy_mwh': energy,
+            'hours_above_90pct': float((s > 0.9 * peak).sum() * interval_h),
+            'coverage': len(s) * interval_h / 8760,
+        }
+    ```
+
+    Three things this gets right that a quick version would not.
+
+    **Sorting destroys the time axis on purpose.** A duration curve answers "for how many
+    hours was load above X?", which is exactly the question that sizing and hosting-capacity
+    studies ask, and it is unanswerable from a chronological plot.
+
+    **`hours_above_90pct` is often the real finding.** A feeder near its peak for eleven
+    hours a year is a different investment case from one near its peak for eight hundred,
+    even when the peak itself is identical.
+
+    **`coverage` is reported alongside.** A load factor computed from eight months of data
+    is not an annual load factor, and the only way that stays honest is to publish the
+    denominator. This is the missing-data lesson arriving where it matters.
+
+    Load factor itself is the compact summary: near 1.0 means flat and efficiently used;
+    0.3 means the network is sized for a peak it rarely sees.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: detect anomalies with rolling statistics">
+  Flag points that deviate from their own recent behaviour, robustly.
+
+  <Solution>
+    ```python
+    import numpy as np
+    import pandas as pd
+
+    def rolling_anomalies(s, window='24h', n_sigma=4.0, min_periods=10):
+        """Flag points far from a robust rolling centre.
+
+        Uses median and MAD rather than mean and std, so a large anomaly
+        does not inflate the very threshold meant to catch it.
+        """
+        centre = s.rolling(window, center=True, min_periods=min_periods).median()
+
+        deviation = (s - centre).abs()
+        mad = deviation.rolling(window, center=True, min_periods=min_periods).median()
+
+        # 1.4826 * MAD estimates sigma for normally distributed data
+        scale = 1.4826 * mad
+        scale = scale.replace(0, np.nan)          # a flat window has no scale
+
+        score = (s - centre) / scale
+        return pd.DataFrame({
+            'value': s,
+            'centre': centre,
+            'score': score,
+            'anomaly': score.abs() > n_sigma,
+        })
+    ```
+
+    The reason for median and MAD over mean and standard deviation is worth stating
+    plainly: a single large spike inflates the standard deviation enough to make itself
+    look ordinary. The median barely moves. Robust statistics exist precisely for the case
+    where the thing you are looking for would corrupt the measurement you are looking with.
+
+    `center=True` compares each point against its neighbours on **both** sides. A trailing
+    window flags the first point of a genuine step change as an anomaly, then adapts —
+    which is right for online detection and wrong for reviewing history.
+
+    The `replace(0, np.nan)` guard matters more than it looks. A window where the signal is
+    perfectly constant — a stuck sensor — has MAD zero, and dividing by it makes every
+    subsequent point infinitely anomalous. A stuck sensor is itself worth detecting, but
+    with a different test: `s.rolling(window).std() == 0`.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the difference between resample("h") and rolling("1h")?',
+      options: [
+        'They are the same',
+        'resample changes the sampling rate — fewer rows out; rolling keeps every row and computes over a moving window',
+        'rolling is faster',
+        'resample only works on hourly data',
+      ],
+      answer: 1,
+      explain:
+        'Resampling 15-minute data to daily gives 365 rows; a rolling daily maximum gives all 35,040, each the max over the preceding 24 hours. Different questions.',
+    },
+    {
+      q: 'Why prefer rolling("24h") over rolling(24)?',
+      options: [
+        'It is faster',
+        'It defines the window in time rather than rows, so gaps do not silently stretch it',
+        'It works on more dtypes',
+        'There is no difference',
+      ],
+      answer: 1,
+      explain:
+        'With six hours missing, rolling(24) averages across a window spanning thirty hours of wall-clock time while calling it daily. The string form uses the actual timestamps.',
+    },
+    {
+      q: 'Why store timestamps in UTC and convert only for display?',
+      options: [
+        'UTC is more precise',
+        'Because local-time arithmetic breaks across DST, where one hour is missing and another happens twice',
+        'pandas requires it',
+        'To save memory',
+      ],
+      answer: 1,
+      explain:
+        'IST has no DST so India is forgiving, but any European or American dataset has years with 8759 or 8761 hours. Almost every timezone bug is arithmetic done in local time.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Resample changes the sampling rate; rolling keeps it.** Define rolling windows in time
+  (`'24h'`) rather than rows so gaps cannot stretch them, choose the resample aggregation
+  deliberately — mean for energy, max for rating — and do all arithmetic in UTC.
+</KeyIdea>
+
+## Further reading
+
+- pandas: *Time series / date functionality* — long, and worth reading once end to end
+- Next: **grouping and reshaping** — split-apply-combine, and joining tables

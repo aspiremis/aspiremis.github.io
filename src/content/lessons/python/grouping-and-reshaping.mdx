@@ -1,0 +1,406 @@
+---
+title: Grouping and Reshaping
+track: python
+module: pandas
+order: 23
+description: Split-apply-combine, pivot tables, long versus wide, and the merge that silently multiplies your rows.
+objectives:
+  - Use groupby with the right aggregation and know when transform is what you need
+  - Reshape between long and wide deliberately
+  - Merge tables without duplicating or losing rows
+prerequisites: [time-series]
+estimatedMinutes: 35
+difficulty: intermediate
+tags: ['python', 'pandas', 'groupby', 'merge', 'pivot']
+---
+
+Three operations cover most of what remains: grouping, reshaping and joining. Each has one
+trap that costs an afternoon the first time.
+
+## Split, apply, combine
+
+```python
+df.groupby('zone').mean(numeric_only=True)
+df.groupby('zone').v_pu.agg(['mean', 'min', 'max', 'count'])
+df.groupby(['zone', 'feeder']).p_mw.sum()
+
+df.groupby(df.index.hour).p_mw.mean()          # average daily profile
+df.groupby([df.index.dayofweek, df.index.hour]).p_mw.mean()
+```
+
+Grouping by an index attribute is the idiom worth internalising. `df.groupby(df.index.hour)`
+gives the average load shape across a whole year in one expression, and adding
+`dayofweek` separates weekday from weekend profiles.
+
+```python
+df.groupby('zone').agg(
+    mean_v=('v_pu', 'mean'),
+    min_v=('v_pu', 'min'),
+    peak_load=('p_mw', 'max'),
+    n=('p_mw', 'size'),
+)
+```
+
+Named aggregation gives sensible column names instead of a MultiIndex you then have to
+flatten. Prefer it.
+
+## agg, transform, filter, apply
+
+These four differ in what shape comes back, which is the whole distinction.
+
+<Compare
+  headings={['Method', 'Returns', 'Use for']}
+  rows={[
+    { option: 'agg', when: 'One row per group', cost: 'Summaries — mean per zone', recommended: true },
+    { option: 'transform', when: 'Same shape as the input', cost: 'Broadcasting a group statistic back to every row' },
+    { option: 'filter', when: 'A subset of the original rows', cost: 'Keeping whole groups that meet a condition' },
+    { option: 'apply', when: 'Whatever you return', cost: 'Anything else — flexible and slow' },
+  ]}
+/>
+
+`transform` is the one people reach for `apply` instead of, and it is worth knowing:
+
+```python
+# Normalise each feeder by its own peak — one column, same length as df
+df['p_normalised'] = df.p_mw / df.groupby('feeder').p_mw.transform('max')
+
+# Deviation from the group mean
+df['v_deviation'] = df.v_pu - df.groupby('zone').v_pu.transform('mean')
+```
+
+```python
+# Keep only feeders with at least a year of data
+df.groupby('feeder').filter(lambda g: len(g) >= 35_040)
+```
+
+<Callout type="tip" title="Reach for apply last">
+  `apply` runs a Python function per group, which means interpreter overhead per group and
+  no vectorisation.
+
+  On a hundred groups it does not matter. On a hundred thousand it is the difference
+  between a second and several minutes. Check whether `agg`, `transform` or a built-in
+  method does it first — they almost always do.
+</Callout>
+
+## Long and wide
+
+```python
+# Long -> wide
+wide = df.pivot(index='timestamp', columns='feeder', values='p_mw')
+
+# Wide -> long
+long = wide.reset_index().melt(
+    id_vars='timestamp', var_name='feeder', value_name='p_mw'
+)
+
+# Pivot with aggregation, for duplicate index/column pairs
+pd.pivot_table(df, index='zone', columns='hour',
+               values='p_mw', aggfunc='mean')
+```
+
+<Callout type="engineering">
+  **Long format** — one row per (timestamp, feeder, value) — is right for storage and for
+  anything with a variable number of feeders. It handles missing combinations naturally
+  and it is what a database gives you.
+
+  **Wide format** — one column per feeder — is right for correlation matrices, for
+  plotting several series together, and for anything expecting a matrix.
+
+  ```python
+  wide.corr()                    # which feeders move together
+  wide.plot()                    # one line per feeder, automatically
+  ```
+
+  Store long, pivot wide for the analysis that needs it. Converting back and forth is
+  cheap; choosing the wrong one to store is not.
+</Callout>
+
+`pivot` raises on duplicate index/column pairs; `pivot_table` aggregates them. If `pivot`
+raises, you have duplicates you did not know about — which is information, not an
+inconvenience.
+
+## Merging
+
+```python
+pd.merge(loads, buses, on='bus_id', how='left')
+pd.merge(a, b, left_on='from_bus', right_on='bus_id', how='inner')
+df.join(other)                                    # on the index
+pd.concat([jan, feb, mar])                        # stack rows
+pd.concat([v, i], axis=1)                         # side by side, aligning on index
+```
+
+<Compare
+  headings={['how=', 'Keeps', 'Risk']}
+  rows={[
+    { option: 'inner', when: 'Only matching keys', cost: 'Silently drops unmatched rows' },
+    { option: 'left', when: 'All of the left frame', cost: 'NaN where the right had no match', recommended: true },
+    { option: 'outer', when: 'Everything from both', cost: 'NaN on both sides' },
+    { option: 'cross', when: 'Every combination', cost: 'Deliberate row explosion — rarely wanted' },
+  ]}
+/>
+
+<Callout type="warning" title="A merge on a non-unique key multiplies rows">
+  If the right frame has three rows for `bus_id = 5`, every left row with `bus_id = 5`
+  becomes three rows. A merge of 1,000 and 1,000 rows can produce far more than 1,000.
+
+  ```python
+  print(f"before: {len(left):,}")
+  merged = pd.merge(left, right, on='bus_id', how='left', validate='many_to_one')
+  print(f"after:  {len(merged):,}")
+  ```
+
+  `validate=` is the fix, and it is underused. It raises immediately if the relationship
+  is not what you claimed — `'one_to_one'`, `'one_to_many'`, `'many_to_one'` — which turns
+  a silent row explosion into an error at the line that caused it.
+
+  Also pass `indicator=True` on a left join to get a `_merge` column showing which rows
+  found a match. Counting `left_only` tells you instantly whether the join worked.
+</Callout>
+
+## MultiIndex
+
+Grouping by several keys produces one:
+
+```python
+g = df.groupby(['zone', 'feeder']).p_mw.sum()
+
+g['North']                      # everything in North
+g.loc[('North', 'F1')]          # one value
+g.unstack()                     # feeder becomes columns
+g.reset_index()                 # back to flat columns
+```
+
+`unstack()` and `reset_index()` are the two escapes. A MultiIndex is powerful and awkward;
+most code is clearer after `reset_index()`.
+
+## Common mistakes
+
+<Callout type="warning" title="Merging without checking the row count">
+  A non-unique key multiplies rows. Print before and after, and pass `validate=`.
+</Callout>
+
+<Callout type="warning" title="how='inner' by default">
+  `pd.merge` defaults to inner, which silently drops unmatched rows. `left` is usually the
+  safer intent.
+</Callout>
+
+<Callout type="warning" title="Using apply where transform works">
+  `transform` is vectorised and returns the original shape. `apply` is a Python loop.
+</Callout>
+
+<Callout type="warning" title="Forgetting groupby drops NaN keys by default">
+  Rows whose group key is `NaN` disappear entirely. Pass `dropna=False` to keep them.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="Where did the extra rows come from?">
+  ```python
+  print(len(measurements))     # 8760
+  print(len(bus_data))         # 33
+  merged = pd.merge(measurements, bus_data, on='bus_id')
+  print(len(merged))           # 17,520
+  ```
+
+  <Solution>
+    `bus_data` has **duplicate `bus_id` values** — most likely two rows for one bus, from
+    an appended update or a file concatenated twice. Every measurement for that bus matched
+    both rows and became two.
+
+    Diagnose it:
+
+    ```python
+    dupes = bus_data[bus_data.bus_id.duplicated(keep=False)]
+    print(dupes.sort_values('bus_id'))
+    print(f"{bus_data.bus_id.duplicated().sum()} duplicate keys")
+    ```
+
+    Then decide, rather than deduplicating reflexively — the two rows might differ in a
+    column that matters:
+
+    ```python
+    # If they are genuinely identical
+    bus_data = bus_data.drop_duplicates(subset='bus_id')
+
+    # If they differ, keep the most recent
+    bus_data = bus_data.sort_values('updated').drop_duplicates('bus_id', keep='last')
+    ```
+
+    And prevent the recurrence:
+
+    ```python
+    merged = pd.merge(measurements, bus_data, on='bus_id',
+                      how='left', validate='many_to_one')
+    ```
+
+    `validate='many_to_one'` states the expectation — many measurements per bus, one
+    record per bus — and raises the moment it is violated. Exactly 2× the expected row
+    count is the classic signature, and worth recognising on sight.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: a monthly feeder summary">
+  Build the per-feeder, per-month table a distribution planner would actually ask for.
+
+  <Solution>
+    ```python
+    import pandas as pd
+
+    def monthly_summary(df, v_min=0.95, v_max=1.05):
+        """Per-feeder monthly statistics from 15-minute measurements.
+
+        df has a DatetimeIndex and columns feeder, p_mw, v_pu.
+        """
+        interval_h = 0.25
+
+        g = df.groupby(['feeder', pd.Grouper(freq='MS')])
+
+        out = g.agg(
+            energy_mwh=('p_mw', lambda s: s.sum() * interval_h),
+            peak_mw=('p_mw', 'max'),
+            mean_mw=('p_mw', 'mean'),
+            min_v=('v_pu', 'min'),
+            max_v=('v_pu', 'max'),
+            n=('p_mw', 'size'),
+            n_valid=('p_mw', 'count'),      # count skips NaN; size does not
+        )
+
+        out['load_factor'] = out.mean_mw / out.peak_mw
+        out['coverage'] = out.n_valid / out.n
+
+        # Violation hours need a separate pass — they are a count, not a statistic
+        violations = (df.assign(bad=~df.v_pu.between(v_min, v_max))
+                        .groupby(['feeder', pd.Grouper(freq='MS')])
+                        .bad.sum() * interval_h)
+        out['violation_hours'] = violations
+
+        return out.round(3)
+    ```
+
+    `pd.Grouper(freq='MS')` is how you group by a time bin **alongside** another key.
+    `resample` cannot do this — it only groups by time — so grouping by feeder and month
+    together needs `Grouper`.
+
+    The `n` versus `n_valid` pair is deliberate: `size` counts rows, `count` counts
+    non-null values, and their ratio is the coverage figure that keeps every other number
+    in the row honest. A load factor from a month that is 40% missing is not a monthly
+    load factor, and the table now says so on its own.
+
+    `violation_hours` needs its own pass because it is a count of intervals rather than a
+    statistic over a column. Multiplying by `interval_h` converts intervals to hours,
+    which is what a planner reads — "eleven hours outside limits in July" is actionable in
+    a way that "44 intervals" is not.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: a safe merge helper">
+  Write a merge wrapper that reports what happened and refuses to explode silently.
+
+  <Solution>
+    ```python
+    import pandas as pd
+
+
+    def safe_merge(left, right, on, how='left', expect_growth=1.0, **kwargs):
+        """Merge with diagnostics, raising if the row count grows unexpectedly.
+
+        Args:
+            expect_growth: Maximum acceptable len(out) / len(left).
+        """
+        for name, frame in (('left', left), ('right', right)):
+            missing = set([on] if isinstance(on, str) else on) - set(frame.columns)
+            if missing:
+                raise KeyError(f"{name} frame has no column(s) {sorted(missing)}")
+
+        n_left, n_right = len(left), len(right)
+        dup_right = right.duplicated(subset=on).sum()
+
+        out = pd.merge(left, right, on=on, how=how, indicator=True, **kwargs)
+
+        matched = (out._merge == 'both').sum()
+        only_left = (out._merge == 'left_only').sum()
+        out = out.drop(columns='_merge')
+
+        print(f"merge on {on!r} ({how})")
+        print(f"  left {n_left:,} x right {n_right:,} -> {len(out):,}")
+        print(f"  matched {matched:,} ({matched / max(n_left, 1):.1%})")
+        if only_left:
+            print(f"  ! {only_left:,} left rows found no match")
+        if dup_right:
+            print(f"  ! right has {dup_right:,} duplicate keys")
+
+        growth = len(out) / max(n_left, 1)
+        if growth > expect_growth:
+            raise ValueError(
+                f"Row count grew {growth:.2f}x (limit {expect_growth}). "
+                f"Right frame has {dup_right} duplicate keys on {on!r}."
+            )
+        return out
+    ```
+
+    The growth check is the point. A merge that unexpectedly doubles your data is not an
+    error in pandas' eyes — it did exactly what a many-to-many join means — so the only
+    place that can catch it is your own expectation, stated explicitly.
+
+    `indicator=True` and then dropping the column keeps the diagnostic without polluting
+    the output. The `left_only` count is the other half of the story: a merge can fail by
+    growing *or* by matching nothing, and only reporting both catches both.
+
+    A default of `expect_growth=1.0` with `how='left'` encodes the common case — a lookup
+    that should attach attributes without changing the number of rows. Anything else has
+    to be asked for.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does groupby(...).transform("mean") return?',
+      options: [
+        'One row per group',
+        'A result the same shape as the input, with each row carrying its group mean',
+        'A scalar',
+        'A MultiIndex',
+      ],
+      answer: 1,
+      explain:
+        'That is what makes it assignable straight back as a column — normalising each feeder by its own peak is one expression, with no apply and no merge.',
+    },
+    {
+      q: 'A merge of 8,760 and 33 rows produced 17,520 rows. Why?',
+      options: [
+        'pandas added rows',
+        'The right frame has duplicate keys, so matching rows were multiplied',
+        'The merge was outer',
+        'A dtype mismatch',
+      ],
+      answer: 1,
+      explain:
+        'Exactly 2x is the signature of a duplicated key. validate="many_to_one" turns this into an immediate error rather than a silently wrong dataset.',
+    },
+    {
+      q: 'When do you need pd.Grouper(freq="MS") instead of resample("MS")?',
+      options: [
+        'They are interchangeable',
+        'When grouping by a time bin AND another column at the same time',
+        'Only for monthly data',
+        'When the index is not a DatetimeIndex',
+      ],
+      answer: 1,
+      explain:
+        'resample groups by time alone. Per-feeder monthly statistics need both keys, and Grouper is what lets a time bin sit inside a groupby list.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  `agg` summarises, `transform` broadcasts back to the original shape, and `apply` is the
+  slow last resort. On a merge, always print the row count before and after and pass
+  `validate=` — a duplicated key multiplies rows without raising anything.
+</KeyIdea>
+
+## Further reading
+
+- pandas: *Group by: split-apply-combine*
+- pandas: *Merge, join, concatenate and compare*
+- Next: the **module project** — a year of messy feeder data, cleaned honestly
