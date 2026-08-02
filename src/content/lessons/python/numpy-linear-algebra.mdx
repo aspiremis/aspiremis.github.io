@@ -1,0 +1,347 @@
+---
+title: Linear Algebra
+track: python
+module: numpy
+order: 15
+description: np.linalg — solve rather than inv, eigenvalues, least squares and conditioning, with the same arguments as the MATLAB module and different spelling.
+objectives:
+  - Solve linear systems with np.linalg.solve and know why inv is wrong
+  - Compute eigenvalues and interpret them for stability work
+  - Use lstsq for over-determined systems and check conditioning
+prerequisites: [aggregation-and-axes]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['python', 'numpy', 'linear-algebra', 'conditioning']
+---
+
+Everything the MATLAB *Linear systems* lesson argued is still true — backslash beats
+`inv`, residual is not error, conditioning tells you how many digits survive. Only the
+spelling changes.
+
+This lesson is deliberately shorter for that reason. If any of it feels unfamiliar,
+reread that lesson rather than this one.
+
+## Solving
+
+```python
+import numpy as np
+
+A = np.array([[3.0, 1.0], [1.0, 2.0]])
+b = np.array([9.0, 8.0])
+
+x = np.linalg.solve(A, b)         # the equivalent of MATLAB's A \ b
+np.allclose(A @ x, b)             # True
+```
+
+<Compare
+  headings={['MATLAB', 'NumPy', 'Note']}
+  rows={[
+    { option: 'A \\ b', when: 'np.linalg.solve(A, b)', cost: 'Square systems', recommended: true },
+    { option: 'A \\ b (rectangular)', when: 'np.linalg.lstsq(A, b, rcond=None)', cost: 'Least squares' },
+    { option: 'inv(A)', when: 'np.linalg.inv(A)', cost: 'Avoid — same reasons' },
+    { option: 'det(A)', when: 'np.linalg.det(A)', cost: '' },
+    { option: 'eig(A)', when: 'np.linalg.eig(A)', cost: 'Returns (values, vectors)' },
+    { option: 'cond(A)', when: 'np.linalg.cond(A)', cost: '' },
+    { option: 'rank(A)', when: 'np.linalg.matrix_rank(A)', cost: '' },
+    { option: 'norm(x)', when: 'np.linalg.norm(x)', cost: '' },
+  ]}
+/>
+
+<Callout type="warning" title="np.linalg.solve does not dispatch like backslash">
+  MATLAB's `\` inspects the matrix and picks an algorithm — triangular substitution,
+  Cholesky, LU, QR for rectangular. `np.linalg.solve` does **LU only**, and it **requires
+  a square matrix**.
+
+  For a rectangular system you must call `lstsq` explicitly:
+
+  ```python
+  x, residuals, rank, sv = np.linalg.lstsq(A, b, rcond=None)
+  ```
+
+  For a known-symmetric-positive-definite matrix, `scipy.linalg.cho_solve` is faster —
+  but you have to know and say so. NumPy makes you choose where MATLAB chose for you.
+  Slightly more work, and slightly more honest about what is happening.
+</Callout>
+
+## Conditioning
+
+```python
+np.linalg.cond(A)                 # 2-norm condition number
+np.linalg.matrix_rank(A)
+np.linalg.det(A)
+```
+
+Same rule of thumb: $\kappa \approx 10^k$ means about **k significant digits lost** from
+the ~16 a float64 provides.
+
+<Callout type="engineering">
+  And the same power-systems reading. A Jacobian condition number climbing through
+  iterations means the operating point is approaching voltage collapse — the mathematics
+  reporting a physical limit, not a numerical failure.
+
+  ```python
+  import warnings
+
+  cond = np.linalg.cond(J)
+  if cond > 1e12:
+      warnings.warn(f"Jacobian condition {cond:.2e} — near voltage collapse?")
+
+  dx = np.linalg.solve(J, -f)
+  ```
+
+  Note NumPy raises `LinAlgError` on an exactly singular matrix rather than warning and
+  returning garbage as MATLAB does. That is arguably better — you cannot ignore it.
+
+  ```python
+  try:
+      x = np.linalg.solve(Y, I)
+  except np.linalg.LinAlgError:
+      raise ValueError("Y-bus is singular — is there a slack bus?") from None
+  ```
+</Callout>
+
+## Eigenvalues
+
+```python
+values, vectors = np.linalg.eig(A)          # general matrix
+values = np.linalg.eigvals(A)               # values only, cheaper
+values, vectors = np.linalg.eigh(S)         # symmetric/Hermitian — faster, real values
+```
+
+`eig` returns a **tuple**, unlike MATLAB where `eig(A)` gives just the values unless you
+ask for two outputs. Forgetting to unpack is a common early error.
+
+For small-signal stability, exactly as in the MATLAB lesson:
+
+```python
+lam = np.linalg.eigvals(A_state)
+
+zeta = -lam.real / np.abs(lam)              # damping ratio
+freq = np.abs(lam.imag) / (2 * np.pi)       # Hz
+
+unstable = lam.real > 0
+oscillatory = np.abs(lam.imag) > 1e-9
+poorly_damped = oscillatory & (zeta < 0.05)
+
+if unstable.any():
+    raise ValueError(f"{unstable.sum()} eigenvalue(s) in the right half-plane")
+if poorly_damped.any():
+    print(f"{poorly_damped.sum()} poorly damped mode(s), "
+          f"lowest zeta = {zeta[poorly_damped].min():.4f}")
+```
+
+<Callout type="warning" title="Eigenvector columns, and no guaranteed order">
+  `vectors[:, i]` is the eigenvector for `values[i]` — a **column**, matching MATLAB.
+
+  But neither library guarantees an ordering. If you need them sorted, do it explicitly:
+
+  ```python
+  order = np.argsort(-zeta)            # least damped first
+  lam, zeta = lam[order], zeta[order]
+  ```
+</Callout>
+
+## Least squares
+
+For more equations than unknowns:
+
+```python
+# Fit dV = R * I to noisy measurements
+I = np.array([10, 25, 40, 55, 70, 85, 100.0])
+dV = np.array([2.1, 5.4, 8.3, 11.6, 14.5, 17.9, 20.8])
+
+A = np.column_stack([I, np.ones_like(I)])          # [I, 1] for slope and intercept
+coeffs, residuals, rank, sv = np.linalg.lstsq(A, dV, rcond=None)
+
+R_est, offset = coeffs
+print(f"R = {R_est:.4f} ohms, intercept = {offset:.4f} V")
+
+# Condition number of the fitting problem, from the singular values
+print(f"cond = {sv[0] / sv[-1]:.2f}")
+```
+
+`np.column_stack` is the tidy way to build a design matrix. And `sv[0]/sv[-1]` gives the
+conditioning of the *fit* — a large value means the columns are nearly parallel and the
+individual coefficients are poorly determined even if the fit looks good. That is the
+same warning as the MATLAB interpolation lesson about fitting ZIP coefficients to data
+with no voltage variation.
+
+## Other useful routines
+
+```python
+np.linalg.norm(x)                  # 2-norm
+np.linalg.norm(A, 'fro')           # Frobenius, for matrices
+np.linalg.matrix_power(A, 3)       # A @ A @ A
+np.linalg.qr(A)                    # QR decomposition
+np.linalg.svd(A)                   # singular value decomposition
+np.linalg.cholesky(S)              # for symmetric positive definite
+np.trace(A)
+np.diag(A)                         # extract diagonal — or build one from a vector
+```
+
+`np.diag` has the same double life as MATLAB's: vector in gives a diagonal matrix,
+matrix in gives the diagonal.
+
+## Common mistakes
+
+<Callout type="warning" title="np.linalg.inv(A) @ b">
+  Slower and less accurate. Use `solve`.
+</Callout>
+
+<Callout type="warning" title="Passing a rectangular matrix to solve">
+  It raises. `lstsq` is the rectangular case.
+</Callout>
+
+<Callout type="warning" title="Forgetting eig returns a tuple">
+  `values, vectors = np.linalg.eig(A)`. Use `eigvals` if you only want the values.
+</Callout>
+
+<Callout type="warning" title="Ignoring LinAlgError">
+  A singular matrix raises rather than warning. Catch it and say something useful about
+  the network.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Domain: solve a small network and check it">
+  Build a 3-bus Y-bus, solve for voltages given injected currents, and report the
+  conditioning honestly.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    z = np.array([0.02+0.06j, 0.08+0.24j, 0.06+0.18j])
+    y12, y13, y23 = 1 / z
+
+    Y = np.array([
+        [y12 + y13,      -y12,       -y13],
+        [     -y12,  y12 + y23,      -y23],
+        [     -y13,      -y23,  y13 + y23],
+    ])
+
+    # Structural check: with no shunts every row must sum to zero
+    assert np.allclose(Y.sum(axis=1), 0), "Y-bus row sums non-zero"
+
+    I = np.array([1.0-0.3j, -0.6+0.2j, -0.4+0.1j])
+
+    print(f"cond(Y) = {np.linalg.cond(Y):.3e}")
+
+    try:
+        V = np.linalg.solve(Y, I)
+        print(f"residual = {np.linalg.norm(Y @ V - I):.2e}")
+    except np.linalg.LinAlgError:
+        print("Y is singular — no reference bus, so voltages are only "
+              "defined up to a constant. Remove the slack row and column.")
+    ```
+
+    Expect the singular path. A Y-bus with no shunt path to ground genuinely is singular:
+    adding a constant to every voltage gives an equally valid solution, so there is no
+    unique answer.
+
+    That is the same finding as the MATLAB matrices lesson, and NumPy handles it better —
+    it raises rather than returning enormous numbers with a warning you might miss.
+
+    The fix is physical, not numerical: designate a slack bus and delete its row and
+    column.
+    ```python
+    slack = 0
+    keep = [i for i in range(3) if i != slack]
+    V_rest = np.linalg.solve(Y[np.ix_(keep, keep)], I[keep])
+    ```
+    Note `np.ix_` — the block-selection idiom from the indexing lesson.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="General: fit a polynomial and judge it">
+  Fit polynomials of increasing degree to noisy data and show where overfitting begins,
+  using a held-out split.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    x = np.linspace(0, 10, 30)
+    y_true = 2 + 0.5 * x
+    y = y_true + rng.normal(0, 0.6, x.size)
+
+    # Hold out a third of the points, chosen at random
+    idx = rng.permutation(x.size)
+    train, test = idx[:20], idx[20:]
+
+    print(f"{'deg':>4}{'train RMSE':>12}{'test RMSE':>12}{'cond':>12}")
+    print("-" * 40)
+
+    for deg in range(1, 12):
+        A_train = np.vander(x[train], deg + 1)
+        coef, *_ = np.linalg.lstsq(A_train, y[train], rcond=None)
+
+        rmse_train = np.sqrt(np.mean((A_train @ coef - y[train]) ** 2))
+        A_test = np.vander(x[test], deg + 1)
+        rmse_test = np.sqrt(np.mean((A_test @ coef - y[test]) ** 2))
+
+        print(f"{deg:>4}{rmse_train:>12.4f}{rmse_test:>12.4f}"
+              f"{np.linalg.cond(A_train):>12.2e}")
+    ```
+
+    Training error falls monotonically with degree — it always does. Test error falls,
+    bottoms out around degree 1 or 2 (which is where the truth is), then climbs sharply.
+
+    Watch the condition number too: it grows enormously with degree, because the columns
+    of a Vandermonde matrix become nearly parallel. By degree 10 the fit is
+    ill-conditioned as well as overfitted, so the coefficients themselves are meaningless
+    even before you consider generalisation.
+
+    **The held-out split is the only honest test.** Training error cannot detect
+    overfitting by construction — it is the quantity being minimised.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the NumPy equivalent of MATLAB\'s A \\ b for a square system?',
+      options: ['np.linalg.inv(A) @ b', 'np.linalg.solve(A, b)', 'A / b', 'np.divide(A, b)'],
+      answer: 1,
+      explain:
+        'solve does an LU factorisation and substitution — fewer operations and less rounding than forming an inverse. Unlike backslash it requires a square matrix; lstsq handles rectangular.',
+    },
+    {
+      q: 'What does np.linalg.eig return?',
+      options: [
+        'Just the eigenvalues',
+        'A tuple of (eigenvalues, eigenvectors)',
+        'A diagonal matrix',
+        'The characteristic polynomial',
+      ],
+      answer: 1,
+      explain:
+        'Always a tuple, unlike MATLAB where a single output gives values only. Use np.linalg.eigvals when you want just the values.',
+    },
+    {
+      q: 'What happens when you pass an exactly singular matrix to np.linalg.solve?',
+      options: [
+        'It returns Inf values with a warning',
+        'It raises LinAlgError',
+        'It returns the least-squares solution',
+        'It returns zeros',
+      ],
+      answer: 1,
+      explain:
+        'NumPy raises rather than warning-and-continuing as MATLAB does — arguably better, since you cannot ignore it. Catch it and say something useful, like "is there a slack bus?".',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Same arguments as the MATLAB module, different spelling: **`solve` not `inv`**, check
+  `cond` before trusting a result, and `lstsq` for over-determined systems. NumPy makes
+  you choose the algorithm where backslash chose for you — slightly more work, and more
+  honest about what is happening.
+</KeyIdea>
+
+## Further reading
+
+- `np.linalg` reference — and `scipy.linalg`, which is broader and often faster
+- Next: **performance** — vectorising, memory layout, and when a loop is actually fine

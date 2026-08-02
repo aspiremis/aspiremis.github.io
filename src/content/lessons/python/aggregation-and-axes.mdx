@@ -1,0 +1,370 @@
+---
+title: Aggregation and Axes
+track: python
+module: numpy
+order: 14
+description: What axis=0 actually means, why it is the reverse of what most people guess, and the NaN-aware functions that measurement data always needs.
+objectives:
+  - Predict the result shape of any aggregation along an axis
+  - Use keepdims to preserve shape for broadcasting
+  - Handle missing data with the nan-aware function family
+prerequisites: [array-operations]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['python', 'numpy', 'aggregation', 'axes', 'nan']
+---
+
+`sum`, `mean`, `max` and friends all take an `axis` argument, and getting it right is a
+matter of one clear rule that almost everyone initially gets backwards.
+
+## The rule
+
+**`axis` names the dimension that gets collapsed.**
+
+```python
+import numpy as np
+
+A = np.arange(12).reshape(3, 4)
+# [[ 0  1  2  3]
+#  [ 4  5  6  7]
+#  [ 8  9 10 11]]
+
+A.sum()             # 66      — everything
+A.sum(axis=0)       # [12, 15, 18, 21]  — shape (4,)  the ROWS collapsed
+A.sum(axis=1)       # [ 6, 22, 38]      — shape (3,)  the COLUMNS collapsed
+```
+
+<Analogy>
+  Think of `axis=0` as **squashing the array flat vertically** — the rows are crushed
+  together and you are left with one value per column.
+
+  `axis=1` squashes it **horizontally** — the columns collapse and you get one value per
+  row.
+
+  The axis you name is the one that disappears.
+</Analogy>
+
+The confusion is that `axis=0` is the row axis, but summing along it gives **column**
+totals. Both descriptions are correct; the shape tells you which happened:
+
+```python
+A.shape             # (3, 4)
+A.sum(axis=0).shape # (4,)  — the 3 is gone
+A.sum(axis=1).shape # (3,)  — the 4 is gone
+```
+
+When unsure, check which number vanished.
+
+## The usual functions
+
+```python
+V = np.array([[1.02, 0.98, 1.06],
+              [1.01, 0.95, 1.04]])
+
+V.sum(axis=0)          V.mean(axis=1)
+V.min(axis=0)          V.max(axis=1)
+V.std(axis=0)          V.var(axis=0)
+V.argmin(axis=1)       V.argmax(axis=0)
+V.cumsum(axis=1)       V.prod()
+np.median(V, axis=0)   np.percentile(V, 95, axis=0)
+V.any(axis=1)          V.all(axis=0)
+```
+
+<Callout type="warning" title="np.std defaults to the population standard deviation">
+  NumPy divides by `n`; MATLAB's `std` divides by `n-1` by default.
+
+  ```python
+  V.std()                 # divides by n     (population)
+  V.std(ddof=1)           # divides by n-1   (sample) — matches MATLAB
+  ```
+
+  For a large sample the difference is negligible. For a small one it is not, and a
+  result that disagrees with a MATLAB calculation by a few percent is often this.
+</Callout>
+
+## `keepdims`
+
+The argument that makes aggregation compose with broadcasting.
+
+```python
+A = np.arange(12).reshape(3, 4)
+
+A.sum(axis=1)                    # shape (3,)   — the axis is gone
+A.sum(axis=1, keepdims=True)     # shape (3, 1) — the axis is kept, size 1
+
+A / A.sum(axis=1, keepdims=True)     # each row normalised to sum 1
+A / A.sum(axis=1)                    # ValueError — (3,4) against (3,)
+```
+
+<Callout type="engineering">
+  `keepdims=True` is the answer to the row-versus-column broadcasting problem from the
+  previous lesson. Instead of remembering to write `[:, None]` afterwards, ask the
+  aggregation to keep the axis in the first place.
+
+  ```python
+  # These are equivalent
+  centred = data - data.mean(axis=1)[:, None]
+  centred = data - data.mean(axis=1, keepdims=True)
+  ```
+
+  The second reads better and is harder to get wrong, because the shape never becomes
+  ambiguous.
+</Callout>
+
+## Missing data
+
+Any NaN poisons an ordinary aggregation — which is the correct default, because it
+refuses to give you an answer built on missing data.
+
+```python
+V = np.array([1.02, np.nan, 1.06, 0.98])
+
+V.mean()                  # nan
+np.nanmean(V)             # 1.02  — ignores the NaN
+```
+
+The nan-aware family:
+
+```python
+np.nanmean, np.nansum, np.nanstd, np.nanmin, np.nanmax
+np.nanmedian, np.nanpercentile, np.nanargmax, np.nanargmin
+```
+
+```python
+np.isnan(V)                    # boolean mask
+np.isnan(V).sum()              # how many missing
+np.isfinite(V)                 # not nan and not inf
+V[~np.isnan(V)]                # drop them
+np.count_nonzero(np.isnan(V))  # same as .sum() on the mask
+```
+
+<Callout type="warning" title="Reporting how much you ignored">
+  `np.nanmean` silently drops missing values. If 40% of your data is NaN, the mean is
+  computed from 60% and looks exactly as confident as one computed from all of it.
+
+  ```python
+  n_valid = np.isfinite(V).sum()
+  coverage = n_valid / V.size
+  print(f"mean {np.nanmean(V):.4f} from {n_valid}/{V.size} points ({coverage:.1%})")
+  ```
+
+  This is the same discipline as the MATLAB load-curve project, which refused to proceed
+  below 90% coverage.
+</Callout>
+
+## Boolean aggregation
+
+Booleans sum as 1 and 0, which makes counting concise:
+
+```python
+V = np.array([1.02, 0.94, 1.07, 0.99])
+
+(V > 1.05).sum()             # 1   — how many
+(V > 1.05).mean()            # 0.25 — what fraction
+(V > 1.05).any()             # True
+(V > 1.05).all()             # False
+np.flatnonzero(V > 1.05)     # array([2]) — which positions
+```
+
+`(condition).mean()` giving a fraction directly is worth remembering — it's how you get
+a violation probability out of a Monte Carlo run in one expression.
+
+## Higher dimensions
+
+```python
+data = np.random.default_rng(0).normal(50, 5, (365, 24, 7))   # days x hours x feeders
+
+data.mean(axis=0)             # (24, 7)  — average day shape per feeder
+data.mean(axis=1)             # (365, 7) — daily mean per feeder
+data.mean(axis=(0, 1))        # (7,)     — overall mean per feeder
+data.max(axis=(0, 1))         # (7,)     — peak per feeder
+```
+
+Multiple axes collapse together. Naming the axes in a comment when you create such an
+array saves a great deal of confusion later.
+
+## Common mistakes
+
+<Callout type="warning" title="axis=0 versus axis=1 backwards">
+  The named axis disappears. Check which dimension vanished from the shape.
+</Callout>
+
+<Callout type="warning" title="Forgetting keepdims when broadcasting the result back">
+  `A / A.sum(axis=1)` errors; `A / A.sum(axis=1, keepdims=True)` works.
+</Callout>
+
+<Callout type="warning" title="np.std not matching MATLAB">
+  Pass `ddof=1` for the sample standard deviation.
+</Callout>
+
+<Callout type="warning" title="Using nanmean without reporting coverage">
+  Silently dropping missing data makes a thin result look solid.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Which axis?">
+  For `A` of shape `(365, 24)` — days by hours — which call gives what?
+
+  ```python
+  A.mean(axis=0)
+  A.mean(axis=1)
+  A.max(axis=0)
+  A.argmax(axis=1)
+  ```
+
+  <Solution>
+    - `A.mean(axis=0)` → shape **(24,)**. The 365 days collapse, leaving one value per
+      hour — **the average daily profile**.
+    - `A.mean(axis=1)` → shape **(365,)**. The 24 hours collapse, leaving one value per
+      day — **each day's mean demand**.
+    - `A.max(axis=0)` → shape **(24,)**. The highest demand ever seen at each hour of the
+      day.
+    - `A.argmax(axis=1)` → shape **(365,)**. For each day, **which hour** was the peak —
+      an integer from 0 to 23.
+
+    That last one is genuinely useful: `np.bincount(A.argmax(axis=1), minlength=24)` then
+    tells you how often each hour was the daily peak, which is a real load-research
+    question answered in two lines.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: feeder statistics with gaps">
+  Given a year of hourly voltages for several buses, with missing readings, report per-bus
+  statistics and the coverage each is based on.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    n_hours, n_bus = 8760, 5
+    V = rng.normal(1.0, 0.03, (n_hours, n_bus))
+
+    # Knock out some readings, unevenly across buses
+    for b, frac in enumerate([0.001, 0.02, 0.15, 0.005, 0.001]):
+        idx = rng.choice(n_hours, int(frac * n_hours), replace=False)
+        V[idx, b] = np.nan
+
+    valid = np.isfinite(V)
+    coverage = valid.mean(axis=0)                       # per bus
+
+    print(f"{'Bus':>4}{'Coverage':>11}{'Mean':>9}{'Min':>9}{'p5':>9}{'<0.95':>9}")
+    print("-" * 51)
+
+    for b in range(n_bus):
+        below = np.nansum(V[:, b] < 0.95)
+        flag = "" if coverage[b] > 0.95 else "  <- thin"
+        print(f"{b+1:>4}{coverage[b]:>10.1%}"
+              f"{np.nanmean(V[:, b]):>9.4f}"
+              f"{np.nanmin(V[:, b]):>9.4f}"
+              f"{np.nanpercentile(V[:, b], 5):>9.4f}"
+              f"{below:>9.0f}{flag}")
+
+    if (coverage < 0.95).any():
+        print(f"\nBuses below 95% coverage: {np.flatnonzero(coverage < 0.95) + 1}")
+    ```
+
+    Bus 3 has 15% missing and its statistics look as confident as the others' until you
+    print the coverage column. That is exactly why it belongs in the table rather than in
+    a separate check nobody reads.
+
+    Note `np.nansum(V[:, b] < 0.95)` — comparisons involving NaN return `False`, so
+    missing readings are counted as not-violating. That's a choice: an equally defensible
+    one is to exclude them and report the violation *rate* over valid hours only. Whichever
+    you pick, say which.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: row-wise normalisation">
+  Given a matrix of counts, convert each row to proportions, handling rows that sum to
+  zero.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    counts = np.array([[10, 20, 70],
+                       [ 5,  5, 90],
+                       [ 0,  0,  0],        # empty row — the awkward case
+                       [25, 25, 50]], dtype=float)
+
+    totals = counts.sum(axis=1, keepdims=True)      # (4, 1)
+
+    # where= computes only where the row is non-empty; the rest stays 0
+    proportions = np.divide(counts, totals,
+                            out=np.zeros_like(counts),
+                            where=totals != 0)
+
+    print(proportions.round(3))
+    print("row sums:", proportions.sum(axis=1))
+    ```
+
+    ```text
+    [[0.1  0.2  0.7 ]
+     [0.05 0.05 0.9 ]
+     [0.   0.   0.  ]
+     [0.25 0.25 0.5 ]]
+    row sums: [1. 1. 0. 1.]
+    ```
+
+    Two pieces doing the work. `keepdims=True` gives `(4,1)`, which broadcasts across the
+    columns — without it, `(4,)` would fail against `(4,3)`.
+
+    And `np.divide(..., out=..., where=...)` avoids the zero division entirely rather than
+    producing `nan` and cleaning up afterwards. No warning is emitted, because the
+    division never happens.
+
+    The empty row staying all-zero is a deliberate choice worth stating: an alternative is
+    NaN, signalling "undefined" rather than "all zero". Which is right depends on what the
+    caller will do with it.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'For A of shape (3, 4), what shape does A.sum(axis=0) return?',
+      options: ['(3,)', '(4,)', '(3, 1)', '(1, 4)'],
+      answer: 1,
+      explain:
+        'The named axis is collapsed. Axis 0 has length 3, so the 3 disappears and (4,) remains — one total per column.',
+    },
+    {
+      q: 'Why does A / A.sum(axis=1) fail while A / A.sum(axis=1, keepdims=True) works?',
+      options: [
+        'keepdims makes the result float',
+        'Without keepdims the result is (3,), which cannot broadcast against (3,4); keepdims gives (3,1), which can',
+        'sum requires keepdims',
+        'They both work',
+      ],
+      answer: 1,
+      explain:
+        'Broadcasting aligns from the trailing dimension, so (3,) tries to match the 4. keepdims=True preserves the axis as size 1, giving (3,1), which stretches across columns.',
+    },
+    {
+      q: 'What does (V > 1.05).mean() give?',
+      options: [
+        'The mean of the values above 1.05',
+        'The fraction of elements above 1.05',
+        'The count above 1.05',
+        'An error',
+      ],
+      answer: 1,
+      explain:
+        'Booleans average as 1s and 0s, so the mean is the proportion that are True. It is how you get a violation probability out of a Monte Carlo run in one expression.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **The axis you name is the axis that disappears.** Check the shape to confirm which
+  dimension vanished, use `keepdims=True` whenever the result gets broadcast back, and
+  reach for the `nan`-aware functions on measurement data — while reporting how much you
+  ignored.
+</KeyIdea>
+
+## Further reading
+
+- NumPy docs on `axis` — worth reading once, carefully
+- Next: **linear algebra** — `solve` rather than `inv`, in Python this time

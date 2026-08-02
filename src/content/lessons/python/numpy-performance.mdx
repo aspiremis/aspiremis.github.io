@@ -1,0 +1,405 @@
+---
+title: Performance
+track: python
+module: numpy
+order: 16
+description: Why Python loops are so much slower than MATLAB's, how to measure before optimising, and the cases where a loop is genuinely the right answer.
+objectives:
+  - Measure performance properly rather than guessing at it
+  - Vectorise the operations that benefit and recognise those that cannot
+  - Avoid the copies and temporaries that dominate large-array work
+prerequisites: [numpy-linear-algebra]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['python', 'numpy', 'performance', 'vectorisation', 'profiling']
+---
+
+MATLAB loops are slow. Python loops are **slower** — often by another order of magnitude,
+because every iteration involves interpreter overhead, type checks and object allocation
+that MATLAB's JIT avoids.
+
+The consequence is not "never loop". It is that vectorising matters more here, and
+knowing *which* loops to attack matters more than knowing how.
+
+## Measure first
+
+```python
+import timeit
+import numpy as np
+
+v = np.random.default_rng(0).random(1_000_000)
+
+def loop_sum():
+    total = 0.0
+    for x in v:
+        total += x
+    return total
+
+print(timeit.timeit(loop_sum, number=3) / 3)
+print(timeit.timeit(lambda: v.sum(), number=3) / 3)
+```
+
+Expect two to three orders of magnitude. The loop pays interpreter cost per element;
+`v.sum()` runs a compiled loop over contiguous memory.
+
+In IPython or a notebook:
+
+```python
+%timeit v.sum()
+%timeit sum(v)              # Python's builtin — slow on arrays
+%time expensive_function()  # a single run
+```
+
+<Callout type="warning" title="Do not optimise before profiling">
+  The slow part is rarely where you expect. Profile, then fix the top item, then profile
+  again.
+
+  ```python
+  import cProfile, pstats
+
+  cProfile.run("run_study()", "profile.out")
+  pstats.Stats("profile.out").sort_stats("cumulative").print_stats(15)
+  ```
+
+  `line_profiler` gives per-line timings inside one function, which is usually what you
+  actually want:
+
+  ```python
+  # pip install line_profiler, then decorate and run with kernprof
+  @profile
+  def build_ybus(n, branch): ...
+  ```
+</Callout>
+
+## What vectorising buys
+
+```python
+# Slow: a Python-level loop
+result = np.empty(n)
+for i in range(n):
+    result[i] = np.sqrt(v[i] ** 2 + w[i] ** 2)
+
+# Fast: one vectorised expression
+result = np.sqrt(v ** 2 + w ** 2)
+```
+
+The second pushes the whole loop into compiled code. It is also shorter and reads like
+the formula.
+
+<Compare
+  headings={['Situation', 'Approach', 'Why']}
+  rows={[
+    { option: 'Same operation on every element', when: 'Vectorise', cost: 'Orders of magnitude', recommended: true },
+    { option: 'Scatter-add with duplicate indices', when: 'np.add.at', cost: 'Correct, though not fast' },
+    { option: 'Each step depends on the last', when: 'Loop', cost: 'Genuinely sequential — a solver iteration' },
+    { option: 'Calling an external tool per case', when: 'Loop', cost: 'OpenDSS per scenario; the tool sets the pace' },
+    { option: 'A few dozen iterations', when: 'Either', cost: 'The difference is unmeasurable' },
+    { option: 'Still too slow when vectorised', when: 'Numba or Cython', cost: 'Compile the hot function' },
+  ]}
+/>
+
+## Temporaries
+
+Every intermediate allocates.
+
+```python
+result = a * b + c * d          # allocates (a*b), (c*d), then the sum
+```
+
+For large arrays that is three allocations and three passes over memory. When it matters:
+
+```python
+result = np.empty_like(a)
+np.multiply(a, b, out=result)
+np.multiply(c, d, out=tmp)
+np.add(result, tmp, out=result)
+```
+
+Uglier and roughly twice as fast on arrays that exceed cache. Only do this when profiling
+says to — the readable version is right until proven otherwise.
+
+In-place operators avoid one allocation for free:
+
+```python
+V = V * 2            # allocates a new array
+V *= 2               # in place, no allocation
+```
+
+## Memory layout
+
+NumPy is **row-major** by default, so walking along a row is walking through contiguous
+memory.
+
+```python
+A = np.random.default_rng(0).random((5000, 5000))
+
+%timeit A.sum(axis=1)       # along rows — contiguous, fast
+%timeit A.sum(axis=0)       # down columns — strided, slower
+```
+
+Both are correct; one is friendlier to the cache. For a one-off it does not matter. Inside
+a loop over a large array it can be a factor of several.
+
+```python
+A.flags['C_CONTIGUOUS']     # row-major
+np.ascontiguousarray(A)     # force it
+```
+
+<Callout type="engineering">
+  Two power-systems cases worth knowing.
+
+  **A Y-bus should be sparse, not fast-dense.** A 3000-bus dense complex Y-bus is 144 MB
+  and mostly zeros. `scipy.sparse` is the answer, not a cleverer dense loop — the same
+  argument as the MATLAB module, and it dwarfs any micro-optimisation.
+
+  **A solver iteration cannot be vectorised.** Newton step *k+1* depends entirely on step
+  *k*. The loop over iterations stays; what you vectorise is the work *inside* each
+  iteration — building the Jacobian, computing the mismatch.
+
+  Optimise the inner work, leave the outer sequence alone.
+</Callout>
+
+## When Python is still too slow
+
+If a vectorised implementation is genuinely the bottleneck, **Numba** compiles a function
+to machine code with one decorator:
+
+```python
+from numba import njit
+
+@njit
+def backward_sweep(parent, order, z, s_load, v):
+    """A genuinely sequential algorithm — Numba suits it perfectly."""
+    n = len(v)
+    i_branch = np.zeros(n, dtype=np.complex128)
+    for k in range(n - 1, 0, -1):
+        b = order[k]
+        i_branch[b] += np.conj(s_load[b] / v[b])
+        i_branch[parent[b]] += i_branch[b]
+    return i_branch
+```
+
+Numba is especially valuable for algorithms that **cannot** be vectorised — tree
+traversals, sequential updates, anything with data-dependent control flow. A
+backward-forward sweep is close to the ideal case.
+
+<Callout type="warning" title="Numba compiles on first call">
+  The first invocation includes compilation, often a second or more. Time the *second*
+  call, or you will conclude it made things worse.
+</Callout>
+
+Alternatives worth knowing exist: **Cython** for tighter control, **CuPy** for GPUs, and
+`scipy.sparse` — which is almost always the bigger win for power-system matrices.
+
+## Common mistakes
+
+<Callout type="warning" title="Optimising without measuring">
+  The bottleneck is rarely where you think. Profile first.
+</Callout>
+
+<Callout type="warning" title="Growing an array in a loop">
+  ```python
+  result = np.array([])
+  for x in data:
+      result = np.append(result, f(x))     # reallocates EVERY time
+  ```
+  Pre-allocate with `np.empty(n)`, or build a list and convert once.
+</Callout>
+
+<Callout type="warning" title="Using Python's sum() on an array">
+  `sum(v)` iterates in Python. `v.sum()` runs compiled. Same for `min`, `max`, `abs`.
+</Callout>
+
+<Callout type="warning" title="Timing Numba's first call">
+  That measures the compiler. Time the second.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Measure the gap yourself">
+  Compare four ways of computing the same thing, and report the ratios.
+
+  <Solution>
+    ```python
+    import numpy as np, timeit
+
+    rng = np.random.default_rng(0)
+    n = 500_000
+    v = rng.random(n)
+    w = rng.random(n)
+
+    def with_loop():
+        out = np.empty(n)
+        for i in range(n):
+            out[i] = np.sqrt(v[i]**2 + w[i]**2)
+        return out
+
+    def with_listcomp():
+        return np.array([np.sqrt(a**2 + b**2) for a, b in zip(v, w)])
+
+    def with_map():
+        return np.fromiter(map(lambda t: (t[0]**2 + t[1]**2)**0.5, zip(v, w)),
+                           dtype=float, count=n)
+
+    def vectorised():
+        return np.sqrt(v**2 + w**2)
+
+    base = None
+    for name, fn in [("loop", with_loop), ("listcomp", with_listcomp),
+                     ("map", with_map), ("vectorised", vectorised)]:
+        t = timeit.timeit(fn, number=3) / 3
+        base = base or t
+        print(f"{name:>12}: {t*1000:8.2f} ms   {base/t:6.1f}x")
+
+    assert np.allclose(with_loop(), vectorised())
+    ```
+
+    Expect the vectorised version to be roughly 100× the explicit loop, with the
+    comprehension and `map` somewhere in between — they avoid *some* overhead but still
+    call into Python for every element.
+
+    The `assert` matters: an optimisation that changes the answer is not an optimisation.
+    Always check equivalence before believing a speedup.
+
+    Note `np.hypot(v, w)` does this in one call, and handles overflow for very large
+    values that `v**2` would not. Checking whether NumPy already has your operation is
+    the cheapest optimisation available.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: vectorise a branch-flow calculation">
+  Compute the complex power flow in every branch of a network from bus voltages, without
+  a Python loop over branches.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    def branch_flows(V, from_bus, to_bus, y_series, b_shunt):
+        """Sending-end complex power in every branch, fully vectorised.
+
+        V is (n,) complex; the branch arrays are all (n_branch,).
+        """
+        Vf = V[from_bus]                 # fancy indexing gathers per branch
+        Vt = V[to_bus]
+
+        # Current from the 'from' end: series plus half the line charging
+        I_ft = (Vf - Vt) * y_series + Vf * (1j * b_shunt / 2)
+        I_tf = (Vt - Vf) * y_series + Vt * (1j * b_shunt / 2)
+
+        S_ft = Vf * np.conj(I_ft)
+        S_tf = Vt * np.conj(I_tf)
+
+        losses = S_ft + S_tf             # what the branch dissipates
+        return S_ft, S_tf, losses
+    ```
+
+    `V[from_bus]` is the key move: indexing with an integer array **gathers** the
+    from-end voltage for every branch at once, turning what looks like a per-branch loop
+    into array arithmetic.
+
+    A check worth running: total branch losses should equal total injected power.
+
+    ```python
+    _, _, losses = branch_flows(V, f, t, y, b)
+    assert np.isclose(losses.real.sum(), S_injected.real.sum(), rtol=1e-8)
+    ```
+
+    Two independent routes to the same number — the validation habit from the MATLAB
+    track, applied here.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: find the bottleneck">
+  A colleague's analysis takes 40 seconds. Profile it and decide what to fix.
+
+  <Solution>
+    ```python
+    import cProfile, pstats, io
+
+    def profile(fn, *args, top=12, **kwargs):
+        """Run fn under the profiler and print the worst offenders."""
+        pr = cProfile.Profile()
+        pr.enable()
+        result = fn(*args, **kwargs)
+        pr.disable()
+
+        s = io.StringIO()
+        pstats.Stats(pr, stream=s).sort_stats("cumulative").print_stats(top)
+        print(s.getvalue())
+        return result
+
+
+    profile(run_analysis, data)
+    ```
+
+    Read `cumtime` (time including everything it called) to find *where* the work is, and
+    `tottime` (excluding calls) to find *which function* is actually doing it.
+
+    The usual culprits, in the order I would check them:
+
+    1. **A Python loop over array elements** — vectorise it.
+    2. **Repeated file reads inside a loop** — read once, reuse.
+    3. **A dense operation on a matrix that should be sparse** — the biggest single win
+       in power-system code.
+    4. **Recomputing something invariant inside a loop** — hoist it out.
+    5. **`np.append` in a loop** — pre-allocate.
+
+    And the rule that matters most: **fix one thing, then re-profile.** The second
+    bottleneck is often not what the first profile suggested, because removing the first
+    changes the picture entirely.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why are Python loops slower than MATLAB loops?',
+      options: [
+        'Python uses less memory',
+        'Every iteration carries interpreter overhead, type checks and object allocation that MATLAB\'s JIT avoids',
+        'MATLAB runs on the GPU',
+        'They are the same speed',
+      ],
+      answer: 1,
+      explain:
+        'The gap is typically another order of magnitude beyond MATLAB. It means vectorising matters more in Python — and that Numba is worth reaching for on algorithms that genuinely cannot be vectorised.',
+    },
+    {
+      q: 'What should you do before optimising?',
+      options: [
+        'Rewrite the loops',
+        'Profile, so you fix what is actually slow',
+        'Add more memory',
+        'Switch to Numba',
+      ],
+      answer: 1,
+      explain:
+        'The bottleneck is rarely where you expect. Profile, fix the top item, then profile again — the second bottleneck often is not what the first profile suggested.',
+    },
+    {
+      q: 'Which of these genuinely cannot be vectorised?',
+      options: [
+        'Computing sqrt of every element',
+        'A Newton iteration where each step depends on the previous one',
+        'Summing a large array',
+        'Gathering from-end voltages for every branch',
+      ],
+      answer: 1,
+      explain:
+        'Sequential dependence is the one thing vectorisation cannot remove. Vectorise the work inside each iteration — the Jacobian, the mismatch — and leave the outer sequence alone.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Measure before optimising.** Vectorise what is element-wise, leave genuinely
+  sequential loops alone, and reach for `scipy.sparse` before any micro-optimisation on
+  power-system matrices — it is a far larger win than anything else in this lesson.
+</KeyIdea>
+
+## Further reading
+
+- NumPy: *Performance tips*
+- Numba's five-minute guide — worth the twenty minutes it actually takes
+- Next: the **module project** — a vectorised Y-bus, and the scatter-add trap

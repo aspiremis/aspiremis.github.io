@@ -1,0 +1,344 @@
+---
+title: Broadcasting
+track: python
+module: numpy
+order: 12
+description: How NumPy aligns arrays of different shapes — two rules that explain everything, and the orientation mistake that silently produces a matrix.
+objectives:
+  - State the broadcasting rules and apply them to predict result shapes
+  - Use newaxis deliberately to set up an intended broadcast
+  - Recognise when broadcasting has silently done something you did not intend
+prerequisites: [numpy-indexing]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['python', 'numpy', 'broadcasting', 'shapes']
+---
+
+MATLAB calls it implicit expansion and added it in R2016b. NumPy has had it from the
+start, and it is used far more aggressively — which makes it both more powerful and
+easier to trip over.
+
+## The two rules
+
+Compare shapes **from the trailing dimension backwards**. Two dimensions are compatible
+if they are **equal** or **one of them is 1**.
+
+```text
+    A      (3, 4)
+    B         (4,)      -> treated as (1, 4)
+    ------------------
+result     (3, 4)       ✓  B is applied to every row
+
+
+    A      (3, 1)
+    B         (4,)      -> (1, 4)
+    ------------------
+result     (3, 4)       ✓  an outer-product-shaped grid
+
+
+    A      (3, 4)
+    B         (3,)      -> (1, 3)
+    ------------------
+             4 vs 3     ✗  ValueError
+```
+
+<Analogy>
+  Broadcasting is **stretching without copying**.
+
+  A shape-1 dimension is a single value that NumPy pretends is repeated as far as needed.
+  Nothing is actually duplicated in memory — it reads the same element repeatedly — which
+  is why broadcasting is fast as well as concise.
+</Analogy>
+
+## Everyday cases
+
+```python
+import numpy as np
+
+A = np.arange(12).reshape(3, 4)
+
+A + 10                      # scalar: applied to every element
+A * 2
+
+row = np.array([1, 2, 3, 4])       # (4,)
+A * row                            # scales each COLUMN
+
+col = np.array([[1], [2], [3]])    # (3, 1)
+A * col                            # scales each ROW
+```
+
+A `(4,)` array aligns with the trailing axis, so it acts per column. To act per row you
+need an explicit `(3, 1)`.
+
+## Deliberate broadcasting with newaxis
+
+```python
+a = np.array([1, 2, 3])            # (3,)
+b = np.array([10, 20, 30, 40])     # (4,)
+
+a[:, None] * b[None, :]            # (3, 1) * (1, 4) -> (3, 4)
+np.outer(a, b)                     # the same thing, named
+```
+
+<Callout type="engineering">
+  This is how you compute an angle-difference matrix for a power flow Jacobian, with no
+  loops at all:
+
+  ```python
+  delta = np.array([0.0, -0.05, -0.09, -0.12])       # bus angles, radians
+
+  dtheta = delta[:, None] - delta[None, :]           # (n, 1) - (1, n) -> (n, n)
+  # dtheta[i, j] is delta_i - delta_j, exactly the delta_ik of the textbook
+  ```
+
+  Then the whole off-diagonal H submatrix is one expression:
+
+  ```python
+  VV = V[:, None] * V[None, :]
+  H = VV * (G * np.sin(dtheta) - B * np.cos(dtheta))
+  ```
+
+  Compare with the MATLAB version — same idea, and here `[:, None]` does explicitly what
+  MATLAB's implicit expansion does silently. Being explicit is an advantage: you can see
+  which axis is which.
+</Callout>
+
+## Normalising and centring
+
+```python
+data = np.random.default_rng(0).normal(50, 5, (100, 7))   # 100 days x 7 feeders
+
+col_mean = data.mean(axis=0)               # (7,) — one mean per feeder
+centred = data - col_mean                  # broadcasts across rows
+
+row_mean = data.mean(axis=1)               # (100,) — one mean per day
+centred_rows = data - row_mean[:, None]    # NEEDS the newaxis
+```
+
+<Callout type="warning" title="The asymmetry is the thing to remember">
+  Subtracting a **column mean** works directly, because `(7,)` aligns with the trailing
+  axis of `(100, 7)`.
+
+  Subtracting a **row mean** does not — `(100,)` would try to align with the 7. You must
+  write `row_mean[:, None]` to make it `(100, 1)`.
+
+  Forgetting this either raises (when the sizes differ) or silently broadcasts wrongly
+  (when they happen to match — a square array is the dangerous case).
+</Callout>
+
+## The orientation trap
+
+```python
+a = np.array([1, 2, 3])          # (3,) — row-ish
+b = np.array([[1], [2], [3]])    # (3, 1) — column
+
+a * b                            # (3, 3) !!  Not the (3,) you probably wanted
+```
+
+<Callout type="warning" title="This is the mistake that produces a matrix from two vectors">
+  `(3,)` becomes `(1,3)`, which against `(3,1)` broadcasts to `(3,3)`. You asked for
+  element-wise multiplication of two three-element vectors and got a nine-element outer
+  product, with no error.
+
+  It is the exact analogue of the MATLAB row-versus-column bug from the Data module. The
+  defence is the same:
+
+  ```python
+  a.ravel() * b.ravel()          # force both to 1-D
+  ```
+
+  And when a result is unexpectedly two-dimensional, print `.shape` before anything else.
+</Callout>
+
+## Checking without computing
+
+```python
+np.broadcast_shapes((3, 4), (4,))        # (3, 4)
+np.broadcast_shapes((3, 1), (1, 4))      # (3, 4)
+np.broadcast_shapes((3, 4), (3,))        # ValueError
+```
+
+Useful when debugging a chain of operations — it tells you the result shape without
+allocating anything.
+
+## Memory
+
+Broadcasting does not copy, but the **result** is materialised:
+
+```python
+a = np.arange(10_000)
+b = np.arange(10_000)
+
+c = a[:, None] * b[None, :]      # 10,000 x 10,000 -> 800 MB
+```
+
+Two 80 KB arrays produce an 800 MB result. If a broadcast expression is unexpectedly slow
+or exhausts memory, check the output shape — an accidental outer product is usually the
+cause.
+
+## Common mistakes
+
+<Callout type="warning" title="Forgetting [:, None] on a row-wise operation">
+  Column-wise works directly; row-wise needs the explicit axis.
+</Callout>
+
+<Callout type="warning" title="Mixing (n,) and (n,1)">
+  Produces an `(n, n)` outer product silently. Use `.ravel()` on both, or be deliberate.
+</Callout>
+
+<Callout type="warning" title="Accidental giant intermediates">
+  `a[:, None] * b[None, :]` on two large vectors allocates the full grid.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Result shapes">
+  Predict each, or say it errors.
+
+  ```python
+  A = np.ones((3, 4))
+  b = np.ones(4)
+  c = np.ones(3)
+  d = np.ones((3, 1))
+
+  A + b
+  A + c
+  A + d
+  b + d
+  c[:, None] + b
+  ```
+
+  <Solution>
+    - `A + b` → **(3, 4)**. `(4,)` aligns with the trailing 4 and applies per row.
+    - `A + c` → **ValueError**. `(3,)` becomes `(1,3)`; 3 against 4 is incompatible.
+    - `A + d` → **(3, 4)**. `(3,1)` stretches across columns.
+    - `b + d` → **(3, 4)**. `(4,)`→`(1,4)` against `(3,1)` gives the full grid.
+    - `c[:, None] + b` → **(3, 4)**. `(3,1)` + `(1,4)`, deliberately this time.
+
+    The instructive pair is the second and third. Both involve a length-3 array against a
+    3×4 matrix, and one errors while the other works — because alignment is from the
+    *trailing* end. `c` has to become `(3,1)` to act per row.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: voltage-drop grid, no loops">
+  Compute voltage rise for every combination of DG penetration and distance along a
+  feeder, then find where it crosses a limit — using broadcasting rather than nested
+  loops.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    penetration = np.linspace(0, 1.0, 41)      # (41,)
+    distance    = np.linspace(0, 1.0, 31)      # (31,)
+
+    R, X = 0.05, 0.20
+    pf = 1.0
+    q_ratio = np.tan(np.arccos(pf))
+
+    # (31, 1) against (1, 41) -> (31, 41), distance down, penetration across
+    dV = (R * penetration[None, :] + X * q_ratio * penetration[None, :]) \
+         * distance[:, None] ** 1.2
+
+    limit = 0.05
+    violating = dV > limit
+
+    print(f"grid shape: {dV.shape}")
+    print(f"{100 * violating.mean():.1f}% of the operating space exceeds {limit} pu")
+
+    # The lowest penetration that violates anywhere
+    any_violation = violating.any(axis=0)                 # per penetration level
+    if any_violation.any():
+        first = penetration[np.argmax(any_violation)]
+        print(f"First violation at {first:.0%} penetration")
+    ```
+
+    No `meshgrid` needed — `[:, None]` and `[None, :]` do the same job more cheaply,
+    because the intermediate grids are never materialised. `meshgrid` builds two full
+    `(31, 41)` arrays; broadcasting builds only the result.
+
+    `violating.mean()` on a boolean array gives the fraction directly, and
+    `np.argmax` on a boolean finds the first `True` — both idioms worth having.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: pairwise distances">
+  Given N points in 2-D, compute the full N×N distance matrix without loops.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    pts = np.array([[0.0, 0.0], [3.0, 4.0], [6.0, 8.0], [1.0, 1.0]])   # (4, 2)
+
+    # (4, 1, 2) - (1, 4, 2) -> (4, 4, 2) of coordinate differences
+    diff = pts[:, None, :] - pts[None, :, :]
+    dist = np.sqrt((diff ** 2).sum(axis=-1))                            # (4, 4)
+
+    print(dist.round(3))
+
+    # Sanity checks that must hold for any distance matrix
+    assert np.allclose(np.diag(dist), 0), "distance to self must be zero"
+    assert np.allclose(dist, dist.T), "distance matrix must be symmetric"
+
+    # Nearest neighbour, excluding self
+    masked = dist + np.eye(len(pts)) * np.inf
+    nearest = masked.argmin(axis=1)
+    for i, j in enumerate(nearest):
+        print(f"point {i} -> nearest is {j} at {dist[i, j]:.3f}")
+    ```
+
+    The three-dimensional intermediate is the trick: adding an axis to each operand turns
+    a pairwise problem into a single broadcast.
+
+    Note the memory cost. For N points the intermediate is N×N×2, so at N = 10,000 that
+    is 1.6 GB before you even take the square root. Beyond a few thousand points,
+    `scipy.spatial.distance` or a KD-tree is the right answer — broadcasting is elegant
+    and not free.
+
+    The two assertions are cheap and catch transposition mistakes immediately.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the result shape of np.ones((3,4)) + np.ones(3)?',
+      options: ['(3, 4)', '(3, 3)', '(4, 4)', 'ValueError'],
+      answer: 3,
+      explain:
+        'Alignment is from the trailing dimension: (3,) becomes (1,3), and 3 against 4 is incompatible. To apply it per row you need shape (3,1) — write c[:, None].',
+    },
+    {
+      q: 'What does np.ones(3) * np.ones((3,1)) produce?',
+      options: ['A (3,) array', 'A (3,1) array', 'A (3,3) array', 'An error'],
+      answer: 2,
+      explain:
+        '(3,) becomes (1,3), which against (3,1) broadcasts to (3,3) — an outer product where you probably wanted element-wise. It fails silently, which is why checking .shape is the first debugging step.',
+    },
+    {
+      q: 'Why is broadcasting fast?',
+      options: [
+        'It uses multiple CPU cores',
+        'The stretched dimension is not copied — the same element is read repeatedly',
+        'It caches results',
+        'It converts to lower precision',
+      ],
+      answer: 1,
+      explain:
+        'A size-1 dimension is read repeatedly rather than duplicated in memory. The result is still materialised though, which is why an accidental outer product on two large vectors can exhaust memory.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Compare shapes **from the trailing dimension**; sizes must match or be 1. Column-wise
+  operations work directly, **row-wise needs `[:, None]`** — and mixing `(n,)` with
+  `(n,1)` silently gives you an `(n,n)` outer product.
+</KeyIdea>
+
+## Further reading
+
+- NumPy: *Broadcasting* — the official rules, briefly
+- Next: **array operations** — where `*` means something different from MATLAB

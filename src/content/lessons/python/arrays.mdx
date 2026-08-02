@@ -1,0 +1,386 @@
+---
+title: Arrays
+track: python
+module: numpy
+order: 10
+description: The ndarray — why it exists, what dtype and shape mean, and the fact that a 1-D array is genuinely 1-D, unlike anything in MATLAB.
+objectives:
+  - Create arrays and inspect their shape and dtype
+  - Explain why a NumPy array is faster and more restrictive than a list
+  - Recognise the difference between 1-D arrays and 2-D row or column vectors
+prerequisites: [project-units-library]
+estimatedMinutes: 30
+difficulty: beginner
+tags: ['python', 'numpy', 'arrays', 'dtype']
+---
+
+Python lists hold anything and are slow at arithmetic. NumPy arrays hold **one type**,
+laid out contiguously in memory, and are fast.
+
+That trade — flexibility for speed and vectorised operations — is the whole design.
+
+## Why lists are not enough
+
+```python
+v = [1, 2, 3]
+v * 2                    # [1, 2, 3, 1, 2, 3]  — repetition, not arithmetic
+```
+
+A list is a row of pointers to arbitrary objects scattered through memory. Multiplying
+each element means following every pointer, checking every type, and building a new list
+of new objects.
+
+```python
+import numpy as np
+
+v = np.array([1, 2, 3])
+v * 2                    # array([2, 4, 6])   — element-wise, and fast
+```
+
+<Analogy>
+  A list is a **shelf of labelled boxes**, each possibly holding something different. To
+  do anything to all of them you must open each box and check what's inside.
+
+  An array is a **rack of identical slots**, all the same size, all holding the same kind
+  of thing, laid out end to end. The processor can operate on a whole run of them at
+  once, and never has to ask what type anything is.
+</Analogy>
+
+## Creating arrays
+
+```python
+import numpy as np
+
+np.array([1, 2, 3])                  # from a list
+np.array([[1, 2], [3, 4]])           # 2-D, from nested lists
+
+np.zeros(5)                          # 5 zeros
+np.zeros((3, 4))                     # 3x4 of zeros — note the TUPLE
+np.ones((2, 3))
+np.full((2, 2), 7.0)
+np.eye(3)                            # identity
+np.empty(4)                          # uninitialised — contains garbage
+
+np.arange(0, 10, 2)                  # 0 2 4 6 8 — like range(), end excluded
+np.linspace(0, 1, 11)                # 11 points, both ends INCLUDED
+np.logspace(0, 3, 4)                 # 1 10 100 1000
+```
+
+<Callout type="warning" title="Shape is a tuple, and the parentheses matter">
+  `np.zeros(3, 4)` is an error — the second argument is `dtype`. You want
+  `np.zeros((3, 4))` with the shape as a single tuple.
+
+  This is a daily annoyance for the first fortnight and then never again.
+</Callout>
+
+`arange` excludes the end and `linspace` includes it — the same split as MATLAB's colon
+versus `linspace`, and the same guidance applies:
+
+```python
+np.arange(0, 1, 0.1)         # floating-point step: the endpoint may not land exactly
+np.linspace(0, 1, 11)        # 11 points, first exactly 0, last exactly 1
+```
+
+## Shape
+
+```python
+a = np.array([1, 2, 3])
+a.shape              # (3,)      — ONE dimension
+a.ndim               # 1
+a.size               # 3
+
+b = np.array([[1, 2, 3], [4, 5, 6]])
+b.shape              # (2, 3)
+b.ndim               # 2
+```
+
+<Callout type="engineering">
+  **This is the biggest structural difference from MATLAB.**
+
+  In MATLAB everything is at least 2-D — `[1 2 3]` has size `1 3`, a row vector. There is
+  no such thing as a truly one-dimensional array.
+
+  In NumPy, `np.array([1,2,3])` has shape `(3,)`. It is neither a row nor a column. It is
+  one-dimensional.
+
+  The immediate consequence catches everyone:
+
+  ```python
+  a = np.array([1, 2, 3])
+  a.T                        # array([1, 2, 3]) — UNCHANGED
+  a.T.shape                  # (3,) — transposing a 1-D array does nothing
+  ```
+
+  There is no second axis to swap with. If you need an explicit column:
+
+  ```python
+  a.reshape(-1, 1)           # shape (3, 1) — a true column
+  a[:, np.newaxis]           # same thing
+  a[:, None]                 # same thing, shorter
+  ```
+</Callout>
+
+Most of the time 1-D is what you want and broadcasting handles the rest. But when a
+result comes out the wrong shape, this is the first thing to check.
+
+## Reshaping
+
+```python
+a = np.arange(12)
+a.reshape(3, 4)              # 3 rows, 4 columns
+a.reshape(3, -1)             # -1 means "work it out" -> 3x4
+a.reshape(-1)                # flatten to 1-D
+a.ravel()                    # flatten (a view if possible)
+a.flatten()                  # flatten (always a copy)
+```
+
+<Callout type="warning" title="NumPy is row-major; MATLAB is column-major">
+  `np.arange(6).reshape(2, 3)` fills **across rows first**:
+
+  ```text
+  [[0, 1, 2],
+   [3, 4, 5]]
+  ```
+
+  MATLAB's `reshape(0:5, 2, 3)` fills **down columns first**. Same data, different
+  arrangement.
+
+  It matters when reshaping, when flattening, and when reading binary files written by
+  the other language. `a.reshape(2, 3, order='F')` gives MATLAB's behaviour if you need
+  it.
+</Callout>
+
+## dtype
+
+Every array has exactly one element type.
+
+```python
+np.array([1, 2, 3]).dtype              # int64
+np.array([1.0, 2, 3]).dtype            # float64 — one float promotes all
+np.array([1, 2, 3], dtype=float)       # force it
+np.array([1+2j, 3]).dtype              # complex128
+
+a = np.zeros(3)                        # float64 by default
+b = np.zeros(3, dtype=int)             # int64
+c = np.zeros(3, dtype=complex)         # complex128
+```
+
+<Callout type="warning" title="Integer arrays truncate silently">
+  ```python
+  a = np.zeros(3, dtype=int)
+  a[0] = 1.7
+  a                        # array([1, 0, 0])  — truncated, no warning
+  ```
+
+  This is the one dtype trap worth remembering. It bites when you pre-allocate with
+  `np.zeros(n, dtype=int)` out of habit and then store computed floats into it.
+
+  For engineering work, let arrays default to `float64` unless you have a reason. And
+  when you need complex — impedances, phasors — you must say so **at creation**:
+
+  ```python
+  Y = np.zeros((n, n))                 # float — assigning complex will ERROR
+  Y = np.zeros((n, n), dtype=complex)  # correct for a Y-bus
+  ```
+</Callout>
+
+## Complex arrays
+
+```python
+z = np.array([0.05 + 0.20j, 0.03 + 0.15j])
+
+z.real                       # array([0.05, 0.03])
+z.imag                       # array([0.20, 0.15])
+np.abs(z)                    # magnitudes
+np.angle(z)                  # angles in RADIANS
+np.angle(z, deg=True)        # in degrees
+np.conj(z)                   # conjugate
+```
+
+`np.angle(z, deg=True)` is a small convenience MATLAB lacks — no `rad2deg` wrapper needed.
+
+## Useful attributes
+
+```python
+a = np.arange(12).reshape(3, 4)
+
+a.shape       # (3, 4)
+a.ndim        # 2
+a.size        # 12 — total elements
+a.dtype       # int64
+a.itemsize    # 8 bytes per element
+a.nbytes      # 96 — total memory
+a.T           # transpose
+```
+
+`a.nbytes` is worth knowing when you wonder whether something will fit in memory. A
+3000×3000 complex array is 144 MB — the sparse-matrices argument, in Python.
+
+## Common mistakes
+
+<Callout type="warning" title="np.zeros(3, 4) instead of np.zeros((3, 4))">
+  Shape is one tuple argument.
+</Callout>
+
+<Callout type="warning" title="Expecting a.T to turn a 1-D array into a column">
+  It does nothing. Use `a.reshape(-1, 1)` or `a[:, None]`.
+</Callout>
+
+<Callout type="warning" title="Pre-allocating the wrong dtype">
+  `np.zeros(n)` is float; assigning complex raises. `np.zeros(n, dtype=int)` truncates
+  floats silently.
+</Callout>
+
+<Callout type="warning" title="Assuming reshape fills like MATLAB">
+  NumPy fills rows first. Use `order='F'` if you need column-major.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Shapes">
+  Predict `shape` for each.
+
+  ```python
+  a = np.array([1, 2, 3])
+  b = np.array([[1, 2, 3]])
+  c = np.array([[1], [2], [3]])
+  d = a.T
+  e = a.reshape(-1, 1)
+  ```
+
+  <Solution>
+    - `a.shape` → `(3,)` — one-dimensional
+    - `b.shape` → `(1, 3)` — a 2-D row vector
+    - `c.shape` → `(3, 1)` — a 2-D column vector
+    - `d.shape` → `(3,)` — **unchanged**; transposing 1-D does nothing
+    - `e.shape` → `(3, 1)` — an explicit column
+
+    Only `a` and `d` are the same object shape. In MATLAB, `a`, `b` and `d` would all be
+    `1×3` and there would be no `(3,)` at all.
+
+    Practical rule: use 1-D arrays by default and let broadcasting handle alignment.
+    Reach for an explicit `(n,1)` only when the mathematics genuinely needs a column —
+    a matrix product, or an outer product.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: build a per-unit array">
+  Convert a list of equipment impedances to a common base using arrays rather than a
+  loop, and confirm the dtype is right for complex data.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    # Z_pu on own base, S_rating MVA, V_rating kV
+    z_old = np.array([0.01+0.10j, 0.008+0.08j, 0.015+0.12j])
+    s_old = np.array([50.0, 75.0, 25.0])
+    v_old = np.array([132.0, 132.0, 33.0])
+
+    s_base, v_base = 100.0, 132.0
+
+    z_new = z_old * (s_base / s_old) * (v_old / v_base) ** 2
+
+    print(f"dtype: {z_new.dtype}")           # complex128
+    for i, z in enumerate(z_new, start=1):
+        mag, ang = np.abs(z), np.angle(z, deg=True)
+        print(f"Item {i}: {z.real:.5f} {z.imag:+.5f}j  |Z|={mag:.5f} at {ang:.1f}deg")
+    ```
+
+    No dot operators anywhere — NumPy's `*` and `**` are element-wise by default, which
+    is the opposite of MATLAB and the subject of a later lesson.
+
+    `complex128` came from `z_old`; dividing by real arrays kept it complex. Had you
+    pre-allocated with `np.zeros(3)` and assigned into it, the complex values would have
+    raised — which is the dtype trap in its most common form.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: memory footprint">
+  Write a function reporting how much memory an array of a given shape and dtype needs,
+  and use it to decide whether a dense 5000-bus Y-bus is feasible.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    def footprint(shape, dtype=float) -> str:
+        """Human-readable memory for an array of this shape and dtype."""
+        n = int(np.prod(shape))
+        nbytes = n * np.dtype(dtype).itemsize
+
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if nbytes < 1024:
+                return f"{np.prod(shape):,} x {np.dtype(dtype).name} = {nbytes:.1f} {unit}"
+            nbytes /= 1024
+        return f"{nbytes:.1f} PB"
+
+
+    for n in (14, 118, 1000, 5000, 20000):
+        print(f"{n:>6} buses: {footprint((n, n), complex)}")
+    ```
+
+    ```text
+        14 buses: 196 x complex128 = 3.1 KB
+       118 buses: 13,924 x complex128 = 217.6 KB
+      1000 buses: 1,000,000 x complex128 = 15.3 MB
+      5000 buses: 25,000,000 x complex128 = 381.5 MB
+     20000 buses: 400,000,000 x complex128 = 6.0 GB
+    ```
+
+    5000 buses dense is 382 MB — technically possible and wasteful, since a real Y-bus
+    at that size is under 0.1% populated. At 20,000 buses it stops being possible at all.
+
+    That is the sparse argument in concrete numbers, and it's worth having the figures
+    rather than the principle. `np.prod` and `np.dtype(x).itemsize` are the two pieces
+    that make this a two-line calculation.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the shape of np.array([1, 2, 3])?',
+      options: ['(1, 3)', '(3, 1)', '(3,)', '(3, 3)'],
+      answer: 2,
+      explain:
+        'One-dimensional — neither a row nor a column. MATLAB has no equivalent, since everything there is at least 2-D. It is why a.T does nothing on a 1-D array.',
+    },
+    {
+      q: 'What happens if you assign 1.7 into an int64 array?',
+      options: [
+        'The array becomes float',
+        'It is truncated to 1, silently',
+        'A TypeError',
+        'It rounds to 2',
+      ],
+      answer: 1,
+      explain:
+        'Arrays have one fixed dtype. The value is truncated with no warning — which bites when you pre-allocate with dtype=int and then store computed floats.',
+    },
+    {
+      q: 'How does NumPy fill an array when reshaping?',
+      options: [
+        'Down columns first, like MATLAB',
+        'Across rows first — row-major order',
+        'In arbitrary order',
+        'It depends on the dtype',
+      ],
+      answer: 1,
+      explain:
+        'NumPy is row-major (C order); MATLAB is column-major (Fortran order). Same data, different arrangement — which matters when reshaping, flattening, or reading files written by the other language.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  An array holds **one dtype in contiguous memory**, which is where the speed comes from.
+  The structural surprise for a MATLAB user is that **1-D is genuinely 1-D** — shape
+  `(3,)`, not `(1,3)` — so transposing it does nothing.
+</KeyIdea>
+
+## Further reading
+
+- NumPy: *The absolute basics for beginners*
+- `np.info(np.linspace)` — quick help without leaving the REPL
+- Next: **indexing** — and views, which have no MATLAB equivalent

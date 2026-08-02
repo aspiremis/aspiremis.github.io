@@ -1,0 +1,358 @@
+---
+title: Array Operations
+track: python
+module: numpy
+order: 13
+description: The operator that means the opposite of what it means in MATLAB — element-wise * versus matrix @ — plus ufuncs and the in-place operations that avoid copies.
+objectives:
+  - Choose correctly between * and @ in any expression
+  - Explain why NumPy defaults to element-wise where MATLAB defaults to matrix
+  - Use in-place operations and out= to avoid unnecessary allocations
+prerequisites: [broadcasting]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['python', 'numpy', 'operators', 'matmul', 'ufuncs']
+---
+
+If you remember one thing from this module, make it this lesson. NumPy's `*` and
+MATLAB's `*` mean **opposite things**, and both are valid on the same shapes.
+
+## The flip
+
+<Compare
+  headings={['Operation', 'MATLAB', 'NumPy']}
+  rows={[
+    { option: 'Element-wise multiply', when: 'A .* B', cost: 'A * B', recommended: true },
+    { option: 'Matrix multiply', when: 'A * B', cost: 'A @ B' },
+    { option: 'Element-wise power', when: 'A .^ 2', cost: 'A ** 2' },
+    { option: 'Matrix power', when: 'A ^ 2', cost: 'np.linalg.matrix_power(A, 2)' },
+    { option: 'Element-wise divide', when: 'A ./ B', cost: 'A / B' },
+    { option: 'Solve A x = b', when: 'A \\ b', cost: 'np.linalg.solve(A, b)' },
+  ]}
+/>
+
+```python
+import numpy as np
+
+A = np.array([[1, 2], [3, 4]])
+B = np.array([[5, 6], [7, 8]])
+
+A * B          # [[ 5, 12], [21, 32]]   element-wise
+A @ B          # [[19, 22], [43, 50]]   matrix product
+```
+
+<Callout type="warning" title="Both are legal on square matrices — no error, wrong answer">
+  Exactly the same hazard as forgetting the dot in MATLAB, with the polarity reversed.
+
+  If you are translating MATLAB code, **every `.*` becomes `*` and every `*` becomes
+  `@`**. Doing one and not the other is the classic porting bug, and it produces plausible
+  numbers.
+</Callout>
+
+<Analogy>
+  The defaults follow from what each language is *for*.
+
+  MATLAB is a **matrix laboratory** — the matrix product is the common case, so it gets
+  the bare symbol.
+
+  NumPy is a general **array** library. Most arrays are not matrices — they are images,
+  time series, measurement grids — so element-wise is the sensible default, and matrix
+  multiplication gets its own operator.
+</Analogy>
+
+The `@` operator was added in Python 3.5 specifically for this. Before it, people wrote
+`np.dot(A, B)`, which you will still see in older code.
+
+## Dot, inner and outer products
+
+For 1-D arrays, `@` is the inner product:
+
+```python
+a = np.array([1, 2, 3])
+b = np.array([4, 5, 6])
+
+a @ b                    # 32  — a scalar, the dot product
+np.dot(a, b)             # 32  — same
+np.outer(a, b)           # (3, 3) — the outer product
+a * b                    # array([4, 10, 18]) — element-wise
+```
+
+Note there is **no transpose needed**. In MATLAB you write `a * b'`; in NumPy a 1-D array
+has no orientation, so `a @ b` just works. That is one of the places the "1-D is genuinely
+1-D" design pays off.
+
+## Universal functions
+
+Any `np.` maths function applies element-wise, to arrays of any shape:
+
+```python
+V = np.array([1.02, 0.98, 1.06])
+
+np.sqrt(V)
+np.exp(V)
+np.log(V)
+np.sin(V)                # RADIANS
+np.abs(V)
+np.round(V, 3)
+
+np.rad2deg(np.angle(Z))  # or np.angle(Z, deg=True)
+```
+
+<Callout type="warning" title="Use np.sqrt, not math.sqrt, on arrays">
+  `math.sqrt` takes one number and raises on an array. Every `np.` equivalent handles
+  arrays element-wise and is much faster than looping.
+
+  Same for `np.log`, `np.sin` and the rest. When you import both, be deliberate about
+  which you're calling.
+</Callout>
+
+Ufuncs take a few useful extras:
+
+```python
+np.sqrt(V, out=V)                        # write into V, no new allocation
+np.divide(a, b, out=result, where=b!=0)  # skip division by zero entirely
+np.add.reduce(V)                          # same as V.sum()
+np.add.accumulate(V)                      # running total
+np.add.at(a, idx, vals)                   # the scatter-add from the indexing lesson
+```
+
+The `where=` argument is genuinely useful — it computes only where the condition holds
+and leaves the rest of `out` untouched, which avoids both the warning and the `inf`.
+
+## In-place operations
+
+```python
+V = V * 2         # allocates a NEW array, rebinds V
+V *= 2            # modifies V IN PLACE — no allocation
+```
+
+For large arrays the difference is real. But in-place means in-place:
+
+```python
+def scale(arr):
+    arr *= 2          # modifies the CALLER's array
+    return arr
+
+def scale_safe(arr):
+    return arr * 2    # returns a new array
+```
+
+The mutability lesson again, now with a performance incentive attached. Document
+in-place behaviour loudly, or don't do it.
+
+## Comparisons and logic
+
+```python
+V > 1.05                     # boolean array, element-wise
+(V > 0.95) & (V < 1.05)      # & and |, with parentheses
+np.isclose(a, b)             # element-wise float comparison, with tolerance
+np.allclose(a, b)            # single True/False — "are these arrays equal?"
+np.array_equal(a, b)         # exact equality, including shape
+```
+
+`np.allclose` is the array equivalent of the floating-point lesson's tolerance rule, and
+it is what you should use in tests and convergence checks.
+
+## Sorting and searching
+
+```python
+np.sort(V)                   # returns a sorted copy
+V.sort()                     # in place
+np.argsort(V)                # the indices that would sort it
+np.argmax(V), np.argmin(V)   # position of the extreme
+np.searchsorted(sorted_v, x) # insertion point, binary search
+np.unique(a)                 # sorted unique values
+np.unique(a, return_counts=True)
+```
+
+`argsort` is the one worth knowing well — it lets you sort several parallel arrays
+together:
+
+```python
+order = np.argsort(V)
+V_sorted = V[order]
+bus_sorted = bus_ids[order]      # stays aligned
+```
+
+## Common mistakes
+
+<Callout type="warning" title="Using * for matrix multiplication">
+  The headline. `@` for matrix, `*` for element-wise. Opposite of MATLAB.
+</Callout>
+
+<Callout type="warning" title="math.sqrt on an array">
+  Raises. Use `np.sqrt`.
+</Callout>
+
+<Callout type="warning" title="Comparing float arrays with ==">
+  Use `np.allclose` or `np.isclose`.
+</Callout>
+
+<Callout type="warning" title="Forgetting that += mutates in place">
+  It modifies the caller's data. `a = a + 1` allocates and rebinds; `a += 1` does not.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Which is which?">
+  For `A = np.array([[1, 2], [3, 4]])` and `v = np.array([1, 1])`, predict each.
+
+  ```python
+  A * A
+  A @ A
+  A * v
+  A @ v
+  v @ v
+  A ** 2
+  ```
+
+  <Solution>
+    - `A * A` → `[[1, 4], [9, 16]]` — element-wise
+    - `A @ A` → `[[7, 10], [15, 22]]` — matrix product
+    - `A * v` → `[[1, 2], [3, 4]]` — `v` broadcasts across rows; unchanged here since
+      `v` is all ones
+    - `A @ v` → `[3, 7]` — matrix-vector product, shape `(2,)`
+    - `v @ v` → `2` — a scalar, the dot product
+    - `A ** 2` → `[[1, 4], [9, 16]]` — element-wise, **not** `A @ A`
+
+    The pair to watch is the first and second: both legal, both plausible, different
+    answers. And `A ** 2` catching people is the same trap as MATLAB's `A.^2` versus
+    `A^2`, mirrored.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: the power flow equations, vectorised">
+  Compute the injected complex power at every bus from a Y-bus and a voltage vector, in
+  one expression.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    def injected_power(Y, V_mag, delta):
+        """Complex power injected at every bus.
+
+        Y is (n, n) complex; V_mag and delta are (n,).
+        """
+        V = V_mag * np.exp(1j * delta)        # complex voltage, element-wise
+        I = Y @ V                              # network equation — MATRIX product
+        S = V * np.conj(I)                     # S = V .* conj(I) — ELEMENT-WISE
+        return S.real, S.imag
+    ```
+
+    Three lines, and each operator is deliberate:
+
+    - `V_mag * np.exp(...)` is **element-wise** — one voltage per bus.
+    - `Y @ V` is a **matrix product** — the network equation $I = YV$, where every
+      current depends on every voltage.
+    - `V * np.conj(I)` is **element-wise** again — power at each bus is that bus's
+      voltage times its own current.
+
+    Getting any one of them wrong gives a result of plausible shape and wrong value.
+    Reading the expression back and asking "should this couple the buses or not?" is the
+    check.
+
+    Compare with the MATLAB version from the load-flow lesson: `S = Vc .* conj(Y * Vc)`.
+    The dots move to the other operator, and nothing else changes.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: normalise features">
+  Given a table of measurements, standardise each column to zero mean and unit variance,
+  handling constant columns without producing NaN.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    def standardise(X):
+        """Zero mean, unit variance per column. Constant columns are left at zero."""
+        X = np.asarray(X, dtype=float)
+        mean = X.mean(axis=0)
+        std = X.std(axis=0)
+
+        # A constant column has std 0 — dividing would give NaN or inf
+        safe = std.copy()
+        safe[safe == 0] = 1.0
+
+        Z = (X - mean) / safe
+
+        return Z, mean, std
+
+
+    rng = np.random.default_rng(0)
+    X = np.column_stack([
+        rng.normal(50, 5, 100),      # varying
+        rng.normal(0, 1, 100),       # varying
+        np.full(100, 7.0),           # CONSTANT — the tricky case
+    ])
+
+    Z, mean, std = standardise(X)
+    print("means after:", Z.mean(axis=0).round(10))
+    print("stds after :", Z.std(axis=0).round(10))
+    ```
+
+    The constant column is the point. A naive `(X - mean) / std` gives `0/0 = nan` for
+    that column, and NaN then propagates through every downstream calculation.
+
+    Copying `std` before modifying matters too — mutating the returned `std` would give
+    the caller a lie about what the original data looked like.
+
+    Returning `mean` and `std` alongside `Z` is what lets you apply the *same*
+    transformation to new data later. Standardising a test set with its own statistics
+    rather than the training set's is a classic and quietly serious mistake in machine
+    learning.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'In NumPy, what does A * B do for two square matrices?',
+      options: [
+        'Matrix multiplication',
+        'Element-wise multiplication',
+        'Raises an error',
+        'It depends on the dtype',
+      ],
+      answer: 1,
+      explain:
+        'Element-wise — the opposite of MATLAB. Matrix multiplication is @. Both are legal on square matrices, so getting it wrong gives a wrong answer with no error.',
+    },
+    {
+      q: 'For 1-D arrays a and b, what is a @ b?',
+      options: [
+        'Element-wise product',
+        'The scalar dot product',
+        'The outer product',
+        'An error — you need a transpose',
+      ],
+      answer: 1,
+      explain:
+        'The inner product, returning a scalar. No transpose needed, because a 1-D NumPy array has no orientation — one of the places the (3,) design pays off.',
+    },
+    {
+      q: 'What does a *= 2 do differently from a = a * 2?',
+      options: [
+        'Nothing',
+        'It modifies the array in place rather than allocating a new one',
+        'It is slower',
+        'It changes the dtype',
+      ],
+      answer: 1,
+      explain:
+        'In-place avoids an allocation, which matters on large arrays — and it modifies the caller\'s data if the array was passed in, which is the mutability lesson with a performance incentive attached.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **`*` is element-wise, `@` is matrix** — the exact reverse of MATLAB, and both are legal
+  on the same shapes. When porting, every `.*` becomes `*` **and** every `*` becomes `@`;
+  doing one without the other is the classic silent bug.
+</KeyIdea>
+
+## Further reading
+
+- PEP 465 — the rationale for adding `@` to the language
+- Next: **aggregation and axes** — what `axis=0` actually means

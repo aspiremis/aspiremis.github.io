@@ -1,0 +1,459 @@
+---
+title: 'Project: A Vectorised Y-bus'
+track: python
+module: numpy
+order: 17
+description: Build an admittance matrix three ways — loop, broken vectorisation, and correct scatter-add — and find out why the obvious vectorisation is silently wrong.
+objectives:
+  - Build a Y-bus with no Python-level loop over branches
+  - Explain why fancy-index += fails on duplicate indices and how np.add.at fixes it
+  - Validate a numerical implementation against structure, physics and a second method
+prerequisites: [numpy-indexing, array-operations, numpy-performance]
+estimatedMinutes: 60
+difficulty: intermediate
+tags: ['python', 'project', 'numpy', 'ybus', 'vectorisation']
+---
+
+This project has a trap in the middle of it, and the trap is the point.
+
+You are going to write the obvious vectorised Y-bus, watch it produce a wrong answer with
+no error, work out why, and fix it. Everyone who writes a Y-bus in NumPy meets this — most
+of them meet it later, in a load flow that will not converge.
+
+## Stage 1 — the loop version
+
+Start with the direct translation of the stamping rule. This is the reference.
+
+<CodeFile name="ybus_loop.py">
+```python
+"""Y-bus construction, the straightforward way."""
+
+import numpy as np
+
+
+def build_ybus_loop(n_bus, branch):
+    """Assemble a dense Y-bus with an explicit loop.
+
+    branch: (n_branch, 4) array of [from, to, R, X], 0-indexed buses.
+    """
+    branch = np.asarray(branch, dtype=float)
+    Y = np.zeros((n_bus, n_bus), dtype=complex)     # complex, or assignment fails
+
+    for f, t, r, x in branch:
+        f, t = int(f), int(t)
+        y = 1.0 / complex(r, x)
+
+        Y[f, f] += y
+        Y[t, t] += y
+        Y[f, t] -= y
+        Y[t, f] -= y
+
+    return Y
+```
+</CodeFile>
+
+<Callout type="warning" title="dtype=complex is not optional">
+  `np.zeros((n, n))` is float64. Assigning a complex admittance into it raises
+  `ComplexWarning` and discards the imaginary part — or errors, depending on the
+  operation.
+
+  This is the dtype trap from the arrays lesson in its most common form. A Y-bus is
+  complex; say so at creation.
+</Callout>
+
+## Stage 2 — the obvious vectorisation, which is wrong
+
+Four assignments per branch, all independent. It looks like textbook fancy indexing.
+
+<CodeFile name="ybus_broken.py">
+```python
+def build_ybus_broken(n_bus, branch):
+    """Looks right. Is wrong. Find out why before reading on."""
+    branch = np.asarray(branch, dtype=float)
+
+    f = branch[:, 0].astype(int)
+    t = branch[:, 1].astype(int)
+    y = 1.0 / (branch[:, 2] + 1j * branch[:, 3])
+
+    Y = np.zeros((n_bus, n_bus), dtype=complex)
+
+    Y[f, f] += y
+    Y[t, t] += y
+    Y[f, t] -= y
+    Y[t, f] -= y
+
+    return Y
+```
+</CodeFile>
+
+Test it on something with a repeated bus:
+
+```python
+# Bus 1 appears in three branches
+branch = np.array([
+    [0, 1, 0.02, 0.06],
+    [1, 2, 0.03, 0.09],
+    [1, 3, 0.04, 0.12],
+])
+
+Y_loop = build_ybus_loop(4, branch)
+Y_bad = build_ybus_broken(4, branch)
+
+print("agree:", np.allclose(Y_loop, Y_bad))          # False
+print("Y[1,1] loop  :", Y_loop[1, 1])
+print("Y[1,1] broken:", Y_bad[1, 1])
+```
+
+The diagonal at bus 1 is wrong. Every other entry is right.
+
+<Callout type="engineering">
+  **`Y[f, f] += y` is fetch, add, store.**
+
+  NumPy reads all the addressed elements, adds, and writes them back. Where an index
+  appears more than once — bus 1 appears three times in `f` and `t` combined — only the
+  **last** write survives. The earlier contributions are computed and then overwritten.
+
+  MATLAB's `sparse(i, j, v)` **sums** duplicates, which is exactly what stamping needs, so
+  a MATLAB habit produces a wrong answer here.
+
+  And note what it breaks: the diagonal entries are the sum of everything connected to a
+  bus, so this fails precisely at the buses with more than one branch — which is nearly
+  all of them on a real network. On a two-bus test system it passes.
+</Callout>
+
+## Stage 3 — the correct vectorisation
+
+`np.add.at` performs an **unbuffered** scatter-add: it applies every contribution,
+duplicates included.
+
+<CodeFile name="ybus_vectorised.py">
+```python
+"""Y-bus construction, vectorised and correct."""
+
+import numpy as np
+
+
+def build_ybus(n_bus, branch, shunt=None):
+    """Assemble a dense Y-bus with no Python-level loop over branches.
+
+    Args:
+        n_bus: Number of buses.
+        branch: (n_branch, 4+) array of [from, to, R, X, (B_total)],
+            with 0-indexed bus numbers.
+        shunt: Optional (n_bus,) complex bus shunt admittance.
+
+    Returns:
+        (n_bus, n_bus) complex admittance matrix.
+
+    Raises:
+        ValueError: On out-of-range buses, self-loops or zero impedance.
+    """
+    branch = np.asarray(branch, dtype=float)
+    if branch.ndim != 2 or branch.shape[1] < 4:
+        raise ValueError("branch must be (n_branch, >=4): [from, to, R, X]")
+
+    f = branch[:, 0].astype(int)
+    t = branch[:, 1].astype(int)
+
+    if f.min() < 0 or f.max() >= n_bus or t.min() < 0 or t.max() >= n_bus:
+        raise ValueError(f"Bus index outside 0..{n_bus - 1}")
+    if np.any(f == t):
+        raise ValueError(f"Self-loop on branch row(s) {np.flatnonzero(f == t)}")
+
+    z = branch[:, 2] + 1j * branch[:, 3]
+    if np.any(z == 0):
+        raise ValueError(f"Zero impedance on row(s) {np.flatnonzero(z == 0)}")
+
+    y = 1.0 / z
+    b_half = 1j * branch[:, 4] / 2 if branch.shape[1] > 4 else 0.0
+
+    Y = np.zeros((n_bus, n_bus), dtype=complex)
+
+    # Unbuffered scatter-add: duplicate indices ACCUMULATE, which is the
+    # whole point of the stamping rule.
+    np.add.at(Y, (f, f), y + b_half)
+    np.add.at(Y, (t, t), y + b_half)
+    np.add.at(Y, (f, t), -y)
+    np.add.at(Y, (t, f), -y)
+
+    if shunt is not None:
+        shunt = np.asarray(shunt, dtype=complex)
+        if shunt.shape != (n_bus,):
+            raise ValueError(f"shunt must have shape ({n_bus},)")
+        Y[np.arange(n_bus), np.arange(n_bus)] += shunt
+
+    return Y
+```
+</CodeFile>
+
+<Callout type="tip" title="np.add.at is correct, not fast">
+  It is often *slower* than the loop for small networks, because it disables the buffering
+  that makes fancy indexing quick.
+
+  That is fine. The reason to use it is correctness. When speed genuinely matters, the
+  answer is `scipy.sparse.coo_matrix((vals, (rows, cols)))`, which sums duplicates **and**
+  is fast — and which is where the SciPy module goes.
+</Callout>
+
+## Stage 4 — validate
+
+Three independent kinds of check.
+
+<CodeFile name="test_ybus.py">
+```python
+import numpy as np
+import pytest
+from ybus import build_ybus, build_ybus_loop
+
+
+@pytest.fixture
+def four_bus():
+    # Bus 1 has three branches — the case that exposes the scatter-add bug
+    return 4, np.array([
+        [0, 1, 0.02, 0.06],
+        [1, 2, 0.03, 0.09],
+        [1, 3, 0.04, 0.12],
+        [2, 3, 0.05, 0.15],
+    ])
+
+
+def test_matches_the_loop_reference(four_bus):
+    """Two structurally different implementations must agree."""
+    n, branch = four_bus
+    assert np.allclose(build_ybus(n, branch), build_ybus_loop(n, branch))
+
+
+def test_row_sums_vanish(four_bus):
+    """No shunts: the diagonal is the negative sum of the off-diagonals."""
+    n, branch = four_bus
+    assert np.allclose(build_ybus(n, branch).sum(axis=1), 0, atol=1e-12)
+
+
+def test_symmetric(four_bus):
+    n, branch = four_bus
+    Y = build_ybus(n, branch)
+    assert np.allclose(Y, Y.T)          # plain transpose, NOT conjugate
+
+
+def test_off_diagonal_is_negative_admittance(four_bus):
+    n, branch = four_bus
+    Y = build_ybus(n, branch)
+    assert Y[0, 1] == pytest.approx(-1 / complex(0.02, 0.06))
+
+
+def test_parallel_branches_accumulate():
+    """The test the broken version fails."""
+    single = build_ybus(2, [[0, 1, 0.02, 0.06]])
+    double = build_ybus(2, [[0, 1, 0.02, 0.06], [0, 1, 0.02, 0.06]])
+    assert double[0, 1] == pytest.approx(2 * single[0, 1])
+    assert double[0, 0] == pytest.approx(2 * single[0, 0])
+
+
+def test_shunt_goes_on_the_diagonal():
+    shunt = np.array([0, 0.02j])
+    Y = build_ybus(2, [[0, 1, 0.02, 0.06]], shunt=shunt)
+    Y_no = build_ybus(2, [[0, 1, 0.02, 0.06]])
+    assert Y[1, 1] - Y_no[1, 1] == pytest.approx(0.02j)
+
+
+@pytest.mark.parametrize("bad_branch, match", [
+    ([[0, 5, 0.02, 0.06]], "outside"),
+    ([[1, 1, 0.02, 0.06]], "Self-loop"),
+    ([[0, 1, 0.0, 0.0]], "Zero impedance"),
+])
+def test_rejects_bad_data(bad_branch, match):
+    with pytest.raises(ValueError, match=match):
+        build_ybus(3, bad_branch)
+```
+</CodeFile>
+
+<Callout type="engineering">
+  `test_parallel_branches_accumulate` is the one that matters. It is the **only** test
+  here that the broken version fails — every other check passes on it, because they use
+  networks where each bus pair appears once.
+
+  That is worth sitting with. A test suite that only exercises simple topologies would
+  have shipped the bug. Designing a test around the *failure mode you are worried about*
+  is more valuable than adding more tests of the happy path.
+</Callout>
+
+## Stage 5 — measure it
+
+<CodeFile name="benchmark.py">
+```python
+import numpy as np, timeit
+
+
+def random_radial(n_bus, seed=0):
+    """A radial network: bus k connects to a random earlier bus."""
+    rng = np.random.default_rng(seed)
+    f = rng.integers(0, np.arange(1, n_bus))
+    t = np.arange(1, n_bus)
+    r = rng.uniform(0.01, 0.10, n_bus - 1)
+    x = rng.uniform(0.03, 0.30, n_bus - 1)
+    return np.column_stack([f, t, r, x])
+
+
+print(f"{'buses':>8}{'loop (ms)':>12}{'np.add.at':>12}{'ratio':>8}")
+print("-" * 40)
+
+for n in (14, 118, 500, 2000):
+    branch = random_radial(n)
+    t_loop = timeit.timeit(lambda: build_ybus_loop(n, branch), number=10) / 10
+    t_vec = timeit.timeit(lambda: build_ybus(n, branch), number=10) / 10
+    print(f"{n:>8}{t_loop*1000:>12.2f}{t_vec*1000:>12.2f}{t_loop/t_vec:>8.1f}x")
+
+    assert np.allclose(build_ybus_loop(n, branch), build_ybus(n, branch))
+```
+</CodeFile>
+
+<Callout type="warning" title="Expect a modest speedup, and note where the time actually goes">
+  `np.add.at` is not a dramatic win — it may be only two or three times the loop, and at
+  small sizes it can lose.
+
+  What dominates at scale is the **allocation**: a 2000-bus dense complex Y-bus is 64 MB,
+  and most of the runtime is `np.zeros` touching that memory. Neither implementation is
+  addressing the real problem, which is that the matrix should be sparse.
+
+  Measuring and finding that the optimisation you made is not the one that matters is a
+  genuinely useful outcome. It is also the honest lead-in to `scipy.sparse`.
+</Callout>
+
+## Extend it
+
+<Exercise n={1} kind="practice" title="Add taps and phase shifters">
+  Extend the vectorised builder to handle off-nominal tap ratios and phase shifts.
+
+  <Solution>
+    ```python
+    def build_ybus(n_bus, branch, shunt=None):
+        ...
+        tap = branch[:, 5] if branch.shape[1] > 5 else np.ones(len(f))
+        tap = np.where(tap == 0, 1.0, tap)                  # 0 conventionally means 1
+        shift = branch[:, 6] if branch.shape[1] > 6 else np.zeros(len(f))
+
+        a = tap * np.exp(1j * np.deg2rad(shift))
+
+        Y = np.zeros((n_bus, n_bus), dtype=complex)
+        np.add.at(Y, (f, f), (y + b_half) / np.abs(a) ** 2)
+        np.add.at(Y, (t, t), y + b_half)
+        np.add.at(Y, (f, t), -y / np.conj(a))
+        np.add.at(Y, (t, f), -y / a)
+        return Y
+    ```
+
+    The asymmetry between `conj(a)` and `a` is what makes a phase shifter work — and it
+    means the symmetry test must be conditional:
+
+    ```python
+    def test_symmetric_without_shifter(four_bus):
+        n, branch = four_bus
+        Y = build_ybus(n, branch)
+        assert np.allclose(Y, Y.T)
+
+    def test_phase_shifter_breaks_symmetry():
+        branch = [[0, 1, 0.02, 0.06, 0.0, 1.0, 5.0]]      # 5 degree shift
+        Y = build_ybus(2, branch)
+        assert not np.allclose(Y, Y.T)
+    ```
+
+    A test asserting the *absence* of a property is unusual and correct here — a phase
+    shifter that produced a symmetric Y-bus would be modelled wrongly.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Compare against pandapower">
+  Validate your builder against an independent implementation.
+
+  <Solution>
+    ```python
+    import numpy as np
+    import pandapower as pp
+    import pandapower.networks as pn
+
+    net = pn.case14()
+    pp.runpp(net)
+
+    Y_ref = net._ppc["internal"]["Ybus"].toarray()
+
+    branch = np.column_stack([
+        net.line.from_bus.values, net.line.to_bus.values,
+        net.line.r_ohm_per_km.values * net.line.length_km.values,
+        net.line.x_ohm_per_km.values * net.line.length_km.values,
+    ])
+    # ... convert to per unit on the case base, add transformers ...
+
+    Y_mine = build_ybus(len(net.bus), branch_pu)
+    print(f"max difference: {np.abs(Y_mine - Y_ref).max():.3e}")
+    ```
+
+    Getting this to match exactly is genuinely fiddly — per-unit bases, transformer
+    models, line charging conventions and internal bus reordering all have to line up.
+
+    That difficulty is itself the lesson. **Agreement between two independently written
+    implementations is the strongest validation available**, and it is strong precisely
+    because it is hard to achieve by accident.
+
+    If you only get partway, that is still useful: knowing *which* element type
+    disagrees narrows the problem to one conversion.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: a scatter-add histogram">
+  Use the same scatter-add idea outside power systems — bin a large dataset by hand and
+  check against `np.histogram`.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    def histogram_scatter(data, bins, lo, hi):
+        """Bin data with an explicit scatter-add."""
+        idx = ((data - lo) / (hi - lo) * bins).astype(int)
+        idx = np.clip(idx, 0, bins - 1)          # fold the outliers into the ends
+
+        counts = np.zeros(bins, dtype=int)
+        np.add.at(counts, idx, 1)                # MANY duplicates — the whole point
+        return counts
+
+
+    rng = np.random.default_rng(0)
+    data = rng.normal(50, 10, 100_000)
+
+    mine = histogram_scatter(data, 20, 0, 100)
+    ref, _ = np.histogram(data, bins=20, range=(0, 100))
+
+    print("agree:", np.array_equal(mine, ref))
+    print("total:", mine.sum())
+    ```
+
+    A histogram is scatter-add in its purest form: 100,000 values landing in 20 bins means
+    the indices are almost entirely duplicates. `counts[idx] += 1` would give a maximum of
+    1 per bin — obviously wrong here, where the Y-bus version was subtly wrong.
+
+    That contrast is worth noticing. The same bug is glaring in one context and nearly
+    invisible in another, and only the second kind reaches production.
+
+    Use `np.histogram` in real code — it is compiled and handles edges properly. The value
+    of writing it once is understanding what it does.
+  </Solution>
+</Exercise>
+
+## What you built
+
+Three Y-bus implementations, a test suite whose key case is the one that catches the
+subtle bug, a benchmark, and a demonstration that the optimisation you made is not the one
+that matters — the matrix should be sparse.
+
+<KeyIdea>
+  `a[idx] += v` is **fetch-add-store**, so duplicate indices do not accumulate — and
+  MATLAB's `sparse()` habit produces a Y-bus that is wrong only at the buses with more
+  than one branch. `np.add.at` is the correct scatter-add, and a test built around
+  *parallel branches* is the one that catches it.
+</KeyIdea>
+
+## Further reading
+
+- `np.ufunc.at` — the general unbuffered form
+- `scipy.sparse.coo_matrix` — sums duplicates *and* is fast; the next module
+- Next module: **pandas** — labelled data and time series

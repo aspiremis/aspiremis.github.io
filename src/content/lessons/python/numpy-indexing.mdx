@@ -1,0 +1,405 @@
+---
+title: Indexing and Views
+track: python
+module: numpy
+order: 11
+description: Slicing, boolean masks and fancy indexing — and the single biggest difference from MATLAB, which is that a slice is a view into the original array.
+objectives:
+  - Index and slice arrays across multiple dimensions
+  - Explain when indexing returns a view and when it returns a copy
+  - Use boolean masks and integer arrays to select and modify data
+prerequisites: [arrays]
+estimatedMinutes: 35
+difficulty: intermediate
+tags: ['python', 'numpy', 'indexing', 'views', 'boolean-masks']
+---
+
+Indexing works much as you'd expect from MATLAB, with 0-based offsets and exclusive
+ends. Then there is one behaviour with **no MATLAB equivalent at all**, and it causes
+real bugs.
+
+## Basic indexing
+
+```python
+import numpy as np
+A = np.arange(12).reshape(3, 4)
+# [[ 0  1  2  3]
+#  [ 4  5  6  7]
+#  [ 8  9 10 11]]
+
+A[1, 2]           # 6      — row 1, column 2 (both from 0)
+A[1]              # row 1: [4, 5, 6, 7]
+A[:, 2]           # column 2: [2, 6, 10]  — shape (3,), NOT (3,1)
+A[0:2, 1:3]       # a 2x2 block
+A[-1, -1]         # 11     — bottom right
+A[::2, :]         # every other row
+```
+
+Note `A[:, 2]` has shape `(3,)`. Extracting a single column **drops** that dimension. If
+you need it kept:
+
+```python
+A[:, 2:3]         # shape (3, 1) — slicing keeps the axis
+A[:, [2]]         # shape (3, 1) — same
+```
+
+## Views — the important part
+
+<Callout type="warning" title="Basic slicing returns a VIEW, not a copy">
+  ```python
+  a = np.array([1, 2, 3, 4, 5])
+  b = a[1:4]              # a VIEW into a's memory
+  b[0] = 99
+
+  print(a)                # [ 1 99  3  4  5]  — a changed!
+  ```
+
+  In MATLAB, `b = a(2:4)` copies. In NumPy it does not — `b` looks into the same memory.
+
+  This is deliberate and it is why NumPy is fast: slicing a 100 MB array costs nothing,
+  because nothing is copied. It is also the source of some genuinely confusing bugs.
+</Callout>
+
+<Analogy>
+  A MATLAB slice is a **photocopy** of some pages. Marking the copy leaves the original
+  alone.
+
+  A NumPy slice is a **window cut in a card**, laid over the original. You see part of
+  it, and anything you write goes onto the original page.
+</Analogy>
+
+Check which you have:
+
+```python
+b = a[1:4]
+b.base is a             # True  — b is a view of a
+c = a[1:4].copy()
+c.base is None          # True  — c owns its data
+```
+
+The rule:
+
+<Compare
+  headings={['Indexing', 'Returns', 'Example']}
+  rows={[
+    { option: 'Slicing with :', when: 'VIEW', cost: 'a[1:4], A[:, 2], A[::2]', recommended: true },
+    { option: 'Integer (fancy) indexing', when: 'COPY', cost: 'a[[0, 2, 4]]' },
+    { option: 'Boolean masking', when: 'COPY', cost: 'a[a > 5]' },
+    { option: 'Single element', when: 'A scalar value', cost: 'a[3]' },
+    { option: 'reshape / ravel', when: 'View if possible', cost: 'Falls back to a copy if it must' },
+  ]}
+/>
+
+<Callout type="engineering">
+  Views are usually what you want, and occasionally a trap.
+
+  **Useful:** slicing out the non-slack rows of a Jacobian costs nothing, so working with
+  sub-blocks of a large matrix is free.
+
+  **Trap:** a function that takes an array and "cleans" it in place will modify the
+  caller's data through the view without saying so.
+
+  ```python
+  def clamp(voltages, vmax=1.05):
+      voltages[voltages > vmax] = vmax     # modifies the CALLER's array
+      return voltages
+  ```
+
+  Either document that loudly, or copy first: `voltages = voltages.copy()`. This is the
+  mutability lesson from Foundations, now applying to numerical data.
+</Callout>
+
+## Boolean masks
+
+The NumPy equivalent of MATLAB's logical indexing, and used constantly.
+
+```python
+V = np.array([0.94, 1.02, 1.07, 0.99, 1.06])
+
+mask = V > 1.05                # array([False, False, True, False, True])
+V[mask]                        # array([1.07, 1.06]) — a COPY
+V[V > 1.05]                    # same, written directly
+
+np.sum(V > 1.05)               # 2  — how many
+np.any(V > 1.05)               # True
+np.all(V > 0.95)               # False
+np.where(V > 1.05)             # (array([2, 4]),) — WHERE they are
+```
+
+Combine with `&`, `|`, `~` — and **the parentheses are mandatory**:
+
+```python
+within = (V >= 0.95) & (V <= 1.05)
+outside = (V < 0.95) | (V > 1.05)
+outside = ~within
+```
+
+<Callout type="warning" title="Use & and |, never and / or">
+  ```python
+  V[(V > 0.95) and (V < 1.05)]     # ValueError: truth value of an array is ambiguous
+  V[(V > 0.95) & (V < 1.05)]       # correct
+  ```
+
+  Python's `and` and `or` want a single true/false. An array of booleans has no single
+  truth value, so NumPy refuses to guess.
+
+  And `&` binds *tighter* than the comparison operators, which is why every clause needs
+  its own parentheses. Omitting them produces a confusing error rather than a wrong
+  answer, which is at least merciful.
+</Callout>
+
+Masks work for assignment too:
+
+```python
+V[V > 1.05] = 1.05                     # clamp in place
+V_clean = np.where(V > 1.05, 1.05, V)  # or produce a new array
+```
+
+`np.where(condition, if_true, if_false)` is the vectorised conditional — worth knowing,
+because it replaces a great many loops.
+
+## Fancy indexing
+
+Select arbitrary positions with an integer array:
+
+```python
+V = np.array([1.06, 1.045, 1.01, 0.98, 0.94])
+
+buses = [0, 2, 4]
+V[buses]                       # array([1.06, 1.01, 0.94]) — a COPY
+
+A = np.arange(12).reshape(3, 4)
+A[[0, 2], :]                   # rows 0 and 2
+A[np.ix_([0, 2], [1, 3])]      # the 2x2 intersection
+A[[0, 2], [1, 3]]              # NOT a block — elements (0,1) and (2,3)!
+```
+
+<Callout type="warning" title="A[[0,2],[1,3]] picks two elements, not a 2x2 block">
+  In MATLAB, `A([1 3], [2 4])` gives the intersection — a 2×2 sub-matrix.
+
+  In NumPy, two integer arrays are **zipped**: you get `A[0,1]` and `A[2,3]`, two
+  elements.
+
+  For the MATLAB behaviour use `np.ix_`, or chain the slices: `A[[0,2]][:, [1,3]]`.
+
+  This one produces a silently wrong shape rather than an error, so it is worth being
+  deliberate about.
+</Callout>
+
+## The duplicate-index trap
+
+This one has bitten every person who has written a Y-bus in NumPy.
+
+```python
+a = np.zeros(3)
+a[[0, 0, 1]] += 1
+print(a)                       # [1. 0. 1.]  — NOT [2. 0. 1.]
+```
+
+<Callout type="engineering">
+  `a[idx] += 1` is really *fetch, add, store*. The fetch reads `a[0]` once, adds one, and
+  stores it back once — the duplicate index does not accumulate.
+
+  MATLAB's `sparse(i, j, v)` **sums** duplicates automatically, which is exactly what the
+  Y-bus stamping rule needs. NumPy does not, and the result is a Y-bus that is quietly
+  wrong wherever two branches share a bus pair.
+
+  The fix is `np.add.at`, which does an unbuffered scatter-add:
+
+  ```python
+  a = np.zeros(3)
+  np.add.at(a, [0, 0, 1], 1)
+  print(a)                       # [2. 0. 1.]  — correct
+  ```
+
+  Slower than `+=`, and correct. This is the single most important thing in this lesson
+  for your work, and the module project turns on it.
+</Callout>
+
+## `np.newaxis`
+
+Add a dimension, usually to set up broadcasting:
+
+```python
+a = np.array([1, 2, 3])          # (3,)
+
+a[:, np.newaxis]                 # (3, 1) — column
+a[np.newaxis, :]                 # (1, 3) — row
+a[:, None]                       # same as newaxis, shorter
+```
+
+## Common mistakes
+
+<Callout type="warning" title="Assuming a slice is a copy">
+  It is a view. Use `.copy()` when you need independence.
+</Callout>
+
+<Callout type="warning" title="and / or on arrays">
+  Use `&` and `|`, and parenthesise every clause.
+</Callout>
+
+<Callout type="warning" title="A[[0,2],[1,3]] expecting a block">
+  That zips the indices. Use `np.ix_` for the intersection.
+</Callout>
+
+<Callout type="warning" title="a[idx] += v with duplicate indices">
+  Only applies once per position. Use `np.add.at`.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="View or copy?">
+  ```python
+  a = np.arange(5)          # [0 1 2 3 4]
+
+  b = a[1:4];      b[0] = 99
+  c = a[[1, 2, 3]]; c[0] = 77
+  d = a[a > 2];     d[0] = 55
+
+  print(a)
+  ```
+
+  <Solution>
+    ```text
+    [ 0 99  2  3  4]
+    ```
+
+    - `b = a[1:4]` is **basic slicing** → a view. Writing `b[0] = 99` writes into `a[1]`.
+    - `c = a[[1,2,3]]` is **fancy indexing** → a copy. `a` is untouched.
+    - `d = a[a > 2]` is **boolean masking** → a copy. `a` is untouched.
+
+    So only the slice propagated. The rule to carry: **`:` gives a view, anything
+    involving an index array or a mask gives a copy.**
+
+    When you are unsure, `b.base is a` answers it directly.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: limit check without loops">
+  Given bus voltages, report how many are out of limits, which buses, the worst, and
+  produce a clamped copy leaving the original intact.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    V = np.array([1.06, 1.045, 1.01, 0.98, 0.94, 1.07, 0.999])
+    bus_ids = np.array([1, 2, 3, 4, 5, 6, 7])
+
+    over  = V > 1.05
+    under = V < 0.95
+    bad   = over | under
+
+    print(f"{bad.sum()} of {V.size} buses in violation")
+    print(f"Over-voltage buses : {bus_ids[over]}")
+    print(f"Under-voltage buses: {bus_ids[under]}")
+
+    if over.any():
+        worst = bus_ids[over][np.argmax(V[over])]
+        print(f"Worst overvoltage: {V.max():.4f} pu at bus {worst}")
+
+    # A clamped COPY — the original is untouched
+    V_clean = np.clip(V, 0.95, 1.05)
+    print(f"original unchanged: {np.array_equal(V, np.array([1.06,1.045,1.01,0.98,0.94,1.07,0.999]))}")
+    ```
+
+    `bus_ids[over]` is the idiom worth taking away — masking a *parallel* array with a
+    mask computed from another gives you the identifiers, not just the values. That's how
+    you report *which* bus rather than merely how many.
+
+    `np.clip` returns a new array, so the original survives. `np.clip(V, 0.95, 1.05,
+    out=V)` would clamp in place if that were what you wanted.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: replace outliers">
+  Given a noisy measurement series, replace values more than three standard deviations
+  from the median with NaN, and report how many were replaced — without a loop.
+
+  <Solution>
+    ```python
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    data = rng.normal(50, 5, 200)
+    data[[17, 88, 143]] = [200, -30, 175]          # plant some outliers
+
+    # Median and MAD are robust — the mean and std are themselves skewed by outliers
+    median = np.median(data)
+    mad = np.median(np.abs(data - median))
+    robust_std = 1.4826 * mad                       # MAD -> std for normal data
+
+    outlier = np.abs(data - median) > 3 * robust_std
+
+    clean = data.astype(float).copy()
+    clean[outlier] = np.nan
+
+    print(f"Replaced {outlier.sum()} of {data.size} points")
+    print(f"Positions: {np.flatnonzero(outlier)}")
+    print(f"Mean before {np.mean(data):.2f}, after {np.nanmean(clean):.2f}")
+    ```
+
+    The important detail is using **median and MAD** rather than mean and standard
+    deviation. An outlier inflates the standard deviation, which widens the threshold,
+    which can let the outlier through — the statistic you are using to detect the problem
+    is corrupted by the problem.
+
+    The 1.4826 factor converts MAD to an equivalent standard deviation for normally
+    distributed data. It is worth knowing because robust statistics show up constantly in
+    measurement work.
+
+    `np.flatnonzero` is a tidier `np.where(...)[0]` when you want the positions.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does b = a[1:4]; b[0] = 99 do to a?',
+      options: [
+        'Nothing — b is a copy',
+        'Sets a[1] to 99, because basic slicing returns a view',
+        'Raises an error',
+        'Sets a[0] to 99',
+      ],
+      answer: 1,
+      explain:
+        'Basic slicing returns a view into the same memory. That is why slicing a large array costs nothing, and it is the biggest behavioural difference from MATLAB, where slicing copies.',
+    },
+    {
+      q: 'Why does a[[0, 0, 1]] += 1 not add 2 to element 0?',
+      options: [
+        'Duplicate indices are an error',
+        'It is fetch-add-store: the value is read once and written once, so duplicates do not accumulate',
+        'NumPy sorts the indices first',
+        'It does add 2',
+      ],
+      answer: 1,
+      explain:
+        "MATLAB's sparse() sums duplicates, which is what Y-bus stamping needs. NumPy does not — use np.add.at for an unbuffered scatter-add.",
+    },
+    {
+      q: 'How do you select the 2x2 intersection of rows [0,2] and columns [1,3]?',
+      options: [
+        'A[[0,2],[1,3]]',
+        'A[np.ix_([0,2],[1,3])]',
+        'A[[0,2]] and A[[1,3]]',
+        'A[0:2, 1:3]',
+      ],
+      answer: 1,
+      explain:
+        'Two integer arrays are zipped, giving elements (0,1) and (2,3) — not a block. np.ix_ produces the MATLAB-style intersection, and it fails silently as a wrong shape rather than an error.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Slices are views; masks and fancy indexing are copies.** And `a[idx] += v` does not
+  accumulate duplicate indices — `np.add.at` does, which is exactly what building a Y-bus
+  requires.
+</KeyIdea>
+
+## Further reading
+
+- NumPy: *Indexing on ndarrays* — the full reference, worth one careful read
+- Next: **broadcasting** — how NumPy aligns arrays of different shapes
