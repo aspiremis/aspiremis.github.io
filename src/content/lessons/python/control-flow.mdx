@@ -1,0 +1,380 @@
+---
+title: Control Flow
+track: python
+module: foundations
+order: 5
+description: Indentation as syntax, iterating over things rather than indices, and the small set of built-ins that replace most loops you were about to write.
+objectives:
+  - Write conditionals and loops in idiomatic Python
+  - Iterate directly over collections instead of over indices
+  - Use enumerate, zip, any and all in place of manual loops
+prerequisites: [collections]
+estimatedMinutes: 30
+difficulty: beginner
+tags: ['python', 'control-flow', 'loops', 'comprehensions']
+---
+
+Python's control flow will look familiar. Two things are different enough to matter:
+**indentation is the syntax**, and you almost never loop over indices.
+
+## Indentation is not decoration
+
+```python
+v = 1.07
+
+if v > 1.05:
+    print("Overvoltage")
+    print("Check the tap setting")
+elif v < 0.95:
+    print("Undervoltage")
+else:
+    print("Within limits")
+```
+
+No `end`, no braces. The indentation **is** the block structure, and getting it wrong is
+a syntax error — or worse, silently valid code that does something else.
+
+<Callout type="warning" title="Four spaces, never tabs">
+  Mixing tabs and spaces produces `IndentationError` or, in older Python, code that looks
+  right and nests wrong.
+
+  Configure your editor to insert four spaces for the Tab key and this never comes up.
+  Every Python style guide agrees on four.
+</Callout>
+
+## Comparisons chain
+
+```python
+if 0.95 <= v <= 1.05:            # reads exactly like the mathematics
+    ...
+```
+
+Valid Python, and evaluated correctly — not `(0.95 <= v) <= 1.05` as it would be in C.
+Use it; it is clearer than `v >= 0.95 and v <= 1.05`.
+
+Logical operators are words:
+
+```python
+if v > 1.05 or v < 0.95:
+if converged and residual < tol:
+if not is_slack:
+```
+
+## Truthiness
+
+Python treats several things as false in a boolean context:
+
+```python
+falsy = [False, None, 0, 0.0, '', [], {}, set()]
+```
+
+Everything else is true. So:
+
+```python
+if violations:                   # "if the list is not empty"
+    report(violations)
+
+if not data:
+    raise ValueError("No data supplied")
+```
+
+<Callout type="warning" title="Never write `if x == None`">
+  Use `if x is None`. `None` is a singleton, so identity is the correct test — and `==`
+  can be overridden by a class to do something surprising.
+
+  Also be careful with `if not x` when `x` might legitimately be `0` or an empty array:
+  `0` is falsy, so `if not voltage` fires on a genuine zero. When you mean "was this
+  supplied?", write `if x is None`.
+</Callout>
+
+## Loop over things, not indices
+
+The single most common non-idiomatic pattern from MATLAB users:
+
+```python
+# Don't
+for i in range(len(voltages)):
+    print(voltages[i])
+
+# Do
+for v in voltages:
+    print(v)
+```
+
+When you genuinely need the position, `enumerate`:
+
+```python
+for i, v in enumerate(voltages):
+    print(f"Bus {i+1}: {v:.4f}")
+
+for bus, v in enumerate(voltages, start=1):     # start counting at 1
+    print(f"Bus {bus}: {v:.4f}")
+```
+
+To walk two sequences together, `zip`:
+
+```python
+for bus, v in zip(bus_ids, voltages):
+    print(f"Bus {bus}: {v:.4f}")
+
+for bus, v, ang in zip(bus_ids, voltages, angles):
+    ...
+```
+
+<Callout type="tip" title="zip stops at the shortest">
+  If your sequences differ in length, `zip` silently truncates. That is occasionally what
+  you want and often a bug.
+
+  `zip(a, b, strict=True)` raises instead — use it when the lengths *should* match, which
+  is most of the time in engineering data.
+</Callout>
+
+## `range`
+
+```python
+range(5)              # 0, 1, 2, 3, 4
+range(1, 6)           # 1, 2, 3, 4, 5      — end excluded, as with slices
+range(0, 10, 2)       # 0, 2, 4, 6, 8
+range(10, 0, -1)      # 10, 9, ..., 1
+```
+
+`range` produces values lazily rather than building a list, so `range(10**9)` costs
+nothing until you iterate it.
+
+## `while`, `break`, `continue`
+
+```python
+iteration = 0
+mismatch = float('inf')
+
+while mismatch > tol and iteration < max_iter:
+    iteration += 1
+    mismatch = solve_step()
+
+if mismatch > tol:
+    raise RuntimeError(f"Did not converge: {mismatch:.3e} after {iteration} iterations")
+```
+
+Same discipline as the MATLAB track: **cap every `while`**, and report non-convergence
+rather than returning a bad answer silently.
+
+Python has one unusual feature — `else` on a loop, which runs only if the loop finished
+*without* breaking:
+
+```python
+for candidate in buses:
+    if is_suitable(candidate):
+        chosen = candidate
+        break
+else:
+    raise ValueError("No suitable bus found")     # only if we never broke
+```
+
+Genuinely useful for search loops, and it surprises everyone the first time.
+
+## Built-ins that replace loops
+
+```python
+any(v > 1.05 for v in voltages)          # is any over limit?
+all(0.95 <= v <= 1.05 for v in voltages) # are all within?
+sum(v > 1.05 for v in voltages)          # how many? (booleans sum as 1/0)
+max(voltages), min(voltages)
+sorted(voltages, reverse=True)
+max(results, key=lambda r: r.losses)     # max BY a criterion
+```
+
+<Callout type="engineering">
+  A complete limit check with no explicit loop:
+
+  ```python
+  over  = {b: v for b, v in voltages.items() if v > 1.05}
+  under = {b: v for b, v in voltages.items() if v < 0.95}
+
+  print(f"{len(over) + len(under)} of {len(voltages)} buses in violation")
+
+  if over:
+      worst = max(over, key=over.get)
+      print(f"Worst overvoltage: {over[worst]:.4f} pu at bus {worst}")
+  ```
+
+  Compare with the MATLAB logical-indexing version — same idea, different spelling. The
+  transferable skill is *thinking in whole collections* rather than in element positions.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Modifying a collection while iterating it">
+  Skips elements or raises. Build a new one with a comprehension.
+</Callout>
+
+<Callout type="warning" title="Forgetting range excludes the end">
+  `range(1, 5)` is 1,2,3,4. For buses numbered 1 to n, `range(1, n+1)`.
+</Callout>
+
+<Callout type="warning" title="if x == None">
+  Use `is None`. And beware `if not x` when 0 is a valid value.
+</Callout>
+
+<Callout type="warning" title="Looping over indices out of habit">
+  `for i in range(len(v))` is a sign you want `enumerate` or `zip` — or, for numbers,
+  NumPy.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What does this print?">
+  ```python
+  data = [0, 1, 2, '', 'x', [], [0]]
+  print(sum(1 for d in data if d))
+
+  for n in range(3, 0):
+      print(n)
+  print("done")
+  ```
+
+  <Solution>
+    First: **4**. The truthy values are `1`, `2`, `'x'` and `[0]`. Note `[0]` is truthy —
+    a non-empty list — even though its only element is falsy. And `0` and `''` and `[]`
+    are all falsy.
+
+    Second: prints only `done`. `range(3, 0)` with the default step of `+1` is **empty**,
+    because you cannot count up from 3 to 0. No error, no output — a silent no-op.
+
+    That empty-range behaviour causes real bugs. If you meant to count down, you need the
+    step: `range(3, 0, -1)`.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: convergence loop">
+  Write a convergence loop that iterates until a mismatch falls below tolerance, caps the
+  iterations, records the history, and reports honestly if it fails.
+
+  <Solution>
+    ```python
+    def iterate_to_convergence(step_fn, initial, tol=1e-8, max_iter=30):
+        """Run step_fn until the mismatch converges.
+
+        step_fn(x) -> (x_new, mismatch)
+        Returns (x, history, converged).
+        """
+        x = initial
+        history = []
+
+        for iteration in range(1, max_iter + 1):
+            x, mismatch = step_fn(x)
+            history.append(mismatch)
+
+            if mismatch < tol:
+                return x, history, True
+
+        return x, history, False
+
+
+    x, history, converged = iterate_to_convergence(newton_step, x0)
+
+    if not converged:
+        raise RuntimeError(
+            f"Did not converge: {history[-1]:.3e} after {len(history)} iterations"
+        )
+
+    # The convergence RATE is the diagnostic, as in the MATLAB track
+    for i, m in enumerate(history):
+        rate = f"{history[i-1]/m:>8.1f}x" if i > 0 and m > 0 else ""
+        print(f"  iter {i:2d}: {m:.4e} {rate}")
+    ```
+
+    Returning `converged` as a flag rather than raising inside the function lets the
+    caller decide — the same pattern as MATLAB's `[V, converged] = load_flow(...)`.
+
+    Note `for iteration in range(1, max_iter + 1)` rather than a `while`. When the
+    iteration count is bounded, a `for` loop makes the cap structural — you cannot forget
+    to increment, and you cannot loop forever.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: FizzBuzz, then better">
+  Print 1 to 20, replacing multiples of 3 with "Fizz", of 5 with "Buzz", and of both with
+  "FizzBuzz". Then write it without a chain of conditionals.
+
+  <Solution>
+    The straightforward version:
+
+    ```python
+    for n in range(1, 21):
+        if n % 15 == 0:
+            print("FizzBuzz")
+        elif n % 3 == 0:
+            print("Fizz")
+        elif n % 5 == 0:
+            print("Buzz")
+        else:
+            print(n)
+    ```
+
+    Note `% 15` first. Testing `% 3` first would catch 15 and never reach the FizzBuzz
+    case — the ordering mistake from the MATLAB conditionals lesson, in a new costume.
+
+    Without the chain:
+
+    ```python
+    for n in range(1, 21):
+        out = "Fizz" * (n % 3 == 0) + "Buzz" * (n % 5 == 0)
+        print(out or n)
+    ```
+
+    Two Python idioms doing the work. `"Fizz" * True` is `"Fizz"` and `"Fizz" * False` is
+    `""`, because `bool` is a subclass of `int`. And `out or n` returns `out` if it is
+    truthy, otherwise `n` — so an empty string falls through to the number.
+
+    The second is shorter and arguably *less* readable. Worth knowing both, and worth
+    being honest that clever is not always better — the first version is the one you'd
+    want in a codebase someone else maintains.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the idiomatic way to loop when you need both position and value?',
+      options: [
+        'for i in range(len(v)): v[i]',
+        'for i, x in enumerate(v)',
+        'for x in v.items()',
+        'while i < len(v)',
+      ],
+      answer: 1,
+      explain:
+        'enumerate yields (index, value) pairs. enumerate(v, start=1) counts from 1, which is convenient when array position and bus number differ.',
+    },
+    {
+      q: 'What does range(3, 0) produce?',
+      options: ['3, 2, 1', '3, 2, 1, 0', 'Nothing — it is empty', 'An error'],
+      answer: 2,
+      explain:
+        'The default step is +1, and you cannot count up from 3 to 0, so the range is empty. No error and no output — you need range(3, 0, -1) to count down.',
+    },
+    {
+      q: 'Why write `if x is None` rather than `if x == None`?',
+      options: [
+        'It is faster',
+        'None is a singleton so identity is correct, and == can be overridden by a class',
+        '== does not work on None',
+        'They are identical; it is only style',
+      ],
+      answer: 1,
+      explain:
+        'Identity is the right test for a singleton, and a class can define __eq__ to do anything. Separately, avoid `if not x` when 0 or an empty array is a legitimate value.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **Indentation is the syntax**, and you loop over *things* rather than indices. When you
+  catch yourself writing `for i in range(len(x))`, the answer is `enumerate`, `zip`, a
+  comprehension, or — for numbers — NumPy.
+</KeyIdea>
+
+## Further reading
+
+- PEP 8 — the style guide every Python codebase follows
+- Next: **functions** — signatures, defaults, and the mutable-default trap

@@ -4,7 +4,7 @@
     "track": "matlab",
     "slug": "foundations",
     "title": "Foundations",
-    "description": "What MATLAB is for, and the four ideas — variables, vectors, matrices, indexing — that everything else is built from.",
+    "description": "What MATLAB is for, and the four ideas \u2014 variables, vectors, matrices, indexing \u2014 that everything else is built from.",
     "order": 1,
     "project": {
       "title": "Per-unit base converter",
@@ -17,7 +17,7 @@
     "track": "matlab",
     "slug": "programming",
     "title": "Programming",
-    "description": "Scripts, functions, control flow and debugging — the point at which you stop typing commands and start building things that can be re-run.",
+    "description": "Scripts, functions, control flow and debugging \u2014 the point at which you stop typing commands and start building things that can be re-run.",
     "order": 2,
     "project": {
       "title": "Symmetrical fault current calculator",
@@ -56,7 +56,7 @@
     "track": "matlab",
     "slug": "toolboxes",
     "title": "Engineering Toolboxes",
-    "description": "Symbolic Math, Optimization, Control System, Signal Processing, Simulink and Simscape Electrical — what each is for and when to reach for it.",
+    "description": "Symbolic Math, Optimization, Control System, Signal Processing, Simulink and Simscape Electrical \u2014 what each is for and when to reach for it.",
     "order": 5,
     "project": {
       "title": "Transmission line parameter calculator",
@@ -77,13 +77,12 @@
       "capstone": true
     }
   },
-
   {
     "id": "matlab-distribution-protection",
     "track": "matlab",
     "slug": "distribution-protection",
     "title": "Distribution and Protection",
-    "description": "The half of the syllabus that transmission-oriented methods do not reach — radial solvers, load models, probabilistic studies, and the algorithms inside a numerical relay.",
+    "description": "The half of the syllabus that transmission-oriented methods do not reach \u2014 radial solvers, load models, probabilistic studies, and the algorithms inside a numerical relay.",
     "order": 7,
     "project": {
       "title": "Radial feeder analyser",
@@ -91,17 +90,16 @@
       "capstone": false
     }
   },
-
   {
     "id": "python-foundations",
     "track": "python",
     "slug": "foundations",
     "title": "Python Foundations",
-    "description": "The language itself — types, collections, control flow, functions and the module system — for someone who already thinks in MATLAB.",
+    "description": "The language itself \u2014 types, collections, control flow, functions and packaging \u2014 for someone who already thinks in MATLAB.",
     "order": 1,
     "project": {
-      "title": "Unit conversion library",
-      "description": "A properly packaged module of electrical unit conversions, with tests. Your first thing that is code rather than a script.",
+      "title": "A units library",
+      "description": "A properly packaged, tested conversion library covering both general units (length, mass, temperature) and electrical ones (per-unit bases, dB, phasors). Your first thing that is code rather than a script.",
       "capstone": false
     }
   },
@@ -123,7 +121,7 @@
     "track": "python",
     "slug": "pandas",
     "title": "pandas",
-    "description": "Time series done properly — indexing, resampling, timezones and the gap-handling that measurement data always needs.",
+    "description": "Time series done properly \u2014 indexing, resampling, timezones and the gap-handling that measurement data always needs.",
     "order": 3,
     "project": {
       "title": "Feeder measurement cleaner",
@@ -136,15 +134,20 @@
     "track": "python",
     "slug": "matplotlib",
     "title": "Matplotlib",
-    "description": "Figures for reports and papers, including the conventions specific to power systems — voltage profiles, duration curves, phasor diagrams.",
-    "order": 4
+    "description": "Figures for reports and papers, including the conventions specific to power systems \u2014 voltage profiles, duration curves, phasor diagrams.",
+    "order": 4,
+    "project": {
+      "title": "Two figures, two audiences",
+      "description": "The same dataset rendered twice \u2014 an exploratory dashboard for yourself, and a single publication figure for a paper. Making the difference explicit is the lesson.",
+      "capstone": false
+    }
   },
   {
     "id": "python-scipy",
     "track": "python",
     "slug": "scipy",
     "title": "Scientific Computing",
-    "description": "SciPy's sparse matrices, linear solvers, optimisation and signal processing — the engine room for real studies.",
+    "description": "SciPy's sparse matrices, linear solvers, optimisation and signal processing \u2014 the engine room for real studies.",
     "order": 5,
     "project": {
       "title": "Sparse load flow",
@@ -170,7 +173,12 @@
     "track": "python",
     "slug": "from-matlab",
     "title": "From MATLAB to Python",
-    "description": "A direct translation guide, written to be read last — once both languages are familiar enough for the differences to be interesting.",
-    "order": 7
+    "description": "A direct translation guide, written to be read last \u2014 once both languages are familiar enough for the differences to be interesting.",
+    "order": 7,
+    "project": {
+      "title": "Port the load-flow solver",
+      "description": "Translate your MATLAB Newton-Raphson solver into idiomatic Python, and validate the two against each other on the IEEE cases. Agreement between independent implementations is the strongest test there is.",
+      "capstone": false
+    }
   }
 ]

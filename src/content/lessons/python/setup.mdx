@@ -1,0 +1,315 @@
+---
+title: Getting Set Up
+track: python
+module: foundations
+order: 2
+description: Installing Python, why virtual environments exist, and the editor and REPL workflow that replaces MATLAB's single window.
+objectives:
+  - Install Python and create an isolated project environment
+  - Explain what a virtual environment solves and why it is not optional
+  - Record dependencies so someone else can reproduce your results
+prerequisites: [why-python]
+estimatedMinutes: 25
+difficulty: beginner
+tags: ['python', 'setup', 'environments', 'reproducibility']
+---
+
+MATLAB has one installation and every toolbox is either there or not. Python has
+installations, versions, packages, and package *versions* — which is more setup and buys
+you something real.
+
+This is the one lesson that is pure chore. It is worth doing once, properly.
+
+## Installing
+
+Pick one and stay with it.
+
+<Compare
+  headings={['Option', 'Best for', 'Note']}
+  rows={[
+    { option: 'Miniforge / conda', when: 'Scientific work, especially on Windows', cost: 'Handles compiled dependencies well', recommended: true },
+    { option: 'uv', when: 'Fast, modern, increasingly the default', cost: 'Very quick; newer, so fewer tutorials' },
+    { option: 'python.org installer + venv', when: 'A simple, standard setup', cost: 'Fine everywhere; you manage more yourself' },
+    { option: 'Anaconda (full)', when: 'You want everything preinstalled', cost: 'Several GB, and licence terms for large organisations' },
+    { option: 'The system Python', when: 'Never', cost: 'Your OS depends on it — do not install into it' },
+  ]}
+/>
+
+<Callout type="warning" title="Never install packages into the system Python">
+  On macOS and Linux the operating system ships its own Python and depends on it. `sudo
+  pip install` into that can break system tools in ways that are tedious to undo.
+
+  Always work inside an environment you created.
+</Callout>
+
+## Virtual environments
+
+<Analogy>
+  Imagine every MATLAB project on your machine sharing **one** toolbox folder. Project A
+  needs Control System Toolbox R2024a; project B needs R2021b. Installing one breaks the
+  other.
+
+  A virtual environment gives each project its **own** toolbox folder. They cannot
+  interfere.
+</Analogy>
+
+That is the whole idea. Package versions change, results depend on them, and a project
+from last year should still run.
+
+```bash
+# conda
+conda create -n mtech python=3.12
+conda activate mtech
+conda install numpy pandas matplotlib scipy jupyter
+
+# or venv, which ships with Python
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install numpy pandas matplotlib scipy jupyter
+
+# or uv, which is dramatically faster
+uv venv
+uv pip install numpy pandas matplotlib scipy jupyter
+```
+
+The environment name appears in your prompt when active. If it isn't there, you are not
+in it, and `pip install` is going somewhere you didn't intend.
+
+## Recording what you used
+
+This is the part that matters for research.
+
+```bash
+pip freeze > requirements.txt          # exact versions of everything
+```
+
+```text
+numpy==2.1.3
+pandas==2.2.3
+scipy==1.14.1
+```
+
+Anyone — including you in two years — can then recreate it exactly:
+
+```bash
+pip install -r requirements.txt
+```
+
+<Callout type="engineering">
+  This is the Python equivalent of recording the seed and the model hash in your OpenDSS
+  workflow. Same discipline, different layer.
+
+  A result that depends on "whatever version of SciPy I had installed in August" is not
+  reproducible, and the failure is silent — an algorithm's default changes between
+  versions and your numbers move slightly with no error anywhere.
+
+  **Commit `requirements.txt` alongside your code.** It costs one command.
+</Callout>
+
+## Where you actually work
+
+MATLAB's single window becomes three tools:
+
+**The REPL** — type `python` and get an interactive prompt. The Command Window
+equivalent, for quick checks. `ipython` is a much better version of it, with history,
+tab-completion and `?` for help.
+
+**An editor** — VS Code is the default choice, free, with excellent Python support.
+Install the Python and Jupyter extensions and point it at your environment.
+
+**Jupyter notebooks** — the Live Script equivalent. Code, prose, equations and output in
+one document.
+
+```bash
+jupyter lab
+```
+
+<Callout type="warning" title="Notebooks have the same problem as Live Scripts, and one more">
+  A `.ipynb` is JSON containing outputs, so git diffs are noisy and merges are painful —
+  the same complaint as `.mlx`.
+
+  The extra problem is **out-of-order execution**. You can run cell 5, then cell 2, then
+  cell 9, and the notebook's saved state reflects a sequence nobody could reproduce by
+  running it top to bottom. This is a genuine source of published-but-wrong results.
+
+  Habit worth forming: before trusting a notebook, **Restart Kernel and Run All**. If it
+  fails, the result you were looking at was never real.
+
+  Explore in notebooks. Move anything that matters into `.py` files.
+</Callout>
+
+## A project layout
+
+Start as you mean to continue:
+
+```text
+hosting-capacity/
+├── .venv/                  the environment (not committed)
+├── .gitignore
+├── requirements.txt        pinned dependencies
+├── README.md
+├── src/
+│   └── hosting/
+│       ├── __init__.py
+│       ├── feeder.py
+│       └── scenarios.py
+├── tests/
+│   └── test_feeder.py
+├── notebooks/
+│   └── exploration.ipynb
+└── data/
+    └── raw/                usually not committed — see below
+```
+
+A `.gitignore` that covers the usual suspects:
+
+```text
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+data/raw/
+.DS_Store
+```
+
+<Callout type="tip" title="Think before committing data">
+  Small test fixtures — a 33-bus feeder file — belong in the repository; they make the
+  tests runnable.
+
+  Large or licensed measurement data does not. Commit a script that fetches or generates
+  it instead, and document where it came from.
+</Callout>
+
+## Checking it works
+
+```python
+import sys
+import numpy as np
+import pandas as pd
+import scipy
+import matplotlib
+
+print(f"Python     {sys.version.split()[0]}")
+print(f"executable {sys.executable}")     # confirms WHICH python is running
+print(f"numpy      {np.__version__}")
+print(f"pandas     {pd.__version__}")
+print(f"scipy      {scipy.__version__}")
+print(f"matplotlib {matplotlib.__version__}")
+```
+
+`sys.executable` is the diagnostic that resolves most confusion. If it doesn't point
+inside your project's environment, you are running a different Python from the one you
+installed into — which is the cause of nearly every "but I installed that package" problem.
+
+## Common mistakes
+
+<Callout type="warning" title="Installing without activating the environment">
+  The package lands somewhere else. Check the prompt, and check `sys.executable`.
+</Callout>
+
+<Callout type="warning" title="Committing the environment folder">
+  `.venv/` can be hundreds of megabytes and is machine-specific. Commit
+  `requirements.txt` instead.
+</Callout>
+
+<Callout type="warning" title="Mixing conda and pip carelessly">
+  Both can install into the same environment and occasionally disagree about what is
+  there. Prefer conda for compiled scientific packages, pip for pure-Python ones, and
+  install conda packages first.
+</Callout>
+
+<Callout type="warning" title="Trusting a notebook you have not restarted">
+  Out-of-order execution produces states that cannot be reproduced. Restart and Run All.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="practice" title="Set up a project properly">
+  Create an environment for your M.Tech work, install the stack, record the versions, and
+  verify which Python you are running.
+
+  <Solution>
+    ```bash
+    conda create -n mtech python=3.12 -y
+    conda activate mtech
+    conda install -y numpy pandas matplotlib scipy jupyter ipython pytest
+    pip freeze > requirements.txt
+    python -c "import sys; print(sys.executable)"
+    ```
+
+    The last line should print a path containing `mtech`. If it doesn't, the environment
+    isn't active and everything you just installed went elsewhere.
+
+    Worth adding now while you're here: `pytest` for the testing lesson later, and
+    `ipython` because the plain REPL is noticeably worse.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="debug" title="'But I installed that package'">
+  A colleague reports `ModuleNotFoundError: No module named 'pandas'` immediately after
+  running `pip install pandas` successfully. What is happening?
+
+  <Solution>
+    They installed into one Python and are running another. Almost always one of:
+
+    - The environment wasn't activated when they installed
+    - VS Code or Jupyter is pointed at a different interpreter than the terminal
+    - `pip` on the PATH belongs to a different installation from `python`
+
+    Diagnose by comparing what each thinks:
+
+    ```bash
+    which python && which pip
+    python -c "import sys; print(sys.executable)"
+    python -m pip --version          # shows which python this pip serves
+    ```
+
+    The robust fix is to always install with `python -m pip install ...` rather than bare
+    `pip`. That guarantees the package goes to the interpreter you're actually running,
+    because you named it explicitly.
+
+    In VS Code, the interpreter selector is bottom-right, and in Jupyter it is the kernel
+    picker — both need pointing at the project environment.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What problem do virtual environments solve?',
+      options: [
+        'They make Python run faster',
+        'They isolate each project\'s package versions so projects cannot break each other',
+        'They compress packages to save disk',
+        'They are required to use pip',
+      ],
+      answer: 1,
+      explain:
+        'Different projects need different versions. Without isolation, installing for one silently changes another — and results that depended on the old version quietly move.',
+    },
+    {
+      q: 'Why restart the kernel and run all before trusting a notebook?',
+      options: [
+        'It clears memory',
+        'Cells can be run out of order, so the saved state may not be reproducible top to bottom',
+        'It updates the packages',
+        'It is required before saving',
+      ],
+      answer: 1,
+      explain:
+        'Out-of-order execution is a genuine source of published-but-wrong results. If a restart-and-run-all fails, the output you were looking at was never real.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  One **environment per project**, its versions recorded in `requirements.txt`, and
+  `sys.executable` as the diagnostic when something is missing. This is the same
+  reproducibility discipline as seeding an RNG — applied one layer down.
+</KeyIdea>
+
+## Further reading
+
+- The Python Packaging Guide on virtual environments
+- `uv` documentation, if you want the fast modern toolchain
+- Next: **types and variables** — what Python is actually storing

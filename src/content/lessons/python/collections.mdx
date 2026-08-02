@@ -1,0 +1,400 @@
+---
+title: Collections
+track: python
+module: foundations
+order: 4
+description: Lists, tuples, dicts and sets — what each is for, why the dict is the one that changes how you write code, and the zero-indexing that will catch you once.
+objectives:
+  - Choose the right collection for a given job
+  - Index and slice confidently, including negative indices
+  - Use dictionaries for lookups instead of parallel lists
+prerequisites: [types-and-variables]
+estimatedMinutes: 35
+difficulty: beginner
+tags: ['python', 'collections', 'lists', 'dicts', 'indexing']
+---
+
+MATLAB gives you arrays, cells, structs and tables. Python's four core collections map
+onto those loosely, and the differences are worth knowing before you reach for the wrong
+one.
+
+## Indexing starts at 0
+
+The thing to get out of the way first.
+
+```python
+buses = ['slack', 'gen A', 'load 1', 'load 2']
+
+buses[0]        # 'slack'   — FIRST element
+buses[3]        # 'load 2'  — last
+buses[-1]       # 'load 2'  — last, counting backwards
+buses[-2]       # 'load 1'
+buses[4]        # IndexError
+```
+
+<Analogy>
+  MATLAB indices are **ordinal** — "the 1st, the 2nd". Python indices are **offsets** —
+  "0 past the start, 1 past the start".
+
+  That reframing makes slicing obvious rather than arbitrary.
+</Analogy>
+
+## Slicing excludes the end
+
+```python
+v = [10, 20, 30, 40, 50]
+
+v[1:4]          # [20, 30, 40]   — from offset 1, UP TO but not including 4
+v[:3]           # [10, 20, 30]   — from the start
+v[2:]           # [30, 40, 50]   — to the end
+v[:]            # a shallow copy of the whole list
+v[::2]          # [10, 30, 50]   — every second element
+v[::-1]         # [50, 40, 30, 20, 10] — reversed
+```
+
+<Callout type="tip" title="Why excluding the end is the right choice">
+  Three properties fall out of it:
+
+  - `len(v[a:b]) == b - a`. The length is the difference, with no `+1`.
+  - `v[:k] + v[k:] == v`. Any split point reassembles perfectly, with no overlap or gap.
+  - `range(len(v))` gives exactly the valid indices.
+
+  MATLAB's inclusive `1:3` needs a `+1` in every length calculation and an off-by-one
+  check at every boundary. Python's convention is more consistent once the initial
+  friction passes.
+</Callout>
+
+## Lists
+
+Ordered, mutable, heterogeneous. The default sequence.
+
+```python
+buses = ['slack', 'gen A', 'load 1']
+
+buses.append('load 2')            # add to the end
+buses.insert(1, 'gen B')          # insert at a position
+buses.remove('gen A')             # remove by VALUE
+last = buses.pop()                # remove and return the last
+buses.sort()                      # sort in place — returns None!
+ordered = sorted(buses)           # returns a NEW sorted list
+
+len(buses)
+'gen B' in buses                  # membership test
+buses.index('load 1')             # position of first match
+```
+
+<Callout type="warning" title="sort() returns None">
+  `buses = buses.sort()` sets `buses` to `None` and throws away your data. `sort()`
+  mutates in place; `sorted()` returns a new list.
+
+  The convention holds across Python: methods that mutate return `None`, so you cannot
+  accidentally chain them and think you have a copy.
+</Callout>
+
+### Comprehensions
+
+The idiomatic way to build a list from another. Learn this properly — it is everywhere in
+real Python.
+
+```python
+voltages = [1.06, 1.045, 0.913, 1.02]
+
+# instead of a loop:
+pu_kv = [v * 132 for v in voltages]
+
+# with a filter:
+low = [v for v in voltages if v < 0.95]
+
+# with an index, using enumerate:
+flagged = [(i, v) for i, v in enumerate(voltages) if v < 0.95]
+```
+
+<Callout type="engineering">
+  A comprehension is Python's answer to MATLAB's vectorisation — for *general* data. It
+  is not faster than a loop by much, and it is considerably clearer.
+
+  For **numerical** arrays, NumPy vectorisation is the real answer and it *is* much
+  faster. Comprehensions are for lists of strings, records, file paths — the things NumPy
+  isn't for.
+</Callout>
+
+## Tuples
+
+Ordered, **immutable**, usually heterogeneous. For fixed records.
+
+```python
+branch = (1, 2, 0.05, 0.20)       # from, to, R, X
+f, t, r, x = branch                # unpacking
+
+branch[0] = 5                      # TypeError — immutable
+```
+
+Unpacking is used constantly:
+
+```python
+for f, t, r, x in branch_list:
+    z = complex(r, x)
+
+a, b = b, a                        # swap, no temporary needed
+first, *rest = [1, 2, 3, 4]        # first=1, rest=[2,3,4]
+```
+
+Use a tuple when the collection is a **fixed-size record** whose positions have meaning.
+Use a list when it is a variable-length sequence of similar things.
+
+## Dictionaries
+
+Key-value lookups. The collection that most changes how you write code.
+
+```python
+bus_names = {1: 'slack', 2: 'gen A', 14: 'load'}
+
+bus_names[14]                      # 'load'
+bus_names[99]                      # KeyError
+bus_names.get(99, 'unknown')       # 'unknown' — safe default
+bus_names[7] = 'new bus'           # add or overwrite
+
+14 in bus_names                    # True — checks KEYS
+list(bus_names.keys())
+list(bus_names.values())
+
+for bus, name in bus_names.items():
+    print(f"{bus}: {name}")
+```
+
+<Callout type="engineering">
+  Dicts replace the "parallel arrays" pattern that causes silent bugs.
+
+  ```python
+  # Fragile: sort one and they no longer correspond
+  bus_ids = [1, 2, 14]
+  voltages = [1.06, 1.045, 1.0355]
+
+  # Robust: they cannot come apart
+  voltages = {1: 1.06, 2: 1.045, 14: 1.0355}
+  ```
+
+  This is the same argument the MATLAB track made for tables over parallel vectors. A
+  dict is also the natural structure for **non-contiguous bus numbering** — a feeder
+  numbered 1, 2, 5, 7, 12 needs no index-mapping layer at all.
+  </Callout>
+
+Dict comprehensions work too:
+
+```python
+z_pu = {name: complex(r, x) for name, r, x in equipment}
+low  = {b: v for b, v in voltages.items() if v < 0.95}
+```
+
+## Sets
+
+Unordered, unique, fast membership. For "have I seen this?" and set algebra.
+
+```python
+buses_with_dg = {3, 7, 12, 3}      # duplicates collapse -> {3, 7, 12}
+
+7 in buses_with_dg                 # True, and FAST regardless of size
+buses_with_dg | {15}               # union
+buses_with_dg & {7, 12, 20}        # intersection -> {7, 12}
+buses_with_dg - {3}                # difference
+
+all_buses = set(range(1, 34))
+without_dg = all_buses - buses_with_dg
+```
+
+Membership in a set is roughly constant time; in a list it scans. For a handful of items
+that never matters; for thousands, in a loop, it is the difference between instant and
+unusable.
+
+## Choosing
+
+<Compare
+  headings={['Need', 'Use', 'Why']}
+  rows={[
+    { option: 'Ordered sequence, will change', when: 'list', cost: 'The default', recommended: true },
+    { option: 'Fixed record with meaningful positions', when: 'tuple', cost: 'Immutable, unpackable' },
+    { option: 'Lookup by key', when: 'dict', cost: 'Keeps related data together' },
+    { option: 'Uniqueness or fast membership', when: 'set', cost: 'Constant-time in, set algebra' },
+    { option: 'Numerical array maths', when: 'NumPy array', cost: 'None of the above — next module' },
+    { option: 'Rows of mixed-type records', when: 'pandas DataFrame', cost: 'Module 3' },
+  ]}
+/>
+
+## Common mistakes
+
+<Callout type="warning" title="x = x.sort()">
+  Sets `x` to `None`. Use `sorted(x)` if you want a return value.
+</Callout>
+
+<Callout type="warning" title="Modifying a list while iterating over it">
+  ```python
+  for v in voltages:
+      if v < 0.95:
+          voltages.remove(v)      # skips elements — the indices shift
+  ```
+  Build a new list instead: `voltages = [v for v in voltages if v >= 0.95]`.
+</Callout>
+
+<Callout type="warning" title="Using a list where a set belongs">
+  `if x in big_list` inside a loop is quadratic. `if x in big_set` is linear overall.
+</Callout>
+
+<Callout type="warning" title="Off-by-one from the exclusive end">
+  `v[0:3]` gives three elements, not four. It will catch you once.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="Slicing">
+  For `v = [10, 20, 30, 40, 50]`, predict each result.
+
+  ```python
+  v[1:3]
+  v[-2:]
+  v[::2]
+  v[3:1]
+  len(v[1:4])
+  ```
+
+  <Solution>
+    - `v[1:3]` → `[20, 30]` — offsets 1 and 2, stopping before 3
+    - `v[-2:]` → `[40, 50]` — last two
+    - `v[::2]` → `[10, 30, 50]` — every second
+    - `v[3:1]` → `[]` — an empty list, **not an error**. Start past stop simply yields
+      nothing.
+    - `len(v[1:4])` → `3` — exactly `4 - 1`, which is the property that makes the
+      convention worth it
+
+    The empty-slice behaviour is worth knowing: it means slicing never raises for
+    out-of-range bounds, unlike single-element indexing. `v[10:20]` is `[]`, while
+    `v[10]` is an `IndexError`.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: bus data without parallel lists">
+  Given branch data as tuples, build a dict mapping each bus to the set of buses it
+  connects to, then find the buses with only one connection.
+
+  ```python
+  branches = [(1,2,0.05,0.2), (2,3,0.04,0.15), (2,5,0.06,0.18), (3,4,0.03,0.1)]
+  ```
+
+  <Solution>
+    ```python
+    branches = [(1,2,0.05,0.2), (2,3,0.04,0.15), (2,5,0.06,0.18), (3,4,0.03,0.1)]
+
+    neighbours = {}
+    for f, t, r, x in branches:
+        neighbours.setdefault(f, set()).add(t)
+        neighbours.setdefault(t, set()).add(f)
+
+    for bus in sorted(neighbours):
+        print(f"Bus {bus}: {sorted(neighbours[bus])}")
+
+    leaves = [b for b, n in neighbours.items() if len(n) == 1]
+    print(f"\nEnd-of-line buses: {sorted(leaves)}")
+
+    junctions = [b for b, n in neighbours.items() if len(n) > 2]
+    print(f"Junctions: {sorted(junctions)}")
+    ```
+
+    ```text
+    Bus 1: [2]
+    Bus 2: [1, 3, 5]
+    Bus 3: [2, 4]
+    Bus 4: [3]
+    Bus 5: [2]
+
+    End-of-line buses: [1, 4, 5]
+    Junctions: [2]
+    ```
+
+    `setdefault(f, set())` is the idiom for "get the set for this key, creating an empty
+    one if it doesn't exist". `collections.defaultdict(set)` does the same thing more
+    cleanly when you're building many.
+
+    This adjacency structure is exactly what the backward-forward sweep needs, and here it
+    took six lines with no index-mapping layer — because dict keys can be any bus number,
+    contiguous or not.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: word frequency">
+  Count how often each word appears in a piece of text, and report the five most common.
+  No power systems — this is a classic for a reason.
+
+  <Solution>
+    ```python
+    text = """the quick brown fox jumps over the lazy dog
+              the dog barks and the fox runs"""
+
+    words = text.lower().split()
+
+    counts = {}
+    for w in words:
+        counts[w] = counts.get(w, 0) + 1
+
+    top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    for word, n in top:
+        print(f"{word:>8}: {n}")
+    ```
+
+    The `counts.get(w, 0) + 1` idiom is worth internalising — it handles the "first time
+    seeing this key" case without a conditional.
+
+    The standard library does it in one line:
+
+    ```python
+    from collections import Counter
+    Counter(words).most_common(5)
+    ```
+
+    Which is the real lesson: **check whether the standard library already has it**.
+    `collections`, `itertools` and `functools` contain a great deal that people
+    reimplement badly. `Counter` also handles ties in a defined way, which the hand-rolled
+    version doesn't.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does v[1:4] return for v = [10,20,30,40,50]?',
+      options: ['[20, 30, 40, 50]', '[20, 30, 40]', '[10, 20, 30, 40]', '[20, 30]'],
+      answer: 1,
+      explain:
+        'Offsets 1, 2 and 3 — the end is excluded. That is what makes len(v[a:b]) == b - a and v[:k] + v[k:] == v both hold exactly.',
+    },
+    {
+      q: 'Why prefer a dict over two parallel lists of bus numbers and voltages?',
+      options: [
+        'Dicts use less memory',
+        'The pairing cannot come apart when you sort or filter',
+        'Lists cannot hold floats',
+        'Dicts are faster to create',
+      ],
+      answer: 1,
+      explain:
+        'Sorting one parallel list and not the other silently misaligns them with no error. It is the same argument the MATLAB track made for tables over parallel vectors.',
+    },
+    {
+      q: 'What does buses.sort() return?',
+      options: ['The sorted list', 'None — it sorts in place', 'A copy', 'The original order'],
+      answer: 1,
+      explain:
+        'Mutating methods return None throughout Python, precisely so you cannot chain them and mistakenly believe you have a copy. Use sorted() when you want a new list back.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **list** for sequences, **tuple** for fixed records, **dict** for lookups, **set** for
+  uniqueness and fast membership. The dict is the one that changes how you write code —
+  it makes the parallel-array bug structurally impossible.
+</KeyIdea>
+
+## Further reading
+
+- `collections` — `Counter`, `defaultdict`, `deque`, `namedtuple`
+- `itertools` — the tools you keep almost writing yourself
+- Next: **control flow** — loops, conditionals, and why comprehensions replace many loops

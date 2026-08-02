@@ -1,0 +1,655 @@
+---
+title: 'Project: A Units Library'
+track: python
+module: foundations
+order: 9
+description: Build, package and test a real conversion library — general units and electrical ones — that installs with pip and has a test suite you would show someone.
+objectives:
+  - Structure a package that installs and imports properly
+  - Design an API that handles both general and domain-specific units
+  - Write a test suite covering values, invariants and failure modes
+prerequisites: [functions, modules-and-packages, errors-and-testing]
+estimatedMinutes: 70
+difficulty: intermediate
+tags: ['python', 'project', 'packaging', 'testing', 'units']
+---
+
+Your MATLAB Foundations project was a script. This one is a **library** — installable,
+importable, documented and tested.
+
+It deliberately covers **both** general units (length, mass, temperature) and electrical
+ones (per-unit bases, decibels, phasors). That mix is the point: general design skills
+transfer to any Python you write, and the electrical half is the part you'll actually
+use in your coursework.
+
+## The structure
+
+```text
+units/
+├── pyproject.toml
+├── README.md
+├── src/
+│   └── units/
+│       ├── __init__.py
+│       ├── general.py        length, mass, temperature, time
+│       ├── electrical.py     per-unit, dB, phasors
+│       └── errors.py
+└── tests/
+    ├── test_general.py
+    └── test_electrical.py
+```
+
+<CodeFile name="pyproject.toml">
+```toml
+[project]
+name = "units"
+version = "0.1.0"
+description = "Unit conversions for engineering work"
+requires-python = ">=3.11"
+dependencies = []                      # no runtime dependencies — deliberate
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+```
+</CodeFile>
+
+```bash
+pip install -e ".[dev]"       # editable, with pytest
+pytest
+```
+
+<Callout type="tip" title="Zero runtime dependencies is a feature">
+  This library needs nothing but the standard library. That means anyone can install it
+  without pulling in NumPy, and it will still work in five years.
+
+  Adding a dependency is a real cost — someone must install it, versions can conflict,
+  and it can be abandoned. Add them when they earn their place, not by default.
+</Callout>
+
+## Stage 1 — the general half
+
+Start here, because the design problem is clearer without domain knowledge in the way.
+
+<CodeFile name="src/units/general.py">
+```python
+"""Conversions between general physical units."""
+
+from .errors import UnknownUnitError
+
+# Everything is defined relative to one base unit per dimension.
+# This is the key design decision: n units need n factors, not n^2 conversions.
+_LENGTH = {
+    "m": 1.0, "km": 1000.0, "cm": 0.01, "mm": 0.001,
+    "mi": 1609.344, "ft": 0.3048, "in": 0.0254,
+}
+
+_MASS = {"kg": 1.0, "g": 0.001, "t": 1000.0, "lb": 0.45359237}
+
+_TIME = {"s": 1.0, "min": 60.0, "h": 3600.0, "d": 86400.0}
+
+
+def _convert(value: float, frm: str, to: str, table: dict[str, float], kind: str) -> float:
+    for unit in (frm, to):
+        if unit not in table:
+            raise UnknownUnitError(
+                f"Unknown {kind} unit {unit!r}. Known: {sorted(table)}"
+            )
+    return value * table[frm] / table[to]
+
+
+def length(value: float, frm: str, to: str) -> float:
+    """Convert a length.
+
+    Example:
+        >>> round(length(1, "km", "mi"), 4)
+        0.6214
+    """
+    return _convert(value, frm, to, _LENGTH, "length")
+
+
+def mass(value: float, frm: str, to: str) -> float:
+    """Convert a mass."""
+    return _convert(value, frm, to, _MASS, "mass")
+
+
+def time(value: float, frm: str, to: str) -> float:
+    """Convert a duration."""
+    return _convert(value, frm, to, _TIME, "time")
+
+
+def temperature(value: float, frm: str, to: str) -> float:
+    """Convert a temperature.
+
+    Temperature needs its own function: the scales have different zero
+    points, so a single multiplicative factor cannot express the conversion.
+    """
+    frm, to = frm.upper(), to.upper()
+    valid = {"C", "F", "K"}
+    for unit in (frm, to):
+        if unit not in valid:
+            raise UnknownUnitError(f"Unknown temperature scale {unit!r}. Known: C, F, K")
+
+    kelvin = {"C": value + 273.15,
+              "F": (value - 32) * 5 / 9 + 273.15,
+              "K": value}[frm]
+
+    if kelvin < 0:
+        raise ValueError(f"{value}{frm} is below absolute zero")
+
+    return {"C": kelvin - 273.15,
+            "F": (kelvin - 273.15) * 9 / 5 + 32,
+            "K": kelvin}[to]
+```
+</CodeFile>
+
+<Callout type="engineering">
+  The **base-unit table** is the design idea worth taking away. Seven length units need
+  seven factors, not 7 × 6 = 42 pairwise conversions. Adding a unit is adding one row.
+
+  Temperature is the deliberate exception — offset scales cannot be expressed as a single
+  factor, so it gets its own function rather than being forced into the same shape. When
+  a case genuinely doesn't fit the pattern, giving it its own path is better than
+  contorting the abstraction.
+</Callout>
+
+## Stage 2 — the electrical half
+
+<CodeFile name="src/units/electrical.py">
+```python
+"""Electrical and power-system unit conversions."""
+
+import cmath
+import math
+
+from .errors import UnitsError
+
+
+def base_impedance(v_base_kv: float, s_base_mva: float) -> float:
+    """Base impedance in ohms.
+
+    With kV and MVA the units work out to ohms directly.
+
+    Example:
+        >>> round(base_impedance(132, 100), 2)
+        174.24
+    """
+    if v_base_kv <= 0 or s_base_mva <= 0:
+        raise ValueError(f"Bases must be positive, got {v_base_kv} kV, {s_base_mva} MVA")
+    return v_base_kv ** 2 / s_base_mva
+
+
+def base_current(v_base_kv: float, s_base_mva: float) -> float:
+    """Base current in amperes, three-phase."""
+    if v_base_kv <= 0 or s_base_mva <= 0:
+        raise ValueError("Bases must be positive")
+    return s_base_mva * 1e6 / (math.sqrt(3) * v_base_kv * 1e3)
+
+
+def to_per_unit(value_ohms: float, v_base_kv: float, s_base_mva: float) -> float:
+    """Convert an ohmic impedance to per unit."""
+    return value_ohms / base_impedance(v_base_kv, s_base_mva)
+
+
+def change_base(
+    z_pu: complex,
+    *,
+    s_old: float,
+    v_old: float,
+    s_new: float,
+    v_new: float,
+) -> complex:
+    """Convert a per-unit impedance from one base to another.
+
+    Power scales linearly, voltage squared — because Z_base = V^2 / S.
+
+    Example:
+        >>> change_base(0.10, s_old=50, v_old=132, s_new=100, v_new=132)
+        0.2
+    """
+    for name, val in [("s_old", s_old), ("v_old", v_old),
+                      ("s_new", s_new), ("v_new", v_new)]:
+        if val <= 0:
+            raise ValueError(f"{name} must be positive, got {val}")
+
+    return z_pu * (s_new / s_old) * (v_old / v_new) ** 2
+
+
+def db(ratio: float, *, power: bool = True) -> float:
+    """Convert a ratio to decibels.
+
+    Args:
+        ratio: The quantity ratio.
+        power: True for a power ratio (10 log10), False for amplitude (20 log10).
+    """
+    if ratio <= 0:
+        raise ValueError(f"Cannot take dB of a non-positive ratio: {ratio}")
+    return (10 if power else 20) * math.log10(ratio)
+
+
+def from_db(value_db: float, *, power: bool = True) -> float:
+    """Convert decibels back to a ratio."""
+    return 10 ** (value_db / (10 if power else 20))
+
+
+def polar_to_rect(magnitude: float, angle_deg: float) -> complex:
+    """Phasor from magnitude and angle in degrees."""
+    if magnitude < 0:
+        raise ValueError(f"Magnitude cannot be negative: {magnitude}")
+    return cmath.rect(magnitude, math.radians(angle_deg))
+
+
+def rect_to_polar(z: complex) -> tuple[float, float]:
+    """Return (magnitude, angle in degrees) for a phasor."""
+    magnitude, radians = cmath.polar(z)
+    return magnitude, math.degrees(radians)
+
+
+def three_phase_power(v_ll_kv: float, i_line_a: float, pf: float = 1.0) -> float:
+    """Three-phase real power in MW from line-to-line kV and line amps."""
+    if not -1.0 <= pf <= 1.0:
+        raise ValueError(f"Power factor must be in [-1, 1], got {pf}")
+    return math.sqrt(3) * v_ll_kv * 1e3 * i_line_a * pf / 1e6
+```
+</CodeFile>
+
+## Stage 3 — the public interface
+
+<CodeFile name="src/units/__init__.py">
+```python
+"""Unit conversions for engineering work.
+
+    >>> import units
+    >>> units.length(1, "km", "mi")
+    0.621371192237334
+    >>> units.base_impedance(132, 100)
+    174.24
+"""
+
+from .errors import UnitsError, UnknownUnitError
+from .general import length, mass, temperature, time
+from .electrical import (
+    base_current,
+    base_impedance,
+    change_base,
+    db,
+    from_db,
+    polar_to_rect,
+    rect_to_polar,
+    three_phase_power,
+    to_per_unit,
+)
+
+__version__ = "0.1.0"
+
+__all__ = [
+    "length", "mass", "temperature", "time",
+    "base_impedance", "base_current", "to_per_unit", "change_base",
+    "db", "from_db", "polar_to_rect", "rect_to_polar", "three_phase_power",
+    "UnitsError", "UnknownUnitError",
+]
+```
+</CodeFile>
+
+<CodeFile name="src/units/errors.py">
+```python
+"""Exceptions raised by this package."""
+
+
+class UnitsError(Exception):
+    """Base class — lets callers catch everything from this package."""
+
+
+class UnknownUnitError(UnitsError, ValueError):
+    """An unrecognised unit name.
+
+    Inherits from ValueError too, so `except ValueError` also catches it —
+    which is what a caller who does not know this package would write.
+    """
+```
+</CodeFile>
+
+<Callout type="tip" title="Multiple inheritance on exceptions is worth knowing">
+  `UnknownUnitError(UnitsError, ValueError)` means a caller can catch it either as
+  something specific to your package or as the generic Python error it also is.
+
+  That's a small courtesy to people who use your library without reading its exception
+  hierarchy — which is most of them.
+</Callout>
+
+## Stage 4 — the tests
+
+<CodeFile name="tests/test_general.py">
+```python
+import pytest
+import units
+from units import UnknownUnitError
+
+
+@pytest.mark.parametrize("value, frm, to, expected", [
+    (1, "km", "m", 1000),
+    (1, "km", "mi", 0.621371),
+    (1, "in", "cm", 2.54),          # exact by definition
+    (100, "cm", "m", 1),
+    (0, "m", "km", 0),              # zero is a real case
+])
+def test_length(value, frm, to, expected):
+    assert units.length(value, frm, to) == pytest.approx(expected, rel=1e-5)
+
+
+@pytest.mark.parametrize("unit", ["m", "km", "cm", "mm", "mi", "ft", "in"])
+def test_length_round_trip(unit):
+    """Converting out and back must return the original."""
+    assert units.length(units.length(42.0, "m", unit), unit, "m") == pytest.approx(42.0)
+
+
+@pytest.mark.parametrize("value, frm, to, expected", [
+    (0, "C", "F", 32),
+    (100, "C", "F", 212),
+    (-40, "C", "F", -40),           # the one place the scales cross
+    (0, "C", "K", 273.15),
+    (300, "K", "C", 26.85),
+])
+def test_temperature(value, frm, to, expected):
+    assert units.temperature(value, frm, to) == pytest.approx(expected, abs=1e-9)
+
+
+def test_below_absolute_zero_raises():
+    with pytest.raises(ValueError, match="absolute zero"):
+        units.temperature(-300, "C", "K")
+
+
+def test_unknown_unit_lists_the_valid_ones():
+    with pytest.raises(UnknownUnitError, match="Known:"):
+        units.length(1, "furlong", "m")
+
+
+def test_unknown_unit_is_also_a_value_error():
+    """Callers who do not know our hierarchy should still catch it."""
+    with pytest.raises(ValueError):
+        units.length(1, "furlong", "m")
+```
+</CodeFile>
+
+<CodeFile name="tests/test_electrical.py">
+```python
+import cmath
+import pytest
+import units
+
+
+def test_base_impedance_known_value():
+    # 132^2 / 100 = 174.24 ohms, by hand
+    assert units.base_impedance(132, 100) == pytest.approx(174.24)
+
+
+def test_base_current_known_value():
+    # 100e6 / (sqrt(3) * 132e3) = 437.39 A
+    assert units.base_current(132, 100) == pytest.approx(437.39, abs=0.01)
+
+
+@pytest.mark.parametrize("z, s_old, v_old, s_new, v_new, expected", [
+    (0.10, 50, 132, 100, 132, 0.20),      # power doubles, voltage same
+    (0.12, 25,  33, 100, 132, 0.03),      # voltage term does the work
+    (0.10, 100, 132, 100, 132, 0.10),     # identity: same base, no change
+])
+def test_change_base(z, s_old, v_old, s_new, v_new, expected):
+    result = units.change_base(z, s_old=s_old, v_old=v_old,
+                               s_new=s_new, v_new=v_new)
+    assert result == pytest.approx(expected, abs=1e-6)
+
+
+def test_change_base_is_reversible():
+    """Converting to a new base and back must return the original."""
+    z = 0.0837
+    forward = units.change_base(z, s_old=50, v_old=132, s_new=100, v_new=220)
+    back = units.change_base(forward, s_old=100, v_old=220, s_new=50, v_new=132)
+    assert back == pytest.approx(z)
+
+
+def test_change_base_handles_complex():
+    z = complex(0.01, 0.10)
+    result = units.change_base(z, s_old=50, v_old=132, s_new=100, v_new=132)
+    assert result == pytest.approx(complex(0.02, 0.20))
+
+
+def test_db_round_trip():
+    assert units.from_db(units.db(100)) == pytest.approx(100)
+    assert units.db(1) == pytest.approx(0)          # unity ratio is 0 dB
+    assert units.db(2, power=True) == pytest.approx(3.0103, abs=1e-4)
+
+
+def test_phasor_round_trip():
+    mag, ang = units.rect_to_polar(units.polar_to_rect(230, -30))
+    assert mag == pytest.approx(230)
+    assert ang == pytest.approx(-30)
+
+
+def test_three_phase_power():
+    # sqrt(3) * 11 kV * 100 A * 0.9 = 1.7147 MW
+    assert units.three_phase_power(11, 100, 0.9) == pytest.approx(1.7147, abs=1e-4)
+
+
+@pytest.mark.parametrize("bad_pf", [1.5, -2.0])
+def test_bad_power_factor_raises(bad_pf):
+    with pytest.raises(ValueError, match="Power factor"):
+        units.three_phase_power(11, 100, bad_pf)
+
+
+def test_negative_base_raises():
+    with pytest.raises(ValueError, match="positive"):
+        units.base_impedance(132, -100)
+```
+</CodeFile>
+
+<Callout type="engineering">
+  Notice how many tests are **round trips** and **invariants** rather than hand-computed
+  values:
+
+  - Convert out and back, get the original
+  - Same base in and out, no change
+  - −40°C is −40°F, the one point where the scales cross
+
+  These are cheap to write, hard to satisfy by accident, and they don't require you to
+  compute an expected answer by hand for every case. A hand-computed value proves one
+  point; a round trip constrains the whole function.
+</Callout>
+
+## Stage 5 — the README
+
+The file that decides whether anyone uses it.
+
+```markdown
+# units
+
+Unit conversions for engineering work — general (length, mass, temperature)
+and electrical (per-unit bases, decibels, phasors). No dependencies.
+
+## Install
+
+    pip install -e .
+
+## Use
+
+    >>> import units
+    >>> units.length(1, "km", "mi")
+    0.6214
+    >>> units.base_impedance(132, 100)     # kV, MVA -> ohms
+    174.24
+    >>> units.change_base(0.10, s_old=50, v_old=132, s_new=100, v_new=132)
+    0.2
+
+## Test
+
+    pip install -e ".[dev]"
+    pytest
+
+## Notes
+
+Temperature has its own function because the scales have different zero
+points and cannot be expressed as a single multiplicative factor.
+```
+
+## Extend it
+
+<Exercise n={1} kind="practice" title="Add energy and power units">
+  Extend the general module with energy (J, kWh, MWh, cal, BTU) and power (W, kW, MW,
+  hp), and add a function converting between energy and power given a duration.
+
+  <Solution>
+    ```python
+    _ENERGY = {"J": 1.0, "kJ": 1e3, "MJ": 1e6,
+               "Wh": 3600.0, "kWh": 3.6e6, "MWh": 3.6e9,
+               "cal": 4.184, "BTU": 1055.06}
+
+    _POWER = {"W": 1.0, "kW": 1e3, "MW": 1e6, "GW": 1e9, "hp": 745.7}
+
+
+    def energy(value: float, frm: str, to: str) -> float:
+        """Convert an energy."""
+        return _convert(value, frm, to, _ENERGY, "energy")
+
+
+    def power(value: float, frm: str, to: str) -> float:
+        """Convert a power."""
+        return _convert(value, frm, to, _POWER, "power")
+
+
+    def energy_from_power(
+        p: float, duration: float, *,
+        power_unit: str = "MW", time_unit: str = "h", energy_unit: str = "MWh",
+    ) -> float:
+        """Energy consumed by a constant power over a duration.
+
+        Example:
+            >>> energy_from_power(50, 24)      # 50 MW for 24 h
+            1200.0
+        """
+        watts = power(p, power_unit, "W")
+        seconds = time(duration, time_unit, "s")
+        return energy(watts * seconds, "J", energy_unit)
+    ```
+
+    Both new dimensions are one dictionary each — the base-unit design paying off.
+
+    `energy_from_power` is the interesting one, because it crosses dimensions. Note it
+    converts everything to SI, multiplies, then converts out. Doing the arithmetic in
+    base units and only converting at the boundaries is the pattern that avoids an
+    entire category of factor-of-3600 bugs.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="A Quantity class">
+  Add a class that carries its unit, so `Quantity(1, "km") + Quantity(500, "m")` works
+  and `Quantity(1, "km") + Quantity(5, "kg")` raises.
+
+  <Solution>
+    ```python
+    from dataclasses import dataclass
+
+    _DIMENSIONS = {**{u: "length" for u in _LENGTH},
+                   **{u: "mass"   for u in _MASS},
+                   **{u: "time"   for u in _TIME}}
+
+    _TABLES = {"length": _LENGTH, "mass": _MASS, "time": _TIME}
+
+
+    @dataclass(frozen=True)
+    class Quantity:
+        value: float
+        unit: str
+
+        def __post_init__(self):
+            if self.unit not in _DIMENSIONS:
+                raise UnknownUnitError(f"Unknown unit {self.unit!r}")
+
+        @property
+        def dimension(self) -> str:
+            return _DIMENSIONS[self.unit]
+
+        def to(self, unit: str) -> "Quantity":
+            if _DIMENSIONS.get(unit) != self.dimension:
+                raise UnitsError(
+                    f"Cannot convert {self.dimension} to {_DIMENSIONS.get(unit, '?')}"
+                )
+            table = _TABLES[self.dimension]
+            return Quantity(self.value * table[self.unit] / table[unit], unit)
+
+        def __add__(self, other: "Quantity") -> "Quantity":
+            if self.dimension != other.dimension:
+                raise UnitsError(
+                    f"Cannot add {other.dimension} to {self.dimension}"
+                )
+            return Quantity(self.value + other.to(self.unit).value, self.unit)
+
+        def __str__(self) -> str:
+            return f"{self.value:g} {self.unit}"
+    ```
+
+    ```python
+    >>> Quantity(1, "km") + Quantity(500, "m")
+    Quantity(value=1.5, unit='km')
+    >>> Quantity(1, "km") + Quantity(5, "kg")
+    UnitsError: Cannot add mass to length
+    ```
+
+    `frozen=True` makes it immutable and hashable, so it behaves like the number it
+    represents rather than like a mutable container — which is the right choice for a
+    value type, and connects back to the mutability lesson.
+
+    This is roughly what the `pint` library does, considerably more thoroughly. Building
+    a small version yourself is how you understand what `pint` is buying you — and then
+    you should use `pint` rather than maintaining this.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="Publish it">
+  Get the package to the point where someone else could use it.
+
+  <Solution>
+    The checklist:
+
+    - **README** with install, a worked example that runs, and how to test
+    - **Docstrings with `>>>` examples** on every public function — and run
+      `pytest --doctest-modules src/` so the examples are *tested*, not just decorative
+    - **A test suite that passes**, and a line in the README saying how many tests
+    - **`pyproject.toml`** with a real description and `requires-python`
+    - **An MIT LICENSE**
+    - **Type hints** on the public API
+    - A `.gitignore` covering `__pycache__/`, `*.egg-info/`, `.pytest_cache/`
+
+    Then push it to GitHub.
+
+    Two things this is genuinely worth. It fills one of the empty repository links on
+    your projects page with something small but complete — better than a large unfinished
+    thing. And doctests that run mean your documentation can never silently drift out of
+    date with the code, which is a discipline worth carrying into everything else you
+    write.
+  </Solution>
+</Exercise>
+
+## What you built
+
+An installable Python package with a coherent API across two quite different domains, no
+runtime dependencies, exceptions that inherit sensibly, and a test suite mixing
+hand-verified values, round trips and invariants.
+
+<KeyIdea>
+  A **library** differs from a script in that someone else can install it, import it, and
+  find out what it does without reading the source. The base-unit table is the design
+  idea worth keeping: *n* units need *n* factors, not *n²* conversions — and when a case
+  genuinely doesn't fit the pattern, like temperature, give it its own path rather than
+  contorting the abstraction.
+</KeyIdea>
+
+## Further reading
+
+- `pint` — the real units library, once you understand what it's doing
+- Python Packaging User Guide
+- Next module: **NumPy** — where numerical Python actually lives

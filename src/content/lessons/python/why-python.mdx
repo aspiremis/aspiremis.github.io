@@ -1,0 +1,236 @@
+---
+title: Why Python, When You Already Have MATLAB
+track: python
+module: foundations
+order: 1
+description: What Python was built for, why arrays are a library rather than the language, and the honest case for learning a second tool.
+objectives:
+  - Explain what Python was designed to do and how that differs from MATLAB
+  - Recognise which problems suit which language
+  - Name the parts of the scientific Python stack and what each replaces
+estimatedMinutes: 15
+difficulty: beginner
+tags: ['python', 'fundamentals', 'comparison']
+---
+
+You have a working MATLAB track and a campus licence. Learning a second language needs
+a reason better than "everyone uses it."
+
+Here is the reason, and also the honest limits of it.
+
+## Different origins, different defaults
+
+MATLAB was built in 1979 so that engineering students could do matrix algebra without
+writing Fortran. Everything about it follows from that — matrices are the fundamental
+type, `*` means matrix multiplication, indexing starts at 1.
+
+Python was built in 1989 as a **general-purpose language optimised for readability**.
+Guido van Rossum's stated priority was code that is easy to read, because code is read
+far more often than it is written.
+
+<Analogy>
+  MATLAB is a **specialist instrument** — a very good oscilloscope. Superb at the thing
+  it was built for, awkward for anything else.
+
+  Python is a **workshop**. Nothing in it is as specialised as the oscilloscope, but you
+  can build almost anything, and someone has probably already built a tool for whatever
+  you need.
+</Analogy>
+
+The most important consequence: **in Python, arrays are a library, not the language.**
+
+```python
+a = [1, 2, 3]
+b = [4, 5, 6]
+a * 2         # [1, 2, 3, 1, 2, 3]  — repeats the list!
+a + b         # [1, 2, 3, 4, 5, 6]  — concatenates!
+```
+
+That is not "wrong". A Python `list` is a general-purpose container of anything, and
+those are the sensible operations on a container. Numerical arrays come from **NumPy**,
+and there `a * 2` does what you expect.
+
+This trips up every MATLAB user exactly once, and it explains the structure of the whole
+scientific stack.
+
+## The stack
+
+| MATLAB | Python | What it does |
+|---|---|---|
+| core arrays | **NumPy** | n-dimensional arrays, broadcasting, linear algebra |
+| tables | **pandas** | labelled tabular data, time series |
+| plotting | **Matplotlib** | figures (plus seaborn, plotly for other styles) |
+| toolboxes | **SciPy** | optimisation, sparse, signal processing, statistics |
+| Statistics & ML | **scikit-learn** | the standard ML library |
+| Simulink | *no equivalent* | this is a real gap |
+| Simscape Electrical | OpenDSS, **pandapower** | different tools, different strengths |
+
+Each is a separate package you install and import. That feels fragmented at first and is
+the source of the ecosystem's strength — anyone can write a package, so there is one for
+almost everything.
+
+## The honest comparison
+
+<Compare
+  headings={['Task', 'Better in', 'Why']}
+  rows={[
+    { option: 'Matrix-heavy numerical work', when: 'Roughly equal', cost: 'NumPy is fast; MATLAB syntax is slightly cleaner for pure linear algebra' },
+    { option: 'Block-diagram simulation', when: 'MATLAB', cost: 'Simulink has no real equivalent', recommended: true },
+    { option: 'Validated control/signal toolboxes', when: 'MATLAB', cost: 'Decades of testing and regulatory acceptance' },
+    { option: 'Data pipelines and cleaning', when: 'Python', cost: 'pandas is genuinely better than MATLAB tables' },
+    { option: 'Machine learning', when: 'Python', cost: 'scikit-learn and PyTorch are where the field lives' },
+    { option: 'Automating another tool', when: 'Python', cost: 'OpenDSS, web APIs, file systems — Python is glue' },
+    { option: 'Sharing code with anyone', when: 'Python', cost: 'Free. They can actually run it.' },
+  ]}
+/>
+
+<Callout type="engineering">
+  The licence argument is the one that matters most for your career.
+
+  Your IIT Bhubaneswar licence is excellent and it belongs to the institute. It will not
+  follow you to a job that hasn't bought one, to a collaborator at another university, or
+  to a reviewer who wants to check your results.
+
+  A hosting-capacity study written in Python can be run by anyone who reads your paper.
+  The same study in MATLAB can be run by people with a licence. For research that is
+  supposed to be reproducible, that is a real difference — and it is why OpenDSS,
+  pandapower and most published power-system tooling are Python-first.
+</Callout>
+
+## What Python is genuinely worse at
+
+Being fair about this saves you from using it badly.
+
+**Loops are slow — worse than MATLAB's.** A Python `for` loop over a million elements is
+dramatically slower than the NumPy equivalent, and slower than the same loop in MATLAB.
+The fix is the same as in MATLAB: vectorise. The penalty for not doing so is larger.
+
+**No Simulink.** If your work involves block-diagram modelling of converters or machines,
+MATLAB is simply the tool. There is no honest substitute.
+
+**Environment management is a real chore.** MATLAB has one installation; Python has
+virtual environments, package versions and occasional dependency conflicts. The next
+lesson deals with it, and it is genuinely more setup than MATLAB asks of you.
+
+**Indexing from 0**, and slices that exclude the endpoint. Both are defensible, both take
+a fortnight to stop causing off-by-one errors.
+
+## Learn both, in this order
+
+You did MATLAB first because your coursework assumes it *now*. Python second, because:
+
+- The second language is far easier. Most of what you learned — vectorisation, floating
+  point, conditioning, validating against known results — is **ideas, not syntax**, and
+  ideas transfer.
+- The final module of this track is a direct MATLAB-to-Python translation guide, which
+  only makes sense once both are familiar.
+
+<Callout type="tip" title="Don't try to write MATLAB in Python">
+  The most common failure mode for an experienced MATLAB user is writing Python that
+  works and reads like a translation — index loops, no comprehensions, everything a
+  2-D array.
+
+  It runs. It is also slower and harder to read than idiomatic Python, and it means you
+  spent the effort of learning a language without getting the benefit. This track flags
+  the idiomatic form whenever there is one.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="read" title="Which language?">
+  Pick a language for each, and say why.
+
+  1. Simulating a PWM inverter with a current controller
+  2. Cleaning three years of half-hourly meter data with gaps and duplicates
+  3. Running 500 OpenDSS scenarios and summarising the results
+  4. A one-off matrix calculation for an assignment
+  5. Code you want to publish alongside a paper
+
+  <Solution>
+    1. **MATLAB.** Simulink. No contest.
+    2. **Python.** pandas handles missing data, duplicated timestamps and timezone
+       arithmetic far more gracefully than MATLAB tables.
+    3. **Python.** OpenDSS has a well-supported Python interface, and this is scripting
+       and data handling rather than matrix mathematics.
+    4. **Either — whichever is already open.** For a one-off, the tool you're fluent in
+       wins.
+    5. **Python**, if the choice is free. A reviewer without a MATLAB licence cannot run
+       your code, and reproducibility is the point of publishing it.
+
+    Notice that (4) has no principled answer. Not every choice is a considered one, and
+    pretending otherwise wastes time.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="predict" title="What does this do?">
+  Predict the output, given that these are Python **lists**, not NumPy arrays.
+
+  ```python
+  v = [1, 2, 3]
+  print(v * 2)
+  print(v + [4])
+  print(v * v)
+  ```
+
+  <Solution>
+    - `v * 2` → `[1, 2, 3, 1, 2, 3]`. Multiplying a list by an integer **repeats** it.
+    - `v + [4]` → `[1, 2, 3, 4]`. Plus **concatenates**.
+    - `v * v` → **TypeError**. You cannot multiply a list by a list.
+
+    None of this is arithmetic, because a list is a general container — it might hold
+    strings, or other lists, or nothing at all. Repetition and concatenation are the
+    operations that make sense for containers.
+
+    Import NumPy and the picture changes completely:
+
+    ```python
+    import numpy as np
+    v = np.array([1, 2, 3])
+    v * 2      # array([2, 4, 6])   — element-wise, as you'd expect
+    v * v      # array([1, 4, 9])   — element-wise, no dot needed
+    ```
+
+    That last line is worth noting now: NumPy's `*` is **element-wise by default**, the
+    opposite of MATLAB. Matrix multiplication is `@`. The next module covers it properly.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why does [1,2,3] * 2 repeat the list rather than doubling each element?',
+      options: [
+        'A design mistake kept for backwards compatibility',
+        'A list is a general-purpose container, so repetition is the sensible meaning; numerical arrays come from NumPy',
+        'Python cannot do element-wise arithmetic',
+        'It only behaves that way for integers',
+      ],
+      answer: 1,
+      explain:
+        'Lists hold anything — strings, other lists, mixed types. Repetition and concatenation are the operations that make sense there. Numerical semantics live in NumPy, where * is element-wise.',
+    },
+    {
+      q: 'What is the strongest practical argument for learning Python alongside MATLAB?',
+      options: [
+        'Python is faster',
+        'Python is free, so your published work can actually be run by others',
+        'MATLAB is being discontinued',
+        'Python has better linear algebra',
+      ],
+      answer: 1,
+      explain:
+        'Your campus licence belongs to the institute. Code a reviewer cannot run is not reproducible, which is why most published power-system tooling is Python-first.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  MATLAB is a **specialist instrument**; Python is a **workshop**. The key structural
+  consequence is that arrays are a *library* in Python, not the language — which is why
+  `[1,2,3] * 2` repeats, and why NumPy exists.
+</KeyIdea>
+
+## Further reading
+
+- *The Zen of Python* — run `import this` in any Python session
+- Next: **setting up** — environments, editors, and the one chore MATLAB spares you

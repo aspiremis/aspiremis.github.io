@@ -1,0 +1,469 @@
+---
+title: Modules and Packages
+track: python
+module: foundations
+order: 7
+description: Turning a folder of scripts into something importable — imports, the main guard, project layout, and reading files properly.
+objectives:
+  - Structure a project as an importable package
+  - Use the __name__ guard so a file can be both script and module
+  - Read and write files safely, including CSV and JSON
+prerequisites: [functions]
+estimatedMinutes: 30
+difficulty: intermediate
+tags: ['python', 'modules', 'packages', 'file-io']
+---
+
+MATLAB puts one function per file and finds them on a path. Python lets a file hold as
+many functions as you like, and you control what gets imported from where.
+
+That is more organisation to do yourself, and it is why Python projects scale better than
+a folder of `.m` files.
+
+## Importing
+
+```python
+import math
+math.sqrt(2)
+
+import numpy as np                 # the universal alias
+np.array([1, 2, 3])
+
+from math import sqrt, pi          # bring specific names in
+sqrt(2)
+
+from math import *                 # DON'T — pollutes the namespace
+```
+
+<Callout type="warning" title="Never use `from x import *`">
+  It dumps every public name into your file. Two libraries with a `filter` function
+  silently overwrite each other, and a reader cannot tell where any name came from.
+
+  `import numpy as np` and then `np.filter` is longer and unambiguous. The community
+  aliases — `np`, `pd`, `plt`, `sp` — are conventions worth following exactly, because
+  every example you'll ever read uses them.
+</Callout>
+
+## Your own modules
+
+Any `.py` file is a module.
+
+```text
+project/
+├── powerflow.py
+└── analyse.py
+```
+
+```python
+# powerflow.py
+def build_ybus(n, branch):
+    ...
+
+def solve(y, bus):
+    ...
+```
+
+```python
+# analyse.py
+import powerflow
+
+y = powerflow.build_ybus(14, branch)
+```
+
+Python finds modules in the current directory, then anywhere on `sys.path`.
+
+## The `__name__` guard
+
+```python
+# powerflow.py
+
+def solve(y, bus):
+    ...
+
+if __name__ == "__main__":
+    # runs ONLY when this file is executed directly
+    demo = build_demo_case()
+    print(solve(*demo))
+```
+
+When you run `python powerflow.py`, `__name__` is `"__main__"` and the block runs. When
+another file does `import powerflow`, `__name__` is `"powerflow"` and it doesn't.
+
+<Callout type="engineering">
+  This is why a Python file can be both a **library and a script**, which MATLAB cannot
+  do — a `.m` file is a function or a script, never both.
+
+  It means every module can carry its own demonstration or self-test:
+
+  ```python
+  if __name__ == "__main__":
+      # A quick sanity check anyone can run: python powerflow.py
+      y = build_ybus(3, DEMO_BRANCH)
+      assert abs(y.sum()) < 1e-12, "row sums should vanish"
+      print("build_ybus OK")
+  ```
+
+  Without the guard, that code would run every time anything imported the module —
+  including your test suite.
+</Callout>
+
+## Packages
+
+A directory with an `__init__.py` is a package.
+
+```text
+hosting-capacity/
+├── src/
+│   └── hosting/
+│       ├── __init__.py
+│       ├── feeder.py
+│       ├── scenarios.py
+│       └── report.py
+├── tests/
+├── pyproject.toml
+└── README.md
+```
+
+```python
+from hosting.feeder import build_ybus
+from hosting import scenarios
+
+scenarios.run(n=300)
+```
+
+`__init__.py` runs when the package is imported. Often empty; sometimes used to lift the
+main names up so callers write `from hosting import build_ybus` rather than reaching into
+submodules.
+
+```python
+# hosting/__init__.py
+from .feeder import build_ybus, solve
+from .scenarios import run_monte_carlo
+
+__all__ = ["build_ybus", "solve", "run_monte_carlo"]
+```
+
+The leading dot is a **relative import** — "from this package". `__all__` declares the
+public interface: what `from hosting import *` would bring, and, more usefully, what you
+are promising not to rename casually.
+
+## Making it installable
+
+```toml
+# pyproject.toml
+[project]
+name = "hosting"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26", "pandas>=2.0", "scipy>=1.11"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+```
+
+```bash
+pip install -e .        # editable install: imports work anywhere, edits take effect
+```
+
+<Callout type="tip" title="The editable install fixes most import problems">
+  `pip install -e .` puts your package on the path properly, so `from hosting import ...`
+  works from any directory, from tests, and from a notebook — without `sys.path` hacks.
+
+  If you find yourself writing `sys.path.append('..')` at the top of a file, that is the
+  signal you want an editable install instead. Path manipulation works until the day
+  someone runs your code from a different folder.
+</Callout>
+
+## Reading files
+
+Always use `with` — it closes the file even if something raises.
+
+```python
+with open("feeder.txt") as f:
+    contents = f.read()             # whole file as one string
+
+with open("feeder.txt") as f:
+    for line in f:                  # line by line — memory-efficient
+        process(line.strip())
+
+with open("results.txt", "w") as f:
+    f.write("bus,voltage\n")
+    f.write(f"{bus},{v:.4f}\n")
+```
+
+<Callout type="warning" title="Paths: use pathlib, not string concatenation">
+  ```python
+  from pathlib import Path
+
+  data = Path("data") / "raw" / "feeder.csv"    # correct separator on any OS
+  data.exists()
+  data.suffix                                    # '.csv'
+  data.stem                                      # 'feeder'
+
+  for csv in Path("data").glob("*.csv"):
+      process(csv)
+  ```
+
+  The `/` operator on `Path` objects is the modern idiom and it reads well. String
+  concatenation with `"data/" + name` breaks on Windows, and `os.path.join` is more
+  verbose for no benefit.
+</Callout>
+
+## CSV and JSON
+
+```python
+import csv
+
+with open("branches.csv", newline="") as f:
+    reader = csv.DictReader(f)          # first row becomes the keys
+    branches = [
+        {"from": int(r["from"]), "to": int(r["to"]),
+         "r": float(r["r"]), "x": float(r["x"])}
+        for r in reader
+    ]
+```
+
+Note the explicit conversions — `csv` gives you **strings**, always. Forgetting that
+means `r["r"] + r["x"]` concatenates two strings instead of adding two numbers, with no
+error.
+
+```python
+import json
+
+with open("config.json") as f:
+    config = json.load(f)
+
+with open("results.json", "w") as f:
+    json.dump(results, f, indent=2)
+```
+
+<Callout type="tip" title="For tabular data, pandas is better">
+  `pd.read_csv` handles types, missing values, dates and encodings in one call, and it
+  is the subject of module 3.
+
+  The `csv` module earns its place for streaming very large files, for unusual dialects,
+  and for when you want no dependencies at all. Know both; reach for pandas by default.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="from module import *">
+  Silent name collisions and unreadable code.
+</Callout>
+
+<Callout type="warning" title="Circular imports">
+  Module A imports B, B imports A. Python raises a confusing partially-initialised error.
+  The fix is a design change — move the shared thing into a third module.
+</Callout>
+
+<Callout type="warning" title="Naming a file after a library">
+  A file called `numpy.py` in your project shadows the real NumPy, and the error message
+  will not mention your file. Same for `random.py`, `json.py`, `email.py`.
+</Callout>
+
+<Callout type="warning" title="Forgetting csv returns strings">
+  `float(row["r"])`, always.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="Why does the demo run on import?">
+  A colleague imports a module and it prints a full analysis before their own code runs.
+
+  ```python
+  # solver.py
+  def solve(net): ...
+
+  net = load_demo()
+  print(solve(net))
+  ```
+
+  <Solution>
+    The last two lines are at module level, so they execute on **import**, not just when
+    the file is run directly.
+
+    ```python
+    def solve(net): ...
+
+    if __name__ == "__main__":
+        net = load_demo()
+        print(solve(net))
+    ```
+
+    Anything at module level runs at import time. That includes expensive work — loading
+    a large dataset at module scope means every importer pays for it, including your test
+    suite, and it makes import order matter in ways it shouldn't.
+
+    Keep module level to definitions and cheap constants.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: read a branch file safely">
+  Write a loader that reads branch data from CSV, validates it, and gives a clear error
+  naming the offending row.
+
+  <Solution>
+    ```python
+    import csv
+    from pathlib import Path
+
+    def load_branches(path: str | Path) -> list[dict]:
+        """Read branch data from CSV.
+
+        Expects columns: from, to, r, x. Raises ValueError naming the row
+        if anything is malformed.
+        """
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"No branch file at {path.resolve()}")
+
+        required = {"from", "to", "r", "x"}
+        branches = []
+
+        with path.open(newline="") as f:
+            reader = csv.DictReader(f)
+
+            missing = required - set(reader.fieldnames or [])
+            if missing:
+                raise ValueError(f"{path.name} is missing columns: {sorted(missing)}")
+
+            for lineno, row in enumerate(reader, start=2):   # 2: header is line 1
+                try:
+                    branch = {
+                        "from": int(row["from"]),
+                        "to": int(row["to"]),
+                        "r": float(row["r"]),
+                        "x": float(row["x"]),
+                    }
+                except (ValueError, TypeError) as err:
+                    raise ValueError(f"{path.name} line {lineno}: {err}") from err
+
+                if branch["from"] == branch["to"]:
+                    raise ValueError(
+                        f"{path.name} line {lineno}: self-loop at bus {branch['from']}"
+                    )
+                if branch["r"] == 0 and branch["x"] == 0:
+                    raise ValueError(f"{path.name} line {lineno}: zero impedance")
+
+                branches.append(branch)
+
+        if not branches:
+            raise ValueError(f"{path.name} contains no data rows")
+
+        return branches
+    ```
+
+    The line number is what makes this useful. "Invalid literal for float" tells you
+    nothing about a 300-row file; "branches.csv line 147: could not convert '0,05'" tells
+    you the row *and* that someone used a European decimal comma.
+
+    `enumerate(reader, start=2)` accounts for the header occupying line 1 — a small
+    detail that makes the message correct rather than off by one.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: tidy a folder of files">
+  Write a script that scans a directory, groups files by extension, and reports counts and
+  total size. Pure general-purpose scripting.
+
+  <Solution>
+    ```python
+    from pathlib import Path
+    from collections import defaultdict
+
+    def summarise(directory: str | Path = ".") -> None:
+        """Report file counts and sizes by extension, largest group first."""
+        root = Path(directory)
+        if not root.is_dir():
+            raise NotADirectoryError(f"{root} is not a directory")
+
+        groups = defaultdict(lambda: {"count": 0, "bytes": 0})
+
+        for f in root.rglob("*"):
+            if f.is_file():
+                ext = f.suffix.lower() or "(no extension)"
+                groups[ext]["count"] += 1
+                groups[ext]["bytes"] += f.stat().st_size
+
+        ordered = sorted(groups.items(), key=lambda kv: kv[1]["bytes"], reverse=True)
+
+        print(f"{'Extension':<16}{'Files':>8}{'Size':>12}")
+        print("-" * 36)
+        for ext, info in ordered:
+            print(f"{ext:<16}{info['count']:>8}{human(info['bytes']):>12}")
+
+        total = sum(g["bytes"] for g in groups.values())
+        print("-" * 36)
+        print(f"{'Total':<16}{sum(g['count'] for g in groups.values()):>8}{human(total):>12}")
+
+
+    def human(n: int) -> str:
+        for unit in ("B", "KB", "MB", "GB"):
+            if n < 1024:
+                return f"{n:.1f} {unit}"
+            n /= 1024
+        return f"{n:.1f} TB"
+
+
+    if __name__ == "__main__":
+        import sys
+        summarise(sys.argv[1] if len(sys.argv) > 1 else ".")
+    ```
+
+    `rglob("*")` walks recursively. `defaultdict` avoids the "does this key exist yet"
+    dance. And the `__main__` guard plus `sys.argv` turns it into a real command-line
+    tool: `python tidy.py ~/Documents`.
+
+    This is the kind of thing Python gets used for constantly, and being able to write it
+    in five minutes is genuinely useful well beyond coursework.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does the if __name__ == "__main__" guard do?',
+      options: [
+        'Prevents the file from being imported',
+        'Runs the block only when the file is executed directly, not when imported',
+        'Defines the entry point required by Python',
+        'Speeds up imports',
+      ],
+      answer: 1,
+      explain:
+        'It lets one file be both a library and a script — impossible in MATLAB, where a .m file is one or the other. Without it, demo code runs on every import.',
+    },
+    {
+      q: 'Why avoid `from numpy import *`?',
+      options: [
+        'It is slower',
+        'It dumps every name into your namespace, so collisions are silent and origins unreadable',
+        'It does not work in packages',
+        'NumPy forbids it',
+      ],
+      answer: 1,
+      explain:
+        'Two libraries with a same-named function silently overwrite each other, and a reader cannot tell where any name came from. Use import numpy as np.',
+    },
+    {
+      q: 'What does csv.DictReader give you for a numeric column?',
+      options: ['Floats', 'Strings — you must convert', 'Integers', 'It depends on the column'],
+      answer: 1,
+      explain:
+        'Always strings. Forgetting to convert means "0.05" + "0.20" concatenates rather than adding, with no error raised.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A `.py` file is a module, a folder with `__init__.py` is a package, and the
+  `__name__` guard lets one file be **both a library and a script**. When imports start
+  fighting you, `pip install -e .` is the fix — not `sys.path` manipulation.
+</KeyIdea>
+
+## Further reading
+
+- Python docs: *Modules*, and the packaging user guide
+- `pathlib` — worth reading through once; it replaces most of `os.path`
+- Next: **errors and testing** — failing clearly, and proving your code works

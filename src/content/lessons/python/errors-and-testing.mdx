@@ -1,0 +1,492 @@
+---
+title: Errors and Testing
+track: python
+module: foundations
+order: 8
+description: Raising exceptions that say something useful, catching only what you can handle, and writing pytest tests that catch the silently-wrong answer.
+objectives:
+  - Raise and catch exceptions precisely rather than broadly
+  - Write pytest tests, including parametrised ones and expected failures
+  - Test numerical code correctly, with tolerances rather than equality
+prerequisites: [modules-and-packages]
+estimatedMinutes: 40
+difficulty: intermediate
+tags: ['python', 'exceptions', 'testing', 'pytest']
+---
+
+The MATLAB track argued that an error tells you where to look while a **silently wrong
+answer** doesn't — which is why assertions matter more than the debugger.
+
+Python takes that further: exceptions are a first-class part of the language, and
+`pytest` makes tests genuinely pleasant to write.
+
+## Raising
+
+```python
+def base_impedance(v_kv: float, s_mva: float) -> float:
+    if s_mva <= 0:
+        raise ValueError(f"S_base must be positive, got {s_mva}")
+    if v_kv <= 0:
+        raise ValueError(f"V_base must be positive, got {v_kv}")
+    return v_kv ** 2 / s_mva
+```
+
+<Callout type="tip" title="Put the offending value in the message">
+  `"S_base must be positive"` tells you the rule. `"S_base must be positive, got -50"`
+  tells you the rule *and* what happened.
+
+  The second costs four characters and saves a debugging session, because you no longer
+  have to reproduce the failure to find out what the input was.
+</Callout>
+
+Pick the right exception type:
+
+| Exception | Use for |
+|---|---|
+| `ValueError` | Right type, wrong value — a negative MVA base |
+| `TypeError` | Wrong type entirely — a string where a float belongs |
+| `KeyError` | A missing dict key |
+| `IndexError` | Out of range |
+| `FileNotFoundError` | Missing file |
+| `RuntimeError` | Something went wrong that isn't the caller's input |
+| `NotImplementedError` | A deliberate placeholder |
+
+For a library, a small custom hierarchy lets callers catch *your* errors specifically:
+
+```python
+class PowerFlowError(Exception):
+    """Base for everything this package raises."""
+
+class ConvergenceError(PowerFlowError):
+    def __init__(self, iterations, mismatch):
+        self.iterations = iterations
+        self.mismatch = mismatch
+        super().__init__(
+            f"Did not converge in {iterations} iterations (mismatch {mismatch:.3e})"
+        )
+```
+
+Attaching the numbers as attributes means a caller can *react* — retry with a looser
+tolerance, or report the mismatch — rather than parsing the message string.
+
+## Catching
+
+```python
+try:
+    result = solve(network)
+except ConvergenceError as err:
+    print(f"Failed after {err.iterations} iterations")
+    result = None
+except FileNotFoundError:
+    raise                              # re-raise: not ours to handle
+finally:
+    cleanup()                          # runs either way
+```
+
+<Callout type="warning" title="Never write a bare `except:`">
+  ```python
+  try:
+      result = solve(network)
+  except:                    # catches EVERYTHING, including Ctrl+C
+      result = None          # and hides real bugs
+  ```
+
+  A bare `except` swallows `KeyboardInterrupt`, `SystemExit`, typos that raise
+  `NameError`, and every genuine bug. The result is code that "works" while quietly
+  producing `None`.
+
+  Catch **only what you can actually handle**:
+
+  ```python
+  except (ConvergenceError, ValueError) as err:
+      logger.warning("Scenario failed: %s", err)
+      result = None
+  ```
+
+  If you cannot do anything useful with an exception, let it propagate. An error that
+  reaches the user is better than a wrong answer that doesn't.
+</Callout>
+
+Preserve the cause when re-raising:
+
+```python
+try:
+    z = float(row["r"])
+except ValueError as err:
+    raise ValueError(f"Bad impedance on line {lineno}") from err
+```
+
+The `from err` keeps the original in the traceback. Without it you lose the actual cause,
+which is the information you needed.
+
+## `assert` is for programmer errors, not user input
+
+```python
+assert len(voltages) == n_bus, f"Expected {n_bus} voltages, got {len(voltages)}"
+```
+
+Use `assert` for things that should be **impossible** if your code is correct — internal
+invariants, postconditions.
+
+<Callout type="warning" title="Assertions are removed by python -O">
+  Running with `-O` strips every `assert` from the bytecode. So validation that must
+  always happen — checking a user's file, a function argument — needs an explicit `raise`.
+
+  Rule of thumb: `raise` at the boundary of your code, `assert` inside it.
+</Callout>
+
+## pytest
+
+Install it, write functions starting with `test_`, run `pytest`.
+
+```python
+# tests/test_perunit.py
+import pytest
+from powerflow import base_impedance, to_system_base
+
+
+def test_base_impedance_known_value():
+    # 132 kV, 100 MVA -> 174.24 ohms, verified by hand
+    assert base_impedance(132, 100) == pytest.approx(174.24, abs=0.01)
+
+
+def test_conversion_doubles_when_base_doubles():
+    z = to_system_base(0.10, 50, 132, s_base=100, v_base=132)
+    assert z == pytest.approx(0.20)
+
+
+def test_rejects_negative_base():
+    with pytest.raises(ValueError, match="must be positive"):
+        base_impedance(132, -100)
+```
+
+<Callout type="engineering">
+  `pytest.approx` is the Python answer to the floating-point lesson: **never compare
+  computed floats with `==`**.
+
+  ```python
+  assert 0.1 + 0.2 == 0.3                     # FAILS
+  assert 0.1 + 0.2 == pytest.approx(0.3)      # passes
+  assert x == pytest.approx(y, rel=1e-9)      # relative tolerance
+  assert x == pytest.approx(y, abs=1e-12)     # absolute, for values near zero
+  ```
+
+  It works on lists and NumPy arrays too, comparing element-wise — which makes testing a
+  whole voltage profile a one-liner.
+</Callout>
+
+### Parametrised tests
+
+The feature that makes testing numerical code pleasant:
+
+```python
+@pytest.mark.parametrize(
+    "z_old, s_old, v_old, s_base, v_base, expected",
+    [
+        (0.10, 50, 132, 100, 132, 0.20),      # power doubles
+        (0.12, 25,  33, 100, 132, 0.03),      # voltage term matters
+        (0.08, 75, 132, 100, 132, 0.1067),
+    ],
+)
+def test_base_conversion(z_old, s_old, v_old, s_base, v_base, expected):
+    result = to_system_base(z_old, s_old, v_old, s_base=s_base, v_base=v_base)
+    assert result == pytest.approx(expected, abs=1e-4)
+```
+
+One function, three independent test cases, each reported separately when it fails. Adding
+a case is adding a row.
+
+### Fixtures
+
+Shared setup, created once and injected:
+
+```python
+@pytest.fixture
+def ieee14():
+    """The IEEE 14-bus case, loaded once per test that asks for it."""
+    return load_case("ieee14")
+
+
+def test_converges(ieee14):
+    result = solve(ieee14)
+    assert result.converged
+    assert result.iterations < 8
+
+
+def test_losses_positive(ieee14):
+    assert solve(ieee14).losses > 0
+```
+
+Any test that names `ieee14` as a parameter gets it. No global state, no setup duplicated
+across tests.
+
+## What to test in numerical code
+
+<Compare
+  headings={['Test', 'Catches', 'Example']}
+  rows={[
+    { option: 'Known analytic answer', when: 'Wrong formula', cost: 'Per-unit conversion verified by hand', recommended: true },
+    { option: 'Published reference', when: 'Anything', cost: 'IEEE 14-bus voltages against MATPOWER' },
+    { option: 'Physical invariant', when: 'Sign and convention errors', cost: 'Losses > 0, Y-bus rows sum to zero' },
+    { option: 'Convergence rate', when: 'A wrong Jacobian', cost: 'Order ≈ 2 for Newton' },
+    { option: 'Edge cases that must fail', when: 'Silent nonsense on bad input', cost: 'No slack bus raises' },
+    { option: 'Round trip', when: 'Asymmetric bugs', cost: 'to_sequence then to_phase returns the input' },
+  ]}
+/>
+
+That last one is underused and cheap:
+
+```python
+def test_sequence_round_trip():
+    v_abc = np.array([1.0, 0.9*np.exp(-2j*np.pi/3), 1.1*np.exp(2j*np.pi/3)])
+    assert to_phase(to_sequence(v_abc)) == pytest.approx(v_abc)
+```
+
+## Running
+
+```bash
+pytest                          # everything
+pytest -v                       # one line per test
+pytest tests/test_perunit.py    # one file
+pytest -k "conversion"          # tests matching a name
+pytest -x                       # stop at the first failure
+pytest --cov=powerflow          # coverage, with pytest-cov
+```
+
+<Callout type="tip" title="Write the test when you find the bug">
+  The highest-value test is the one that reproduces a bug you just spent an hour on. It
+  costs three minutes, and it guarantees that bug never returns silently.
+
+  Chasing a coverage percentage is much less useful than having a test for every
+  surprise you have already had.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Bare except">
+  Hides real bugs and swallows Ctrl+C.
+</Callout>
+
+<Callout type="warning" title="Comparing floats with ==">
+  Use `pytest.approx`, or an explicit tolerance.
+</Callout>
+
+<Callout type="warning" title="Tests that cannot fail">
+  `assert result is not None` passes for almost any bug. Assert on a *value* you computed
+  independently.
+</Callout>
+
+<Callout type="warning" title="Relying on assert for input validation">
+  Stripped by `python -O`. Use `raise` at the boundary.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="debug" title="What is wrong with this error handling?">
+  ```python
+  def load_case(path):
+      try:
+          with open(path) as f:
+              return parse(f.read())
+      except:
+          return None
+  ```
+
+  <Solution>
+    Three problems.
+
+    **Bare `except`** catches everything — a typo inside `parse` raising `NameError`, a
+    `KeyboardInterrupt`, a `MemoryError`. All become `None`.
+
+    **Returning `None` on failure** pushes the problem downstream. The caller gets `None`,
+    passes it on, and the eventual `AttributeError: 'NoneType' has no attribute 'bus'`
+    appears far from the real cause.
+
+    **The reason is lost entirely.** File missing? Malformed? Permissions? No way to tell.
+
+    ```python
+    def load_case(path):
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"No case file at {path.resolve()}")
+
+        try:
+            with path.open() as f:
+                return parse(f.read())
+        except ParseError as err:
+            raise ValueError(f"Could not parse {path.name}: {err}") from err
+    ```
+
+    Now the caller gets a specific exception with context, and can decide. Genuine
+    programming errors inside `parse` propagate as themselves instead of masquerading as
+    a missing file.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: test a Y-bus builder">
+  Write a test suite for `build_ybus` covering structure, physics and failure.
+
+  <Solution>
+    ```python
+    import numpy as np
+    import pytest
+    from powerflow import build_ybus
+
+
+    @pytest.fixture
+    def three_bus():
+        # from, to, r, x — no shunts, so row sums must vanish
+        return 3, [(0, 1, 0.02, 0.06), (1, 2, 0.03, 0.09), (0, 2, 0.08, 0.24)]
+
+
+    def test_shape(three_bus):
+        n, branch = three_bus
+        assert build_ybus(n, branch).shape == (n, n)
+
+
+    def test_row_sums_vanish(three_bus):
+        """With no shunts, each row is the diagonal minus its own off-diagonals."""
+        n, branch = three_bus
+        y = build_ybus(n, branch)
+        assert y.sum(axis=1) == pytest.approx(np.zeros(n), abs=1e-12)
+
+
+    def test_symmetric(three_bus):
+        n, branch = three_bus
+        y = build_ybus(n, branch)
+        assert y == pytest.approx(y.T)          # plain transpose, not conjugate
+
+
+    def test_off_diagonal_is_negative_admittance(three_bus):
+        n, branch = three_bus
+        y = build_ybus(n, branch)
+        expected = -1 / complex(0.02, 0.06)
+        assert y[0, 1] == pytest.approx(expected)
+
+
+    def test_rejects_out_of_range_bus():
+        with pytest.raises(ValueError, match="out of range"):
+            build_ybus(3, [(0, 5, 0.02, 0.06)])
+
+
+    def test_rejects_self_loop():
+        with pytest.raises(ValueError, match="self-loop"):
+            build_ybus(3, [(1, 1, 0.02, 0.06)])
+
+
+    def test_parallel_branches_accumulate():
+        """Two identical branches in parallel halve the impedance."""
+        y1 = build_ybus(2, [(0, 1, 0.02, 0.06)])
+        y2 = build_ybus(2, [(0, 1, 0.02, 0.06), (0, 1, 0.02, 0.06)])
+        assert y2[0, 1] == pytest.approx(2 * y1[0, 1])
+    ```
+
+    Seven tests covering three different kinds of failure: **structure** (shape,
+    symmetry), **physics** (row sums, the parallel-branch case) and **rejection** (bad
+    input raising rather than silently growing the matrix).
+
+    The parallel-branch test is the one worth stealing. It checks the *accumulation*
+    behaviour — that stamping a second branch adds rather than overwrites — which a
+    single-branch test cannot see at all.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: test a parser">
+  Write tests for a function `parse_duration("1h30m")` that returns seconds.
+
+  <Solution>
+    ```python
+    import pytest
+    from utils import parse_duration
+
+
+    @pytest.mark.parametrize("text, expected", [
+        ("30s", 30),
+        ("5m", 300),
+        ("2h", 7200),
+        ("1h30m", 5400),
+        ("1h30m15s", 5415),
+        ("0s", 0),
+        ("90m", 5400),            # units need not be normalised
+    ])
+    def test_valid(text, expected):
+        assert parse_duration(text) == expected
+
+
+    @pytest.mark.parametrize("bad", ["", "abc", "1x", "h30m", "-5m", "1.5h"])
+    def test_invalid_raises(bad):
+        with pytest.raises(ValueError):
+            parse_duration(bad)
+
+
+    def test_error_names_the_input():
+        with pytest.raises(ValueError, match="1x"):
+            parse_duration("1x")
+    ```
+
+    Two parametrised tests give thirteen cases from about fifteen lines.
+
+    The interesting entries are the edge cases: `"0s"` (zero is valid, and a naive
+    truthiness check would reject it), `"90m"` (larger than an hour but still valid), and
+    `"1.5h"` — which you have to *decide* about. Should fractional units be allowed?
+    Writing the test forces the decision, which is one of the underrated benefits of
+    testing: it makes you specify the behaviour before you implement it.
+
+    The last test asserts the error message contains the offending input — the habit from
+    the top of this lesson, verified.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why is a bare `except:` dangerous?',
+      options: [
+        'It is slower',
+        'It catches everything including KeyboardInterrupt and genuine bugs, hiding them',
+        'It only works at module level',
+        'It cannot access the exception object',
+      ],
+      answer: 1,
+      explain:
+        'Typos raising NameError, Ctrl+C, memory errors — all swallowed. The code appears to work while silently producing None. Catch only what you can handle.',
+    },
+    {
+      q: 'When should you use assert rather than raise?',
+      options: [
+        'For validating user input',
+        'For internal invariants that should be impossible if your code is correct',
+        'Whenever the condition is simple',
+        'Only in tests',
+      ],
+      answer: 1,
+      explain:
+        'python -O strips asserts entirely, so anything that must always be checked — arguments, file contents — needs an explicit raise. Raise at the boundary, assert inside.',
+    },
+    {
+      q: 'What does pytest.approx solve?',
+      options: [
+        'Slow tests',
+        'Comparing computed floating-point values, where == fails on representation error',
+        'Testing functions that raise',
+        'Generating test data',
+      ],
+      answer: 1,
+      explain:
+        'The floating-point lesson in Python form: 0.1 + 0.2 != 0.3. approx also works element-wise on lists and NumPy arrays, so a whole voltage profile is one assertion.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Raise **specific** exceptions with the offending value in the message, catch **only
+  what you can handle**, and test against something you obtained independently — a hand
+  calculation, a published result, or a physical invariant. A test that cannot fail is
+  not a test.
+</KeyIdea>
+
+## Further reading
+
+- pytest documentation — parametrisation and fixtures especially
+- `hypothesis` — property-based testing, which generates the edge cases for you
+- Next: the **module project** — a packaged, tested units library

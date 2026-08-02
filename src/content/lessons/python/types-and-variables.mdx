@@ -1,0 +1,352 @@
+---
+title: Types and Variables
+track: python
+module: foundations
+order: 3
+description: What a Python name actually binds to, why mutability is the concept that matters most, and the string formatting you will use constantly.
+objectives:
+  - Explain the difference between a name, an object and a reference
+  - Predict when modifying one variable affects another
+  - Use f-strings and Python's numeric types confidently
+prerequisites: [setup]
+estimatedMinutes: 30
+difficulty: beginner
+tags: ['python', 'types', 'mutability', 'strings']
+---
+
+In MATLAB, `b = a` copies the value. That single fact makes MATLAB easy to reason about
+and it is **not** how Python works.
+
+This lesson is the one where MATLAB intuition actively misleads, so it's worth slowing
+down.
+
+## Names are labels, not boxes
+
+<Analogy>
+  In MATLAB, a variable is a **box** holding a value. `b = a` makes a second box with a
+  copy of the contents.
+
+  In Python, a variable is a **luggage label tied to an object**. `b = a` ties a second
+  label to the **same** object. There is one object with two labels.
+
+  If the object can be changed — and a list can — then changing it through one label
+  changes what you see through the other, because there was only ever one object.
+</Analogy>
+
+```python
+a = [1, 2, 3]
+b = a                 # b labels the SAME list
+b.append(4)
+print(a)              # [1, 2, 3, 4]  — a changed too!
+
+x = [1, 2, 3]
+y = x.copy()          # a genuinely new list
+y.append(4)
+print(x)              # [1, 2, 3]     — unaffected
+```
+
+<Callout type="warning" title="This is the single most common Python surprise for MATLAB users">
+  It has no MATLAB equivalent. In MATLAB, passing an array to a function and modifying it
+  inside cannot affect the caller. In Python it can — for mutable types.
+
+  `id(a)` shows the object's identity. `a is b` asks whether two names point at the same
+  object, which is different from `a == b` asking whether they have equal value.
+</Callout>
+
+## Mutable and immutable
+
+The distinction that makes the above predictable:
+
+<Compare
+  headings={['Type', 'Mutable?', 'Consequence']}
+  rows={[
+    { option: 'int, float, complex', when: 'Immutable', cost: 'Assignment behaves like a copy — the MATLAB intuition holds', recommended: true },
+    { option: 'str', when: 'Immutable', cost: 'Every "change" creates a new string' },
+    { option: 'tuple', when: 'Immutable', cost: 'Use for fixed records; safe to share' },
+    { option: 'list', when: 'MUTABLE', cost: 'Shared references bite here' },
+    { option: 'dict, set', when: 'MUTABLE', cost: 'Same' },
+    { option: 'NumPy array', when: 'MUTABLE', cost: 'And slices are VIEWS — the next module covers it' },
+  ]}
+/>
+
+For numbers and strings you can forget all this: they behave exactly as MATLAB taught
+you. For lists, dicts and arrays it matters constantly.
+
+## The numeric types
+
+```python
+n = 42                    # int  — arbitrary precision, no overflow
+x = 3.14                  # float — IEEE 754 double, same as MATLAB
+z = 3 + 4j                # complex — note j, not i
+flag = True               # bool  — a subclass of int, so True + True == 2
+nothing = None            # the absence of a value
+
+type(n), type(x), type(z)
+```
+
+<Callout type="engineering">
+  **`j`, not `i`.** Python uses the electrical engineering convention, which is
+  convenient for you — and it must be attached to a number: `4j` works, `j` alone is an
+  undefined name.
+
+  ```python
+  Z = 0.05 + 0.20j                    # per-unit impedance
+  abs(Z)                              # 0.2062  — magnitude
+  Z.real, Z.imag                      # 0.05, 0.20
+  Z.conjugate()                       # 0.05-0.20j
+
+  import cmath
+  cmath.phase(Z)                      # 1.3258 radians
+  math.degrees(cmath.phase(Z))        # 75.96 degrees
+  cmath.polar(Z)                      # (magnitude, angle)
+  ```
+
+  Complex arithmetic is built into the language, as in MATLAB. But note `cmath` for
+  complex maths functions versus `math` for real ones — `math.sqrt(-1)` raises an error
+  where `cmath.sqrt(-1)` gives `1j`.
+</Callout>
+
+Python integers have **arbitrary precision** — no overflow, ever:
+
+```python
+2 ** 200          # a 61-digit integer, exactly
+```
+
+And two division operators, which catches people:
+
+```python
+7 / 2             # 3.5   — true division, ALWAYS float
+7 // 2            # 3     — floor division
+7 % 2             # 1     — remainder
+-7 // 2           # -4    — floors toward negative infinity, not toward zero
+```
+
+## Strings
+
+```python
+name = 'Bus 14'
+also = "Bus 14"                    # quotes are interchangeable
+multi = """spans
+several lines"""
+
+f"Voltage is {v:.4f} pu"           # f-string — use these
+```
+
+**f-strings** are the modern formatting syntax and you should use them everywhere:
+
+```python
+v, bus, p = 1.0234, 14, 12.5
+
+f"{v:.4f}"          # '1.0234'      — 4 decimal places
+f"{v:8.4f}"         # '  1.0234'    — width 8, right-aligned
+f"{bus:>4d}"        # '  14'        — right-align integer in 4
+f"{p:.1%}"          # '1250.0%'     — as a percentage
+f"{p:.3e}"          # '1.250e+01'   — scientific
+f"{bus=}"           # 'bus=14'      — prints name AND value, superb for debugging
+
+# Aligned table output
+for b, volt in [(1, 1.06), (2, 1.045), (14, 1.0234)]:
+    print(f"Bus {b:>3d}: {volt:7.4f} pu")
+```
+
+That `f"{bus=}"` form is worth remembering — it prints both the expression and its value,
+which makes print-debugging much less error-prone.
+
+Useful string methods:
+
+```python
+s = "  EE6L001, Power System Analysis  "
+s.strip()                          # removes surrounding whitespace
+s.strip().split(',')               # ['EE6L001', ' Power System Analysis']
+s.lower(), s.upper()
+'EE6L001'.startswith('EE6')        # True
+','.join(['a', 'b', 'c'])          # 'a,b,c'
+"bus_{}".format(14)                # older style; prefer f-strings
+```
+
+## Type hints
+
+Python does not enforce types, but you can document them — and tools will check.
+
+```python
+def base_impedance(v_base_kv: float, s_base_mva: float) -> float:
+    """Base impedance in ohms."""
+    return v_base_kv ** 2 / s_base_mva
+```
+
+Nothing at runtime stops you passing a string. But your editor will warn, `mypy` will
+flag it, and — most valuably — the signature documents intent. Use hints on anything
+another person (including future you) will call.
+
+## Common mistakes
+
+<Callout type="warning" title="Assuming b = a copies">
+  For lists, dicts and arrays it does not. Use `.copy()`, or `copy.deepcopy()` for nested
+  structures.
+</Callout>
+
+<Callout type="warning" title="Using is instead of ==">
+  `is` compares identity, `==` compares value. `[1,2] == [1,2]` is True; `[1,2] is [1,2]`
+  is False. Reserve `is` for `None`: `if x is None`.
+</Callout>
+
+<Callout type="warning" title="Writing i for the imaginary unit">
+  Python uses `j`, and it must follow a number. `1j`, not `j`.
+</Callout>
+
+<Callout type="warning" title="Expecting integer division from /">
+  `7 / 2` is `3.5` in Python 3, always. Use `//` for floor division.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="What gets printed?">
+  ```python
+  a = [1, 2, 3]
+  b = a
+  c = a.copy()
+  b.append(4)
+  c.append(5)
+  print(a, b, c)
+
+  x = 10
+  y = x
+  y += 5
+  print(x, y)
+  ```
+
+  <Solution>
+    ```text
+    [1, 2, 3, 4] [1, 2, 3, 4] [1, 2, 3, 5]
+    10 15
+    ```
+
+    `a` and `b` label the same list, so appending through either shows in both. `c` is a
+    separate list.
+
+    The second case looks like it contradicts the first, and doesn't. Integers are
+    **immutable** — `y += 5` cannot modify the object `10`, so it creates a new integer
+    `15` and rebinds `y` to it. `x` still labels `10`.
+
+    That's the whole rule: rebinding a name never affects other names; *mutating an
+    object* affects every name pointing at it. Immutable types simply cannot be mutated,
+    so they always look like copies.
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Format a results table">
+  Print a bus voltage table with aligned columns, flagging any bus outside 0.95–1.05 pu.
+
+  <Solution>
+    ```python
+    results = [(1, 1.0600, 0.00), (2, 1.0450, -4.98),
+               (14, 1.0355, -16.03), (18, 0.9131, -15.44)]
+
+    print(f"{'Bus':>4} {'|V| (pu)':>10} {'Angle':>9}  Status")
+    print("-" * 38)
+
+    for bus, v, ang in results:
+        flag = "" if 0.95 <= v <= 1.05 else "  <-- outside limits"
+        print(f"{bus:>4d} {v:>10.4f} {ang:>8.2f}°{flag}")
+    ```
+
+    ```text
+     Bus   |V| (pu)     Angle  Status
+    --------------------------------------
+       1     1.0600     0.00°  <-- outside limits
+       2     1.0450    -4.98°
+      14     1.0355   -16.03°
+      18     0.9131   -15.44°  <-- outside limits
+    ```
+
+    Two things worth noting. The chained comparison `0.95 <= v <= 1.05` is valid Python
+    and reads exactly like the mathematics — a genuine improvement over most languages.
+
+    And bus 1 flags because 1.06 pu exceeds the limit. That's the IEEE 14-bus slack bus,
+    which really is set above the normal band by design. A limit check that doesn't know
+    about bus types will produce false positives — worth remembering when you write the
+    real one.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="A general one: parse a log line">
+  Given a log line, extract the fields into typed values. No power systems here — string
+  handling is a skill in its own right.
+
+  ```python
+  line = "2026-08-14 09:32:11 | WARN  | disk_usage=87.4 | host=lab-03"
+  ```
+
+  <Solution>
+    ```python
+    line = "2026-08-14 09:32:11 | WARN  | disk_usage=87.4 | host=lab-03"
+
+    parts = [p.strip() for p in line.split('|')]
+    timestamp, level = parts[0], parts[1]
+
+    fields = {}
+    for p in parts[2:]:
+        key, value = p.split('=', 1)          # maxsplit=1 protects values containing '='
+        fields[key] = value
+
+    usage = float(fields['disk_usage'])
+    host = fields['host']
+
+    print(f"{level} on {host}: disk at {usage:.1f}% at {timestamp}")
+    if usage > 85:
+        print(f"  -> exceeds threshold by {usage - 85:.1f} points")
+    ```
+
+    Two details that matter in real parsing. `split('=', 1)` limits the split to the first
+    occurrence, so a value containing `=` survives intact. And `.strip()` on every part,
+    because whitespace around delimiters is inconsistent in real logs.
+
+    This kind of work is most of what Python gets used for outside numerics, and it is
+    genuinely worth being fluent in — SCADA exports, instrument logs and simulation
+    output all arrive as semi-structured text.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'After a = [1,2]; b = a; b.append(3), what is a?',
+      options: ['[1, 2]', '[1, 2, 3]', 'An error', '[1, 2] and b is [1, 2, 3]'],
+      answer: 1,
+      explain:
+        'a and b label the same list object. Appending through either mutates that one object, so both names show the change. Use .copy() for an independent list.',
+    },
+    {
+      q: 'Why does y += 5 not affect x after y = x, when x is an integer?',
+      options: [
+        'Integers are copied on assignment',
+        'Integers are immutable, so += creates a new object and rebinds y',
+        'Numbers behave differently from all other types',
+        'It does affect x',
+      ],
+      answer: 1,
+      explain:
+        'Rebinding a name never affects other names. Immutable types cannot be mutated at all, so they always appear to copy — which is why numbers and strings match your MATLAB intuition and lists do not.',
+    },
+    {
+      q: 'What does f"{v=}" print for v = 1.05?',
+      options: ['1.05', 'v=1.05', 'v', '{v=}'],
+      answer: 1,
+      explain:
+        'The = suffix prints both the expression and its value. It makes print-debugging far less error-prone than writing the name out by hand and mistyping it.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A Python name is a **label tied to an object**, not a box holding a value. For
+  immutable types (numbers, strings, tuples) that is indistinguishable from MATLAB's
+  copying. For **mutable** ones — lists, dicts, arrays — two labels on one object means
+  changing it through one shows through the other.
+</KeyIdea>
+
+## Further reading
+
+- `import this` — the Zen of Python
+- Python docs: *Data model* — the formal account of names and objects
+- Next: **collections** — lists, dicts, tuples and sets, and choosing between them

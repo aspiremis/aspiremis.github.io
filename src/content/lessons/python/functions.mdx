@@ -1,0 +1,456 @@
+---
+title: Functions
+track: python
+module: foundations
+order: 6
+description: Signatures, keyword arguments, docstrings and type hints — plus the mutable default argument, the trap that catches everyone exactly once.
+objectives:
+  - Write functions with clear signatures, defaults and documentation
+  - Explain and avoid the mutable default argument trap
+  - Return multiple values and unpack them idiomatically
+prerequisites: [control-flow]
+estimatedMinutes: 35
+difficulty: beginner
+tags: ['python', 'functions', 'defaults', 'type-hints']
+---
+
+Python functions will feel familiar after MATLAB. Three things are genuinely better,
+and one is a trap with no MATLAB equivalent.
+
+## The shape
+
+```python
+def to_system_base(z_old, s_old, v_old, s_base, v_base):
+    """Convert a per-unit impedance to a new base.
+
+    Args:
+        z_old: Per-unit impedance on the equipment base.
+        s_old: Equipment MVA rating.
+        v_old: Equipment kV rating.
+        s_base: System MVA base.
+        v_base: System kV base.
+
+    Returns:
+        The impedance in per unit on the system base.
+
+    Example:
+        >>> to_system_base(0.10, 50, 132, 100, 132)
+        0.2
+    """
+    return z_old * (s_base / s_old) * (v_old / v_base) ** 2
+```
+
+The **docstring** is the first statement in the body, in triple quotes. `help(func)`
+prints it, editors show it on hover, and `pydoc` extracts it. Write it before the body,
+while you still know what the arguments mean.
+
+## Keyword arguments and defaults
+
+This is the first genuine improvement over MATLAB.
+
+```python
+def solve(network, tol=1e-8, max_iter=30, verbose=False, enforce_q_limits=True):
+    ...
+
+solve(net)                                  # all defaults
+solve(net, tol=1e-10)                       # override one, by name
+solve(net, verbose=True, max_iter=50)       # order doesn't matter
+```
+
+No `varargin` parsing, no `inputParser`. Defaults are in the signature where the reader
+can see them, and callers name what they're setting.
+
+<Callout type="tip" title="Force keyword arguments with a bare *">
+  ```python
+  def solve(network, *, tol=1e-8, max_iter=30):
+      ...
+
+  solve(net, 1e-10)          # TypeError — must use tol=
+  solve(net, tol=1e-10)      # fine
+  ```
+
+  Everything after the `*` **must** be passed by name. Worth doing for any function with
+  several options: it stops `solve(net, 30, 1e-8)` — arguments silently swapped — from
+  being a valid call.
+</Callout>
+
+## The mutable default trap
+
+The one with no MATLAB analogue, and it catches everyone.
+
+```python
+def add_violation(bus, log=[]):        # DON'T
+    log.append(bus)
+    return log
+
+add_violation(3)      # [3]
+add_violation(7)      # [3, 7]   <- the previous call's data is still there!
+add_violation(12)     # [3, 7, 12]
+```
+
+<Callout type="warning" title="Default arguments are evaluated ONCE, at definition time">
+  That empty list is created when the `def` statement runs, not on each call. Every call
+  that doesn't supply `log` shares **the same list**, and mutations accumulate across
+  calls.
+
+  The fix is always the same:
+
+  ```python
+  def add_violation(bus, log=None):
+      if log is None:
+          log = []
+      log.append(bus)
+      return log
+  ```
+
+  Rule: **never use a mutable object as a default.** Lists, dicts, sets and NumPy arrays
+  all qualify. `None` plus a check is the standard idiom, and seeing it in someone else's
+  code tells you they know this.
+</Callout>
+
+## Multiple return values
+
+```python
+def fault_current(z_th, s_base, v_base, v_pre=1.0):
+    """Return (current in amps, fault level in MVA, current in per unit)."""
+    i_pu = v_pre / z_th
+    i_base = s_base * 1e6 / (3 ** 0.5 * v_base * 1e3)
+    return abs(i_pu) * i_base, abs(i_pu) * s_base, i_pu
+```
+
+Python returns a **tuple**, which the caller unpacks:
+
+```python
+i_amps, mva, i_pu = fault_current(0.15, 100, 132)
+
+i_amps, _, _ = fault_current(0.15, 100, 132)     # _ for "don't care"
+result = fault_current(0.15, 100, 132)           # keep the tuple
+```
+
+Unlike MATLAB, you cannot ask for "just the first output" — the function always computes
+and returns everything. For more than three or four values, return a dataclass instead:
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class FaultResult:
+    current_a: float
+    level_mva: float
+    current_pu: complex
+    x_over_r: float
+
+    @property
+    def is_severe(self) -> bool:
+        return self.level_mva > 500
+```
+
+Now callers write `result.level_mva` rather than remembering that it was the second
+element — the same argument as dicts over parallel lists, one level up.
+
+## Type hints
+
+```python
+def base_impedance(v_base_kv: float, s_base_mva: float) -> float:
+    return v_base_kv ** 2 / s_base_mva
+
+def check_limits(
+    voltages: dict[int, float],
+    vmin: float = 0.95,
+    vmax: float = 1.05,
+) -> list[int]:
+    """Return the buses outside limits."""
+    return [b for b, v in voltages.items() if not vmin <= v <= vmax]
+```
+
+Not enforced at runtime — passing a string still "works" until it doesn't. Their value is
+documentation your editor can check, and they pay off most on functions other people call.
+
+## `*args` and `**kwargs`
+
+For variable numbers of arguments:
+
+```python
+def total_load(*loads):
+    """Sum any number of loads."""
+    return sum(loads)
+
+total_load(0.3, 0.5, 0.2)              # 1.0
+
+def configure(**settings):
+    """Accept arbitrary keyword settings."""
+    for key, value in settings.items():
+        print(f"{key} = {value}")
+
+configure(tol=1e-8, verbose=True)
+```
+
+And unpacking at the call site:
+
+```python
+values = [0.3, 0.5, 0.2]
+total_load(*values)                    # unpacks the list into arguments
+
+options = {'tol': 1e-10, 'max_iter': 50}
+solve(net, **options)                  # unpacks the dict into keywords
+```
+
+## Lambdas
+
+Small anonymous functions, for passing as arguments:
+
+```python
+sorted(results, key=lambda r: r.losses)
+max(buses, key=lambda b: voltages[b])
+```
+
+Use them only where a `def` would be noise. Anything with a body worth naming should be
+named — a lambda assigned to a variable is a `def` written awkwardly.
+
+## Scope
+
+```python
+count = 0
+
+def increment():
+    count += 1          # UnboundLocalError
+
+def increment_ok():
+    global count        # explicit, and usually a design smell
+    count += 1
+```
+
+Assigning to a name inside a function makes it local for the whole function. Reading an
+outer variable is fine; assigning needs `global` (or `nonlocal`), and needing either
+usually means the value should have been a parameter and a return.
+
+## Common mistakes
+
+<Callout type="warning" title="Mutable default arguments">
+  The headline. Use `None` and create inside.
+</Callout>
+
+<Callout type="warning" title="Forgetting return">
+  A function with no `return` returns `None`. `result = f(x)` then silently gives `None`,
+  and the failure appears somewhere else entirely.
+</Callout>
+
+<Callout type="warning" title="Too many positional parameters">
+  `solve(net, 1e-8, 30, True, False, 1.05)` is unreadable and easy to get wrong. Use
+  keyword-only arguments with `*`.
+</Callout>
+
+<Callout type="warning" title="Mutating an argument without saying so">
+  Python lets you modify a caller's list. If you do, say so loudly in the docstring — or
+  better, return a new one.
+</Callout>
+
+## Mini tasks
+
+<Exercise n={1} kind="predict" title="The trap">
+  ```python
+  def collect(item, into=[]):
+      into.append(item)
+      return into
+
+  a = collect(1)
+  b = collect(2)
+  c = collect(3, [])
+  print(a, b, c)
+  ```
+
+  <Solution>
+    ```text
+    [1, 2] [1, 2] [3]
+    ```
+
+    `a` and `b` are the **same list** — the default created once at definition time — so
+    both show both appends. `c` got a fresh list explicitly, so it has only its own item.
+
+    That `a` and `b` print identically is the tell: they aren't two lists that happen to
+    match, they are one list with two names.
+
+    Correct version:
+
+    ```python
+    def collect(item, into=None):
+        if into is None:
+            into = []
+        into.append(item)
+        return into
+    ```
+  </Solution>
+</Exercise>
+
+<Exercise n={2} kind="practice" title="Domain: a validated converter">
+  Write `to_system_base` with keyword-only options, validation, a docstring with an
+  example, and type hints. Make it work on a single value or a list.
+
+  <Solution>
+    ```python
+    from collections.abc import Sequence
+
+    def to_system_base(
+        z_old: float | Sequence[float],
+        s_old: float | Sequence[float],
+        v_old: float | Sequence[float],
+        *,
+        s_base: float = 100.0,
+        v_base: float = 132.0,
+    ) -> float | list[float]:
+        """Convert per-unit impedance(s) to a new base.
+
+        Units must be consistent — MVA with MVA, kV with kV.
+
+        Args:
+            z_old: Per-unit impedance on the equipment base.
+            s_old: Equipment MVA rating.
+            v_old: Equipment kV rating.
+            s_base: System MVA base. Keyword-only.
+            v_base: System kV base. Keyword-only.
+
+        Returns:
+            A float if the inputs were scalars, otherwise a list.
+
+        Raises:
+            ValueError: If any rating is non-positive.
+
+        Example:
+            >>> to_system_base(0.10, 50, 132, s_base=100, v_base=132)
+            0.2
+        """
+        if s_base <= 0 or v_base <= 0:
+            raise ValueError("Bases must be positive")
+
+        scalar = not isinstance(z_old, Sequence)
+        if scalar:
+            z_old, s_old, v_old = [z_old], [s_old], [v_old]
+
+        if not (len(z_old) == len(s_old) == len(v_old)):
+            raise ValueError("z_old, s_old and v_old must be the same length")
+
+        out = []
+        for z, s, v in zip(z_old, s_old, v_old, strict=True):
+            if s <= 0 or v <= 0:
+                raise ValueError(f"Non-positive rating: S={s}, V={v}")
+            out.append(z * (s_base / s) * (v / v_base) ** 2)
+
+        return out[0] if scalar else out
+    ```
+
+    Three things worth noting. The `*` makes the bases keyword-only, so
+    `to_system_base(0.1, 50, 132, 100, 132)` — bases in the wrong order — is now a
+    `TypeError` rather than a wrong answer.
+
+    `zip(..., strict=True)` catches mismatched lengths that would otherwise truncate
+    silently.
+
+    And the scalar/sequence handling is deliberately explicit. In the next module NumPy
+    makes this unnecessary — an array operation handles both without any branching, which
+    is a good preview of why NumPy exists.
+  </Solution>
+</Exercise>
+
+<Exercise n={3} kind="practice" title="General: a retry decorator">
+  Write a function that calls another function and retries on failure. A general utility,
+  not a power-systems one.
+
+  <Solution>
+    ```python
+    import time
+    from collections.abc import Callable
+    from typing import Any
+
+    def retry(
+        fn: Callable[[], Any],
+        *,
+        attempts: int = 3,
+        delay: float = 1.0,
+        backoff: float = 2.0,
+        exceptions: tuple[type[Exception], ...] = (Exception,),
+    ) -> Any:
+        """Call fn, retrying on failure with exponential backoff.
+
+        Raises the last exception if every attempt fails.
+        """
+        wait = delay
+        last = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                return fn()
+            except exceptions as err:
+                last = err
+                if attempt == attempts:
+                    break
+                print(f"Attempt {attempt} failed ({err}); retrying in {wait:.1f}s")
+                time.sleep(wait)
+                wait *= backoff
+
+        raise RuntimeError(f"All {attempts} attempts failed") from last
+    ```
+
+    ```python
+    data = retry(lambda: fetch_measurements(url), attempts=5, delay=0.5)
+    ```
+
+    Useful whenever something can fail transiently — a network fetch, a flaky instrument
+    read, a file that another process is still writing.
+
+    Note `raise ... from last`. It preserves the original exception as the cause, so the
+    traceback shows *what* actually went wrong rather than just "all attempts failed".
+    Losing that is a common and frustrating mistake in retry code.
+
+    The `exceptions` parameter defaults to catching everything, which is usually too
+    broad — passing `exceptions=(IOError,)` retries genuine I/O problems while letting a
+    programming error surface immediately.
+  </Solution>
+</Exercise>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why is def f(x, log=[]) dangerous?',
+      options: [
+        'Lists cannot be default arguments',
+        'The list is created once at definition, so every call sharing the default mutates the same object',
+        'It is slower than using None',
+        'Python forbids mutable arguments',
+      ],
+      answer: 1,
+      explain:
+        'Defaults are evaluated when the def executes, not per call. Data accumulates across calls. The standard fix is log=None with a check inside.',
+    },
+    {
+      q: 'What does the bare * do in def solve(net, *, tol=1e-8)?',
+      options: [
+        'Accepts any number of arguments',
+        'Forces everything after it to be passed by keyword',
+        'Unpacks a list',
+        'Marks the arguments as optional',
+      ],
+      answer: 1,
+      explain:
+        'Callers must write tol=1e-8. It prevents positional calls where two similar-looking numbers could be silently swapped.',
+    },
+    {
+      q: 'What does a function with no return statement return?',
+      options: ['0', 'None', 'The last expression', 'An error'],
+      answer: 1,
+      explain:
+        'None. Assigning its result gives None, and the failure typically surfaces somewhere else entirely — which makes it annoying to track down.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Keyword arguments with defaults in the signature are a genuine improvement over
+  `varargin`. The one trap with no MATLAB equivalent is the **mutable default**: use
+  `None` and create inside, always.
+</KeyIdea>
+
+## Further reading
+
+- PEP 257 — docstring conventions
+- `dataclasses` — for returning structured results
+- Next: **modules and packages** — turning files into something importable
