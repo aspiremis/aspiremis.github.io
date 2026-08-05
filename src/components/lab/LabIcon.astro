@@ -1,0 +1,197 @@
+---
+/**
+ * Line-drawn icons for laboratory hardware.
+ *
+ * Same treatment as TrackIcon: one 24×24 viewBox, 1.5px strokes, currentColor.
+ * They read as schematic symbols rather than pictograms on purpose — a student
+ * who learns to recognise these here recognises them on a circuit diagram.
+ */
+interface Props {
+  name: string;
+  class?: string;
+}
+
+const { name, class: className = 'h-5 w-5' } = Astro.props;
+---
+
+<svg
+  class={className}
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.5"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  aria-hidden="true"
+>
+  {/* Digital multimeter — a display and a rotary dial */}
+  {name === 'meter' && (
+    <>
+      <rect x="4" y="2.5" width="16" height="19" rx="2" />
+      <rect x="7" y="5.5" width="10" height="4" rx="0.5" />
+      <circle cx="12" cy="15.5" r="3.2" />
+      <path d="M12 15.5v-1.8" />
+    </>
+  )}
+
+  {/* Clamp meter — the jaw around a conductor */}
+  {name === 'clamp' && (
+    <>
+      <path d="M12 3a6 6 0 0 1 6 6v1.5M12 3a6 6 0 0 0-6 6v1.5" />
+      <rect x="4" y="10.5" width="5" height="11" rx="1.5" />
+      <rect x="15" y="10.5" width="5" height="11" rx="1.5" />
+      <path d="M12 6.5v3" />
+    </>
+  )}
+
+  {/* Three-phase supply — three staggered waves */}
+  {name === 'supply' && (
+    <>
+      <path d="M2 8c1.7-3.4 3.3-3.4 5 0s3.3 3.4 5 0 3.3-3.4 5 0 3.3 3.4 5 0" />
+      <path d="M2 14c1.7-3.4 3.3-3.4 5 0s3.3 3.4 5 0 3.3-3.4 5 0 3.3 3.4 5 0" opacity="0.6" />
+      <path d="M2 20c1.7-3.4 3.3-3.4 5 0s3.3 3.4 5 0 3.3-3.4 5 0 3.3 3.4 5 0" opacity="0.35" />
+    </>
+  )}
+
+  {/* Variac — a coil with a wiper */}
+  {name === 'variac' && (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 12 17 7" />
+      <circle cx="12" cy="12" r="1.3" />
+      <path d="M12 3.5v2M20.5 12h-2M12 20.5v-2M3.5 12h2" />
+    </>
+  )}
+
+  {/* Transformer — two coupled windings */}
+  {name === 'transformer' && (
+    <>
+      <path d="M8 5a2.5 2.5 0 0 0 0 5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0 0 4" />
+      <path d="M16 5a2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0 0 5 2.5 2.5 0 0 1 0 4" />
+      <path d="M11.3 4v16M12.7 4v16" />
+    </>
+  )}
+
+  {/* Current transformer — a ring around a primary conductor */}
+  {name === 'ct' && (
+    <>
+      <path d="M12 2v20" />
+      <ellipse cx="12" cy="12" rx="6.5" ry="4.5" />
+      <path d="M18.5 12h3M18 9.5l2.5-1.5" />
+    </>
+  )}
+
+  {/* Power analyser — a display with a waveform and bars */}
+  {name === 'analyzer' && (
+    <>
+      <rect x="2.5" y="4" width="19" height="16" rx="2" />
+      <path d="M5.5 14c1.5-4 3-4 4.5 0s3 4 4.5 0 3-4 4.5 0" />
+      <path d="M5.5 17.5h13" opacity="0.5" />
+      <path d="M5.5 7.5h5" />
+    </>
+  )}
+
+  {/* Load bank — a resistor in a frame */}
+  {name === 'load' && (
+    <>
+      <rect x="2.5" y="3.5" width="19" height="17" rx="2" />
+      <path d="M6 12h2l1.2-3 1.8 6 1.8-6 1.2 3h2" />
+    </>
+  )}
+
+  {/* Capacitor bank — parallel plates */}
+  {name === 'capacitor' && (
+    <>
+      <path d="M12 2.5v6M12 15.5v6" />
+      <path d="M4.5 9.5h15M4.5 14.5h15" />
+      <path d="M7.5 12h9" opacity="0.35" />
+    </>
+  )}
+
+  {/* Transmission line — towers and catenary */}
+  {name === 'line' && (
+    <>
+      <path d="M5 21V7M19 21V7" />
+      <path d="M2 7h6M16 7h6" />
+      <path d="M3.5 9.5h3M17.5 9.5h3" />
+      <path d="M5 8.5c3.5 4 10.5 4 14 0" />
+      <path d="M5 11c3.5 4 10.5 4 14 0" opacity="0.5" />
+    </>
+  )}
+
+  {/* Protective relay — a coil with contacts */}
+  {name === 'relay' && (
+    <>
+      <rect x="3" y="6" width="8" height="12" rx="1" />
+      <path d="M5 8.5h4M5 11h4M5 13.5h4" opacity="0.6" />
+      <path d="M11 12h3" />
+      <circle cx="15" cy="12" r="1" />
+      <path d="M15.8 11.3 20 8" />
+      <circle cx="20.5" cy="7.5" r="1" />
+    </>
+  )}
+
+  {/* Induction motor — the standard circle with M */}
+  {name === 'motor' && (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M9 15V9l3 4 3-4v6" />
+      <path d="M12 3.5V1M12 23v-2.5" opacity="0.5" />
+    </>
+  )}
+
+  {/* Circuit breaker — the standard cross-on-contact symbol */}
+  {name === 'breaker' && (
+    <>
+      <path d="M12 2v5M12 17v5" />
+      <circle cx="12" cy="8" r="1" />
+      <circle cx="12" cy="16" r="1" />
+      <path d="M12.7 8.7 17 15" />
+      <path d="M15 6.5 20 11.5M20 6.5 15 11.5" />
+    </>
+  )}
+
+  {/* Oscilloscope — screen with a trace and a grid */}
+  {name === 'scope' && (
+    <>
+      <rect x="2.5" y="4" width="19" height="14" rx="2" />
+      <path d="M5.5 11c1.3-4 2.6-4 3.9 0s2.6 4 3.9 0 2.6-4 3.9 0" />
+      <path d="M9 18v2.5M15 18v2.5M7.5 20.5h9" />
+    </>
+  )}
+
+  {/* Safety — a shield */}
+  {name === 'shield' && (
+    <>
+      <path d="M12 2.5 4.5 5.5v6c0 4.7 3.1 8.9 7.5 10 4.4-1.1 7.5-5.3 7.5-10v-6z" />
+      <path d="m9 12 2.2 2.2L15.5 10" />
+    </>
+  )}
+
+  {/* Laboratory bench */}
+  {name === 'bench' && (
+    <>
+      <path d="M2.5 10.5h19v2.5h-19z" />
+      <path d="M4.5 13v8M19.5 13v8" />
+      <rect x="6.5" y="4.5" width="5" height="6" rx="0.8" />
+      <circle cx="16" cy="7.5" r="3" />
+    </>
+  )}
+
+  {/* Manual / handbook */}
+  {name === 'book' && (
+    <>
+      <path d="M4 3.5h9a3 3 0 0 1 3 3v14a2.5 2.5 0 0 0-2.5-2.5H4z" />
+      <path d="M20 3.5h-1a3 3 0 0 0-3 3v14a2.5 2.5 0 0 1 2.5-2.5H20z" />
+      <path d="M7 8h6M7 11h4" opacity="0.6" />
+    </>
+  )}
+
+  {/* Waveform — power quality, harmonics */}
+  {name === 'wave' && (
+    <>
+      <path d="M2 12c2-6 4-6 6 0s4 6 6 0 4-6 6 0" />
+      <path d="M2 12c1-2.5 2-2.5 3 0s2 2.5 3 0 2-2.5 3 0 2 2.5 3 0 2-2.5 3 0 2 2.5 3 0" opacity="0.4" />
+    </>
+  )}
+</svg>

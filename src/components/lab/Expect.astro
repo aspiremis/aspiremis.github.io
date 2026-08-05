@@ -1,0 +1,62 @@
+---
+/**
+ * A predicted result, kept structurally separate from a measured one.
+ *
+ * The whole Academy is written before the experiments are performed, so the
+ * page has to be able to say "here is what should happen and why" without that
+ * ever being mistaken for "here is what happened". This component is the wall
+ * between the two: it is visibly a prediction, it always carries the physics
+ * that produces it, and it never holds a number that came from a meter.
+ *
+ * `trend` states the shape of the result; the slot explains why.
+ */
+interface Props {
+  /** The observable being predicted, e.g. 'Receiving-end voltage'. */
+  quantity: string;
+  /** The predicted behaviour, e.g. 'falls as inductive load increases'. */
+  trend: string;
+  /** Roughly how big the effect should be, if that is knowable in advance. */
+  magnitude?: string;
+}
+
+const { quantity, trend, magnitude } = Astro.props;
+---
+
+<div class="not-prose my-7 overflow-hidden rounded-card border border-accent-border bg-accent-tint">
+  <div class="flex items-center gap-2 border-b border-accent-border px-5 py-2.5">
+    <svg
+      class="h-3.5 w-3.5 text-accent"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 17.5 9 11l4 4 8-8.5" />
+      <path d="M15.5 6.5H21v5.5" />
+    </svg>
+    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-accent">Expected</p>
+  </div>
+
+  <div class="px-5 py-4">
+    <p class="text-[15px] leading-relaxed text-fg">
+      <span class="font-medium">{quantity}</span> — {trend}
+      {magnitude && <span class="text-muted"> ({magnitude})</span>}
+    </p>
+
+    <div class="expect-body mt-3 border-t border-accent-border pt-3 text-[15px] leading-relaxed text-muted">
+      <slot />
+    </div>
+  </div>
+</div>
+
+<style>
+  .expect-body :global(p) { margin: 0.5rem 0; }
+  .expect-body :global(p:first-child) { margin-top: 0; }
+  .expect-body :global(p:last-child) { margin-bottom: 0; }
+  .expect-body :global(ul),
+  .expect-body :global(ol) { margin: 0.5rem 0; padding-left: 1.25rem; }
+  .expect-body :global(li) { margin: 0.25rem 0; }
+</style>

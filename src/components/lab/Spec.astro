@@ -1,0 +1,43 @@
+---
+/**
+ * An instrument's typical specifications.
+ *
+ * "Typical" is stated in the heading and meant literally. These describe the
+ * class of instrument you will meet on a teaching bench, not the serial number
+ * in front of you — and the difference matters, because a spec table that
+ * looks authoritative invites you to skip reading the actual nameplate. The
+ * footer says so.
+ */
+interface Props {
+  title?: string;
+  rows: { label: string; value: string; note?: string }[];
+}
+
+const { title, rows } = Astro.props;
+---
+
+<div class="not-prose my-8 overflow-hidden rounded-card border border-line">
+  <div class="border-b border-line bg-bg-subtle px-5 py-3">
+    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">
+      {title ?? 'Typical bench specifications'}
+    </p>
+  </div>
+
+  <dl class="divide-y divide-line">
+    {
+      rows.map((row) => (
+        <div class="grid gap-1 px-5 py-3 sm:grid-cols-[minmax(0,11rem)_1fr] sm:gap-5">
+          <dt class="text-[14px] text-subtle">{row.label}</dt>
+          <dd class="text-[14px] text-fg">
+            <span class="font-mono">{row.value}</span>
+            {row.note && <span class="mt-0.5 block text-[13px] text-subtle">{row.note}</span>}
+          </dd>
+        </div>
+      ))
+    }
+  </dl>
+
+  <p class="border-t border-line bg-bg-subtle px-5 py-2.5 text-[13px] text-subtle">
+    Representative figures. Always read the nameplate on the instrument in front of you.
+  </p>
+</div>

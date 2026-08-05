@@ -1,0 +1,31 @@
+[
+  {
+    "id": "psao",
+    "title": "Power System Analysis & Operation Laboratory",
+    "code": "EE6P004",
+    "semester": 1,
+    "tagline": "First semester · hardware and simulation",
+    "description": "Ten experiments in two halves. Five on live hardware — transmission line trainers, protection relays, induction motors — run before the mid-semester exam, then five MATLAB simulation experiments after it. The hardware half is where I meet a laboratory bench for the first time.",
+    "icon": "bench",
+    "order": 1,
+    "status": "active",
+    "parts": [
+      {
+        "id": "hardware",
+        "title": "Hardware Experiments",
+        "timing": "Before mid-semester",
+        "count": 5,
+        "status": "active",
+        "description": "Five experiments on energised equipment. Voltage regulation and the PV curve of a transmission line model, overcurrent protection of an induction motor, the Ferranti effect and shunt compensation on an HVAC line, the four protection relays, and ZIP load characteristics."
+      },
+      {
+        "id": "software",
+        "title": "MATLAB Simulation Experiments",
+        "timing": "After mid-semester",
+        "count": 5,
+        "status": "upcoming",
+        "description": "Five simulation experiments taken up after the mid-semester exam. These pages will be written once the experiment list is issued — the slots below are placeholders so the shape of the course is visible now rather than appearing later."
+      }
+    ]
+  }
+]

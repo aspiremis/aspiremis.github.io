@@ -1,0 +1,255 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
+import ProgressStore from '../../components/learning/ProgressStore.astro';
+import ProgressRing from '../../components/learning/ProgressRing.astro';
+import LabIcon from '../../components/lab/LabIcon.astro';
+import RoadmapLevel from '../../components/lab/RoadmapLevel.astro';
+import {
+  getAllCourseTrees,
+  getInstruments,
+  getGuides,
+  coursePath,
+  LAB_LEVELS,
+  PART_STATUS,
+} from '../../lib/lab';
+import { formatDuration } from '../../lib/learning';
+
+const [trees, instruments, before, safety] = await Promise.all([
+  getAllCourseTrees(),
+  getInstruments(),
+  getGuides('before'),
+  getGuides('safety'),
+]);
+
+const allExperiments = trees.flatMap((t) => t.parts.flatMap((p) => p.experiments));
+const guides = [...before, ...safety];
+
+// One progress group across the whole Academy — guides, instruments and
+// experiments all count, because all three are things you work through.
+const allIds = [
+  ...guides.map((g) => g.id),
+  ...instruments.map((i) => i.id),
+  ...allExperiments.map((e) => e.id),
+];
+
+const totalMinutes =
+  guides.reduce((s, g) => s + g.data.estimatedMinutes, 0) +
+  instruments.reduce((s, i) => s + i.data.estimatedMinutes, 0) +
+  allExperiments.reduce((s, e) => s + e.data.estimatedMinutes, 0);
+
+// Slots declared but not yet written, across every course.
+const pending = trees.reduce((s, t) => s + t.parts.reduce((n, p) => n + p.pending, 0), 0);
+---
+
+<BaseLayout
+  title="Laboratory Academy"
+  description="A first-principles laboratory handbook for M.Tech Power Systems — hardware, theory, procedure, simulation and industrial context, written before each experiment rather than copied after it."
+  showProgress
+>
+  <ProgressStore />
+
+  <PageHeader
+    eyebrow="Laboratory Academy"
+    title="Learning the bench from zero"
+    lead="This is my first time in an electrical engineering laboratory. Rather than memorise procedures the night before, I'm writing out the hardware, the derivation, and what each meter should read — and why — before I touch anything. These pages are preparation, not write-ups, and they say which they are."
+  >
+    <div class="mt-10 flex flex-wrap items-center gap-x-10 gap-y-6">
+      <ProgressRing lessons={allIds} label="Overall Laboratory Academy progress" size={104} />
+
+      <dl class="grid grid-cols-2 gap-x-10 gap-y-4 sm:grid-cols-4">
+        <div>
+          <dt class="text-xs text-subtle">Experiments</dt>
+          <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">
+            {allExperiments.length}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-xs text-subtle">Instruments</dt>
+          <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">{instruments.length}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-subtle">Foundations</dt>
+          <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">{guides.length}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-subtle">Reading time</dt>
+          <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">
+            {formatDuration(totalMinutes)}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  </PageHeader>
+
+  <div class="mx-auto max-w-(--container-wide) px-5 pb-24 sm:px-8">
+    {/* ------------------------------------------------------------------ */}
+    <section class="mt-16">
+      <SectionHeader
+        title="The path from Level 0"
+        description="Six rungs, and the same six mark the stages inside every experiment page — so the roadmap is the structure, not an illustration of it."
+      />
+
+      <ol class="mt-8 grid gap-3 lg:grid-cols-2">
+        {
+          LAB_LEVELS.map((rung) => (
+            <RoadmapLevel
+              level={rung.level}
+              title={rung.title}
+              blurb={rung.blurb}
+              href={
+                rung.level === 0
+                  ? '/lab/foundations'
+                  : rung.level === 1
+                    ? '/lab/instruments'
+                    : trees[0]
+                      ? coursePath(trees[0].course)
+                      : undefined
+              }
+            />
+          ))
+        }
+      </ol>
+    </section>
+
+    {/* ------------------------------------------------------------------ */}
+    <section class="mt-20">
+      <SectionHeader
+        title="Laboratory courses"
+        description="One section per lab, split the way the course itself is split."
+      />
+
+      <div class="mt-8 grid gap-5 lg:grid-cols-2">
+        {
+          // Stretched link: the title's anchor covers the whole card, so the
+          // target is the card rather than a 20px line of text. It also means
+          // exactly one link per card — the arrow below is an affordance, not
+          // a second tab stop.
+          trees.map((tree) => (
+            <article class="group relative flex flex-col rounded-card border border-line bg-surface p-6 transition-colors focus-within:border-accent-border hover:border-accent-border hover:bg-surface-hover">
+              <div class="flex items-start gap-4">
+                <span class="mt-0.5 shrink-0 text-accent">
+                  <LabIcon name={tree.course.data.icon} class="h-6 w-6" />
+                </span>
+                <div class="min-w-0">
+                  <h3 class="text-[17px] font-semibold leading-snug text-fg">
+                    <a
+                      href={coursePath(tree.course)}
+                      class="transition-colors after:absolute after:inset-0 after:rounded-card group-hover:text-accent"
+                    >
+                      {tree.course.data.title}
+                    </a>
+                  </h3>
+                  <p class="mt-1 text-[13px] text-subtle">
+                    {tree.course.data.code && (
+                      <span class="font-mono">{tree.course.data.code}</span>
+                    )}
+                    {tree.course.data.code && ' · '}
+                    {tree.course.data.tagline}
+                  </p>
+                </div>
+              </div>
+
+              <p class="mt-4 text-[15px] leading-relaxed text-muted">
+                {tree.course.data.description}
+              </p>
+
+              <ul class="mt-5 space-y-2.5 border-t border-line pt-4">
+                {tree.parts.map((part) => (
+                  <li class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                    <span class="text-[14px] text-muted">{part.title}</span>
+                    <span class="flex items-baseline gap-2 text-[13px]">
+                      <span class="font-mono text-subtle">
+                        {part.experiments.length}/{part.count}
+                      </span>
+                      <span class={PART_STATUS[part.status].tone}>
+                        {part.status === 'active' ? part.timing : PART_STATUS[part.status].label}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <p
+                class="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-accent"
+                aria-hidden="true"
+              >
+                Open the lab
+                <svg class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              </p>
+            </article>
+          ))
+        }
+      </div>
+
+      {
+        pending > 0 && (
+          <p class="mt-5 text-[13px] text-subtle">
+            {pending} experiment {pending === 1 ? 'slot is' : 'slots are'} declared but not yet
+            written. They show as empty cards rather than being hidden.
+          </p>
+        )
+      }
+    </section>
+
+    {/* ------------------------------------------------------------------ */}
+    <section class="mt-20 grid gap-5 lg:grid-cols-2">
+      <a
+        href="/lab/foundations"
+        class="group flex flex-col rounded-card border border-line bg-surface p-6 transition-colors hover:border-accent-border hover:bg-surface-hover"
+      >
+        <span class="text-accent"><LabIcon name="book" class="h-6 w-6" /></span>
+        <h3 class="mt-4 text-[17px] font-semibold text-fg transition-colors group-hover:text-accent">
+          Before entering the lab
+        </h3>
+        <p class="mt-2 text-[15px] leading-relaxed text-muted">
+          What a laboratory session actually looks like, how to read a circuit diagram and a
+          nameplate, how observations are recorded — and the safety module, which comes before
+          everything else.
+        </p>
+        <p class="mt-4 font-mono text-[13px] text-subtle">{guides.length} pages</p>
+      </a>
+
+      <a
+        href="/lab/instruments"
+        class="group flex flex-col rounded-card border border-line bg-surface p-6 transition-colors hover:border-accent-border hover:bg-surface-hover"
+      >
+        <span class="text-accent"><LabIcon name="meter" class="h-6 w-6" /></span>
+        <h3 class="mt-4 text-[17px] font-semibold text-fg transition-colors group-hover:text-accent">
+          Every instrument on the bench
+        </h3>
+        <p class="mt-2 text-[15px] leading-relaxed text-muted">
+          What each one is, why it was invented, how it works inside, how to use it without
+          damaging it — and what it cannot tell you.
+        </p>
+        <p class="mt-4 font-mono text-[13px] text-subtle">{instruments.length} instruments</p>
+      </a>
+    </section>
+
+    {/* ------------------------------------------------------------------ */}
+    <section class="mt-20 rounded-card border border-line bg-bg-subtle p-6 sm:p-8">
+      <h2 class="text-[17px] font-semibold text-fg">How these pages are written</h2>
+      <div class="mt-4 grid gap-6 text-[15px] leading-relaxed text-muted sm:grid-cols-3">
+        <p>
+          <span class="block font-medium text-fg">Prediction, not results.</span>
+          Every experiment states what the meters should show and why, in a section kept
+          structurally apart from the observation table. Those tables ship empty. Nothing on
+          these pages is a measurement unless it is marked as one.
+        </p>
+        <p>
+          <span class="block font-medium text-fg">Status on the page.</span>
+          Each experiment says whether it has been prepared, performed, or written up. A page
+          I have studied but not yet run says so at the top.
+        </p>
+        <p>
+          <span class="block font-medium text-fg">Typical, not specific.</span>
+          Where I describe a trainer panel or a relay model I have not yet used, it is
+          described as typical of its class. Read the nameplate in front of you.
+        </p>
+      </div>
+    </section>
+  </div>
+</BaseLayout>

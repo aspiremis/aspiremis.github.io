@@ -1,0 +1,256 @@
+---
+import type { MarkdownHeading } from 'astro';
+
+import BaseLayout from './BaseLayout.astro';
+import MathStyles from '../components/MathStyles.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import ProgressStore from '../components/learning/ProgressStore.astro';
+import CodeTools from '../components/learning/CodeTools.astro';
+import MarkComplete from '../components/learning/MarkComplete.astro';
+import LabIcon from '../components/lab/LabIcon.astro';
+import { DIFFICULTY, formatDuration } from '../lib/learning';
+import { EXPERIMENT_STATUS, experimentPath, coursePath, getGuides } from '../lib/lab';
+import type { Experiment, LabCourse } from '../lib/lab';
+
+interface Props {
+  experiment: Experiment;
+  course: LabCourse;
+  partTitle: string;
+  headings: MarkdownHeading[];
+  previous: Experiment | null;
+  next: Experiment | null;
+}
+
+const { experiment, course, partTitle, headings, previous, next } = Astro.props;
+const d = experiment.data;
+const difficulty = DIFFICULTY[d.difficulty];
+const status = EXPERIMENT_STATUS[d.status];
+
+// The safety module is written in a later phase. Link to it only once it
+// exists — a hazard notice pointing at a 404 is worse than one that doesn't
+// link at all, and this is exactly the mistake the Learning Hub's planned
+// tracks made before they stopped rendering hrefless anchors.
+const safety = await getGuides('safety');
+const safetyHref = safety.length ? `/lab/foundations/${safety[0]!.id}` : null;
+---
+
+<BaseLayout
+  title={`Experiment ${d.number} — ${d.title}`}
+  description={d.description}
+  type="article"
+  publishedAt={d.updated}
+  tags={d.tags}
+  showProgress
+>
+  <MathStyles />
+  <ProgressStore />
+  <CodeTools />
+
+  <article class="mx-auto max-w-(--container-wide) px-5 pt-10 sm:px-8 sm:pt-14">
+    <div class="mx-auto max-w-(--container-prose)">
+      <nav aria-label="Breadcrumb">
+        <ol class="flex flex-wrap items-center gap-1.5 text-[13px] text-subtle">
+          <li><a href="/lab" class="transition-colors hover:text-accent">Laboratory</a></li>
+          <li aria-hidden="true">/</li>
+          <li>
+            <a
+              href={coursePath(course)}
+              class="inline-flex items-center gap-1.5 transition-colors hover:text-accent"
+            >
+              <LabIcon name={course.data.icon} class="h-3.5 w-3.5" />
+              {course.data.title}
+            </a>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li class="text-muted">{partTitle}</li>
+        </ol>
+      </nav>
+
+      <header class="mt-7">
+        <p class="font-mono text-[13px] text-accent">Experiment {d.number}</p>
+        <h1 class="mt-2 text-h1 font-semibold tracking-tight text-fg">{d.title}</h1>
+        <p class="mt-4 text-lead text-muted">{d.description}</p>
+
+        <div class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
+          {/* Status first, deliberately. Whether this has actually been
+              performed is the single most important thing a reader — or an
+              examiner — needs to know before reading anything below. */}
+          <span class:list={['inline-flex items-center gap-2 font-medium', status.tone]}>
+            <span class:list={['h-1.5 w-1.5 rounded-full', status.dot]} aria-hidden="true"></span>
+            {status.label}
+          </span>
+          <span class="text-subtle" aria-hidden="true">·</span>
+          <span class:list={['font-medium', difficulty.tone]}>{difficulty.label}</span>
+          <span class="text-subtle" aria-hidden="true">·</span>
+          <span class="text-subtle">{formatDuration(d.estimatedMinutes)}</span>
+          {
+            d.performedOn && (
+              <>
+                <span class="text-subtle" aria-hidden="true">·</span>
+                <span class="text-subtle">
+                  Performed {d.performedOn.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              </>
+            )
+          }
+        </div>
+
+        <p class="mt-2 text-[13px] text-subtle">{status.hint}</p>
+
+        {
+          d.hazards.length > 0 && (
+            <div class="mt-6 rounded-card border-2 border-red-600/40 bg-red-500/[0.06] p-5">
+              <p class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-700 dark:text-red-400">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M10.3 3.9 2.4 17.4A2 2 0 0 0 4.1 20.4h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+                  <path d="M12 9v4.5M12 17v.5" />
+                </svg>
+                Hazards on this bench
+              </p>
+              <ul class="mt-3 flex flex-wrap gap-2">
+                {d.hazards.map((hazard) => (
+                  <li class="rounded-md border border-red-600/30 bg-red-500/[0.07] px-2.5 py-1 text-[13px] text-red-700 dark:text-red-400">
+                    {hazard}
+                  </li>
+                ))}
+              </ul>
+              <p class="mt-3.5 text-[13px] leading-relaxed text-muted">
+                {safetyHref ? (
+                  <>
+                    Read <a href={safetyHref} class="text-accent underline underline-offset-2">the safety module</a> before your first session, and never energise a circuit your demonstrator has not checked.
+                  </>
+                ) : (
+                  <>Never energise a circuit your demonstrator has not checked.</>
+                )}
+              </p>
+            </div>
+          )
+        }
+
+        <div class="mt-8 rounded-card border border-line bg-bg-subtle p-6">
+          <p class="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">
+            By the end of this experiment you can
+          </p>
+          <ul class="mt-3.5 space-y-2">
+            {
+              d.objectives.map((objective) => (
+                <li class="flex gap-3 text-[15px] leading-relaxed text-muted">
+                  <svg class="mt-1 h-3.5 w-3.5 shrink-0 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m5 12 5 5L20 7" />
+                  </svg>
+                  {objective}
+                </li>
+              ))
+            }
+          </ul>
+
+          {
+            d.subparts.length > 0 && (
+              <div class="mt-5 border-t border-line pt-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">
+                  This experiment has {d.subparts.length} parts
+                </p>
+                <ul class="mt-2.5 space-y-1.5">
+                  {d.subparts.map((sub) => (
+                    <li class="text-[14px] text-muted">
+                      <a href={`#part-${sub.label}`} class="transition-colors hover:text-accent">
+                        <span class="font-mono text-subtle">({sub.label})</span> {sub.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          }
+
+          {
+            d.relatedLessons.length > 0 && (
+              <div class="mt-5 border-t border-line pt-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">
+                  Helpful from the Learning Hub
+                </p>
+                <ul class="mt-2.5 flex flex-wrap gap-2">
+                  {d.relatedLessons.map((id) => (
+                    <li>
+                      <a
+                        href={`/learning/${id}`}
+                        class="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-xs text-muted transition-colors hover:border-accent-border hover:text-accent"
+                      >
+                        {id}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          }
+        </div>
+
+        <slot name="bench" />
+      </header>
+    </div>
+
+    <div class="mt-12 lg:grid lg:grid-cols-[1fr_minmax(0,var(--container-prose))_1fr] lg:gap-10">
+      <div class="hidden lg:block" aria-hidden="true"></div>
+
+      <div class="lesson-body prose-notebook prose max-w-none dark:prose-invert">
+        <slot />
+      </div>
+
+      <aside class="hidden lg:block">
+        <div class="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto pb-8">
+          <TableOfContents headings={headings} />
+        </div>
+      </aside>
+    </div>
+
+    <div class="mx-auto mt-16 max-w-(--container-prose)">
+      <div class="flex flex-wrap items-center gap-4 border-t border-line pt-8">
+        <MarkComplete lessonId={experiment.id} />
+        <p class="text-[13px] text-subtle">Saved in this browser only.</p>
+      </div>
+
+      <nav class="mt-8 grid gap-4 sm:grid-cols-2" aria-label="Experiment navigation">
+        {
+          previous ? (
+            <a
+              href={experimentPath(previous)}
+              class="group rounded-card border border-line bg-surface p-5 transition-colors hover:border-line-strong hover:bg-surface-hover"
+            >
+              <span class="text-xs text-subtle">← Experiment {previous.data.number}</span>
+              <span class="mt-1 block text-sm font-medium text-fg transition-colors group-hover:text-accent">
+                {previous.data.title}
+              </span>
+            </a>
+          ) : (
+            <div />
+          )
+        }
+
+        {
+          next ? (
+            <a
+              href={experimentPath(next)}
+              class="group rounded-card border border-line bg-surface p-5 text-right transition-colors hover:border-line-strong hover:bg-surface-hover"
+            >
+              <span class="text-xs text-subtle">Experiment {next.data.number} →</span>
+              <span class="mt-1 block text-sm font-medium text-fg transition-colors group-hover:text-accent">
+                {next.data.title}
+              </span>
+            </a>
+          ) : (
+            <a
+              href={coursePath(course)}
+              class="group rounded-card border border-accent-border bg-accent-tint p-5 text-right transition-colors"
+            >
+              <span class="text-xs text-accent">End of the written experiments</span>
+              <span class="mt-1 block text-sm font-medium text-accent">
+                Back to {course.data.title}
+              </span>
+            </a>
+          )
+        }
+      </nav>
+    </div>
+  </article>
+</BaseLayout>

@@ -1,0 +1,79 @@
+---
+import { render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+import LabGuideLayout from '../../../layouts/LabGuideLayout.astro';
+
+import Callout from '../../../components/learning/Callout.astro';
+import Analogy from '../../../components/learning/Analogy.astro';
+import KeyIdea from '../../../components/learning/KeyIdea.astro';
+import Quiz from '../../../components/learning/Quiz.astro';
+import Compare from '../../../components/learning/Compare.astro';
+import Exercise from '../../../components/learning/Exercise.astro';
+import Solution from '../../../components/learning/Solution.astro';
+
+import Hazard from '../../../components/lab/Hazard.astro';
+import Figure from '../../../components/lab/Figure.astro';
+import Steps from '../../../components/lab/Steps.astro';
+import Step from '../../../components/lab/Step.astro';
+import Checklist from '../../../components/lab/Checklist.astro';
+import Viva from '../../../components/lab/Viva.astro';
+import Q from '../../../components/lab/Q.astro';
+import Deck from '../../../components/lab/Deck.astro';
+import Flashcard from '../../../components/lab/Flashcard.astro';
+import ResourceList from '../../../components/lab/ResourceList.astro';
+import Term from '../../../components/lab/Term.astro';
+
+import { getGuides } from '../../../lib/lab';
+import type { LabGuide } from '../../../lib/lab';
+
+interface Props {
+  guide: LabGuide;
+  previous: LabGuide | null;
+  next: LabGuide | null;
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  // 'before' runs ahead of 'safety' in reading order, and both sort by `order`
+  // within their section — so the prev/next chain walks the whole foundation.
+  const [before, safety] = await Promise.all([getGuides('before'), getGuides('safety')]);
+  const ordered = [...before, ...safety];
+
+  return ordered.map((guide, i) => ({
+    params: { guide: guide.id },
+    props: {
+      guide,
+      previous: i > 0 ? ordered[i - 1]! : null,
+      next: i < ordered.length - 1 ? ordered[i + 1]! : null,
+    },
+  }));
+};
+
+const { guide, previous, next } = Astro.props;
+const { Content, headings } = await render(guide);
+
+const components = {
+  Callout,
+  Analogy,
+  KeyIdea,
+  Quiz,
+  Compare,
+  Exercise,
+  Solution,
+  Hazard,
+  Figure,
+  Steps,
+  Step,
+  Checklist,
+  Viva,
+  Q,
+  Deck,
+  Flashcard,
+  ResourceList,
+  Term,
+};
+---
+
+<LabGuideLayout guide={guide} headings={headings} previous={previous} next={next}>
+  <Content components={components} />
+</LabGuideLayout>

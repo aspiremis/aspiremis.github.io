@@ -1,0 +1,506 @@
+---
+title: Digital Multimeter
+shortTitle: Multimeter (DMM)
+category: measurement
+tagline: The instrument you will pick up first, and the one most often misread
+description: A DMM measures voltage, current and resistance, and it will give you a confident wrong number in at least four situations you are likely to meet in a power laboratory. This is what is inside it, how to read its accuracy specification honestly, and where it lies.
+icon: meter
+order: 1
+difficulty: beginner
+estimatedMinutes: 35
+specs:
+  - label: Display
+    value: '6000 counts (3¾ digits)'
+    note: Typical teaching-bench meter; bench-top units run to 50,000 counts or more
+  - label: DC voltage accuracy
+    value: '±(0.5% of reading + 3 counts)'
+  - label: AC voltage accuracy
+    value: '±(1.0% of reading + 5 counts), 45–500 Hz'
+  - label: Input impedance
+    value: '10 MΩ'
+    note: On voltage ranges — high enough not to load most circuits
+  - label: AC response
+    value: True RMS or average-responding
+    note: The single most important thing to check before trusting an AC reading
+  - label: Current input fuse
+    value: 'Typically 10 A / 440 V HRC'
+  - label: Safety category
+    value: 'CAT III 600 V or CAT IV 300 V'
+hazards:
+  - Wrong jack, wrong range — a short circuit
+  - Not rated for the circuit you are measuring
+tags: ['instrument', 'measurement', 'multimeter', 'safety']
+---
+
+You will reach for this before anything else, and it is the instrument whose readings you
+are most likely to trust when you should not.
+
+Not because it is inaccurate — a modern DMM is remarkably good — but because it will
+happily report a number in situations where that number does not mean what you think.
+
+## Why it exists
+
+Before the digital multimeter there was the **analogue multimeter**: a moving-coil movement
+with a switched network of shunts and multipliers. It worked, and two of its problems
+mattered enough to replace it.
+
+The first was **loading**. A classic analogue meter is specified in ohms per volt — 20 kΩ/V
+was good — so on a 10 V range its input resistance was 200 kΩ. Connect that across a
+high-impedance node and the meter changes the voltage it is trying to measure. A DMM
+presents 10 MΩ, which is high enough to ignore in nearly all laboratory work.
+
+The second was **reading it**. A needle against a mirrored scale requires you to judge a
+position, and two students reading the same needle disagree. A digital display does not
+have that problem.
+
+<Callout type="note" title="Analogue meters have not disappeared, and there is one good reason">
+  A needle shows you a *trend* — rising, falling, oscillating, unstable — far better than
+  digits, which just flicker. When you are adjusting a variac and watching for the point
+  where a voltage stops rising, the needle is genuinely easier to read.
+
+  This is why bargraph displays exist on good DMMs: a digital reading with an analogue
+  strip underneath it, because the two answer different questions.
+</Callout>
+
+## What is inside
+
+Every measurement a DMM makes is converted into a DC voltage, which is then digitised.
+Everything before the converter is there to perform that conversion.
+
+<Steps title="The signal path">
+  <Step n={1} title="Input protection" expect="nothing, until something goes wrong">
+    Series resistors, spark gaps and MOVs, plus a fuse on the current inputs. This stage
+    does nothing at all in normal use and is the only reason the meter survives being
+    connected to the wrong thing.
+  </Step>
+
+  <Step n={2} title="Range scaling">
+    A precision resistive divider for voltage, a low-value **shunt** for current. The range
+    switch selects which tap the converter sees, which is why ranges come in decades.
+  </Step>
+
+  <Step n={3} title="AC-to-DC conversion" expect="the step that determines whether an AC reading is trustworthy">
+    Either an averaging rectifier or a true-RMS converter. This is the whole subject of the
+    next section, and the difference between the two is the most consequential thing about
+    the instrument.
+  </Step>
+
+  <Step n={4} title="Analogue-to-digital conversion">
+    Classically a **dual-slope integrating** converter: charge a capacitor from the unknown
+    input for a fixed time, then discharge it from a known reference and count how long
+    that takes. The ratio of the two times gives the input, and component tolerances
+    largely cancel because the same capacitor is used both ways.
+  </Step>
+
+  <Step n={5} title="Display">
+    The counter drives the display directly.
+  </Step>
+</Steps>
+
+<Callout type="engineering">
+  The integration time in step 4 is not arbitrary. If the converter integrates over an
+  exact multiple of the mains period, any 50 Hz noise picked up on the leads integrates to
+  **zero** and vanishes from the reading.
+
+  This is why bench meters specify integration in *power line cycles* (NPLC), and why a
+  slower reading is a quieter one. It is a genuinely elegant piece of engineering: the
+  interference is rejected by arithmetic rather than by shielding.
+
+  It also explains something you will notice — a meter set to a fast update rate is
+  noisier. You are trading rejection for speed.
+</Callout>
+
+## True RMS, and why it matters here more than anywhere
+
+An **average-responding** meter rectifies the AC input, measures the average, and
+multiplies by a constant.
+
+For a pure sine wave, RMS is $V_m/\sqrt{2}$ and the rectified average is $2V_m/\pi$, so the
+ratio between them — the form factor — is fixed:
+
+$$
+\frac{V_{\text{rms}}}{V_{\text{avg}}} = \frac{V_m/\sqrt{2}}{2V_m/\pi} = \frac{\pi}{2\sqrt{2}} \approx 1.111
+$$
+
+So the meter measures the average and scales by 1.111. On a clean sine it is exactly right.
+On anything else it is wrong, because 1.111 was only ever true for a sinusoid.
+
+A **true-RMS** meter computes $\sqrt{\overline{v^2}}$ directly, either with an analogue
+computing block or by sampling and doing the arithmetic. It is right for any waveform
+inside its bandwidth and crest factor limits.
+
+<Compare
+  headings={['Waveform', 'Average-responding reads', 'True-RMS reads']}
+  rows={[
+    { option: 'Pure sine', when: 'Correct', cost: 'Correct', recommended: true },
+    { option: 'Distorted by a rectifier load', when: 'Low, often by 10–40%', cost: 'Correct' },
+    { option: 'Square wave', when: 'High by about 11%', cost: 'Correct' },
+    { option: 'Phase-controlled (dimmer, thyristor)', when: 'Badly low', cost: 'Correct' },
+    { option: 'Sine + significant harmonics', when: 'Low', cost: 'Correct' },
+  ]}
+/>
+
+<Callout type="warning" title="Check which one you are holding before you record an AC number">
+  A true-RMS meter says so on its face — *TRMS* or *True RMS* printed near the display. If
+  it does not say so, assume it is average-responding.
+
+  In a power systems laboratory this matters constantly. The moment a rectifier, a variable
+  speed drive or a phase-controlled load appears in the circuit, an average-responding
+  meter reads low and you have no indication that anything is wrong. Two meters on the same
+  node disagreeing is the usual way people discover this.
+</Callout>
+
+<Callout type="engineering">
+  True RMS is not unlimited either. Two specifications bound it.
+
+  **Bandwidth** — typically 45 Hz to 1 kHz on a handheld. Harmonics above that are simply
+  not counted, so a heavily distorted current with significant energy at the 25th harmonic
+  will still read low, on a *true-RMS* meter, without warning.
+
+  **Crest factor** — the ratio of peak to RMS, typically limited to about 3:1. The current
+  drawn by a rectifier-fed power supply can exceed that, and beyond the limit the converter
+  clips.
+
+  When you genuinely need the harmonic content, the DMM is the wrong instrument and a power
+  quality analyser is the right one.
+</Callout>
+
+## Reading the accuracy specification
+
+A DMM specification looks like this:
+
+$$
+\pm(0.5\%\ \text{of reading} + 3\ \text{counts})
+$$
+
+Two terms, and they are not the same kind of thing.
+
+- **% of reading** is proportional error — gain error in the divider and the reference.
+- **counts** is a fixed error in the last digits — offset and quantisation.
+
+Work an example. A 6000-count meter on its 60 V range has a resolution of 0.01 V. Reading
+**50.00 V**:
+
+$$
+0.5\% \times 50 = 0.25\ \text{V}, \qquad 3\ \text{counts} = 0.03\ \text{V}
+$$
+
+Total uncertainty **±0.28 V**, so the true value lies between 49.72 and 50.28 V. The
+display shows four significant figures; you have about three.
+
+Now read **5.00 V** on the same 60 V range:
+
+$$
+0.5\% \times 5 = 0.025\ \text{V}, \qquad 3\ \text{counts} = 0.03\ \text{V}
+$$
+
+Total **±0.055 V** — that is **1.1%**, twice the headline figure, because the fixed term now
+dominates.
+
+<Callout type="tip" title="Always use the lowest range that will hold the reading">
+  On the 6 V range instead, the same 5 V reading has a resolution of 0.001 V, so 3 counts is
+  0.003 V and the total drops to ±0.028 V — better than half the error.
+
+  This is the single most useful habit with a DMM, and autoranging does it for you. Manual
+  ranging is worth it only when you need a fixed range for consistency across a sweep.
+</Callout>
+
+<Callout type="warning" title="Resolution is not accuracy">
+  A display showing `50.00` has a resolution of 0.01 V and an accuracy of ±0.28 V. Those
+  last two digits are real — the meter is genuinely responding to changes that small — but
+  they are not *correct* to that level.
+
+  Recording all four digits in an observation table is fine. Reporting a result to four
+  significant figures because the meter showed four is not.
+</Callout>
+
+## Safety category — the marking that actually matters
+
+Printed near the input jacks you will find something like **CAT III 600 V**. This is not a
+maximum voltage rating in the way you might assume. It describes the **transient
+overvoltage** the instrument can survive at that location in an installation.
+
+<Compare
+  headings={['Category', 'Where', 'Why the energy differs']}
+  rows={[
+    { option: 'CAT I', when: 'Protected electronic equipment', cost: 'No mains connection' },
+    { option: 'CAT II', when: 'Appliances, socket outlets', cost: 'Impedance of the wiring limits fault energy' },
+    { option: 'CAT III', when: 'Distribution boards, busbars, fixed installation', cost: 'Closer to the source — far more available energy', recommended: true },
+    { option: 'CAT IV', when: 'Service entrance, overhead lines, meters', cost: 'Directly exposed to lightning and switching surges' },
+  ]}
+/>
+
+The rule is that **the category matters more than the voltage number**. A CAT II 1000 V
+meter is *less* safe on a distribution board than a CAT III 600 V one, because the
+distribution board can deliver a transient with enough energy to flash over inside the
+meter, and the CAT III instrument is built with the clearances and the energy-absorbing
+input network to survive it.
+
+<Hazard title="Never measure voltage with the leads in the current jacks">
+  The current input is a **near short circuit** — a shunt of a few milliohms. Placing that
+  across a live supply is placing a short across it.
+
+  On a good meter an HRC fuse clears it. On a cheap or badly repaired one, or on a supply
+  stiff enough, you get an arc flash inside an instrument you are holding in your hand.
+
+  Build the habit now: **when you finish measuring current, move the lead back to the volts
+  jack immediately.** Not later, not before the next measurement — immediately. This is the
+  single most common way multimeters, and occasionally students, get hurt.
+</Hazard>
+
+## Using it well
+
+<Steps title="Voltage">
+  <Step n={1} title="Check the meter before you check the circuit" expect="the meter reading the known source correctly">
+    Test it on a known live source first — a socket, a bench supply set to a known value.
+    A meter with a flat battery or a broken lead reads **zero**, which is
+    indistinguishable from a dead circuit.
+  </Step>
+  <Step n={2} title="Leads in COM and V" hazard="Confirm the current jack is empty.">
+    Black to COM, red to the V/Ω jack.
+  </Step>
+  <Step n={3} title="Select AC or DC, and range" expect="a stable reading, not a drifting one">
+    Autoranging handles the range. Selecting DC on an AC circuit gives approximately zero —
+    a reading that looks exactly like a de-energised circuit.
+  </Step>
+  <Step n={4} title="Connect in PARALLEL, across the component">
+    A voltmeter has high impedance and goes across. Getting this backwards means putting a
+    10 MΩ resistor in series with your load, and the circuit stops working.
+  </Step>
+</Steps>
+
+<Steps title="Current">
+  <Step n={1} title="De-energise first" hazard="Breaking a live circuit to insert a meter draws an arc.">
+    The circuit must be broken to insert an ammeter in series. Do that dead.
+  </Step>
+  <Step n={2} title="Move the red lead to the A or mA jack">
+    Note the fuse rating printed beside it — that is your ceiling.
+  </Step>
+  <Step n={3} title="Connect in SERIES, in the path of the current" expect="a reading that falls when load is removed">
+    Low impedance, in line. In parallel it is a short.
+  </Step>
+  <Step n={4} title="Re-energise, read, de-energise, move the lead back">
+    Every time.
+  </Step>
+</Steps>
+
+<Callout type="warning" title="Burden voltage">
+  An ammeter is not free. The shunt develops a voltage — the **burden voltage** — which
+  subtracts from the circuit it is inserted into. On the mA ranges of a handheld meter this
+  can be hundreds of millivolts.
+
+  Measuring a few milliamps in a 3 V circuit through a meter that drops 0.3 V means you are
+  measuring a circuit that no longer exists. In a power lab, where you are usually working
+  at hundreds of volts, this rarely matters — but it is the reason a clamp meter is often
+  the better instrument, since it inserts nothing at all.
+</Callout>
+
+## What it cannot tell you
+
+This is the section that turns a DMM from a magic box into an instrument you understand.
+
+<Deck title="Four things the display will not warn you about">
+  <Flashcard front="What is the phase angle between this voltage and this current?" tag="Cannot measure">
+    A DMM measures magnitude only. It has no phase reference and no second channel, so it
+    cannot give you power factor, real power, or the angle across a line — all of which
+    Experiment 1 needs. That is what a power analyser is for.
+  </Flashcard>
+
+  <Flashcard front="Is this waveform actually a sine?" tag="Cannot measure">
+    A single number carries no shape information. A distorted 230 V and a clean 230 V read
+    identically on a true-RMS meter — correctly, and indistinguishably. Only an
+    oscilloscope or a power quality analyser shows you the waveform.
+  </Flashcard>
+
+  <Flashcard front="Did the voltage dip for 40 ms while I was reading it?" tag="Cannot measure">
+    A DMM integrates over its conversion window and updates a few times a second. A
+    transient, a sag, or a switching event is averaged away or missed entirely. Catching
+    those needs a recorder with a trigger.
+  </Flashcard>
+
+  <Flashcard front="Is this circuit dead?" tag="Dangerous assumption">
+    A zero reading means the meter measured zero. It does not distinguish a dead circuit
+    from a flat battery, a blown fuse, a broken lead or the wrong function selected. This
+    is why you prove the meter on a known live source both BEFORE and AFTER testing for
+    dead.
+  </Flashcard>
+</Deck>
+
+## Compared with the alternatives
+
+<Compare
+  headings={['Instrument', 'Use it when', 'Limitation']}
+  rows={[
+    { option: 'DMM', when: 'You need one accurate magnitude', cost: 'No phase, no waveform, no power', recommended: true },
+    { option: 'Clamp meter', when: 'Measuring current without breaking the circuit', cost: 'Less accurate; usually AC only unless Hall-effect' },
+    { option: 'Power analyser', when: 'You need P, Q, S, power factor, THD', cost: 'More setup; three-phase wiring must be right' },
+    { option: 'Oscilloscope', when: 'You need to see the waveform or a transient', cost: 'Grounding hazards; poor absolute accuracy' },
+    { option: 'Bench DMM', when: 'You need 5½ digits and stability', cost: 'Not portable, mains powered' },
+  ]}
+/>
+
+## Calibration and care
+
+Calibration is a comparison against a traceable standard, and a laboratory meter is
+typically recalibrated annually. Look for the sticker: it carries the date and the next due
+date, and a meter outside its interval produces numbers you cannot defend in a report.
+
+Between calibrations:
+
+<Checklist
+  id="dmm-care"
+  title="Before each session"
+  items={[
+    'Check the leads for cracked insulation and exposed metal at the shrouds',
+    'Check that the probe tips are not bent or loose in the handles',
+    'Prove the meter on a known live source',
+    'Check the battery indicator — a low battery causes drift, not just a blank display',
+    'Confirm the fuse rating printed by the current jacks matches what you are about to do',
+    'Check the CAT rating is right for where you are measuring',
+  ]}
+/>
+
+<Callout type="tip" title="Leads fail more often than meters">
+  A broken conductor inside an intact-looking lead gives an intermittent or zero reading and
+  will waste an hour of your session. If a reading is behaving strangely, swap the leads
+  before you suspect the circuit.
+</Callout>
+
+## Where this shows up in industry
+
+A commissioning engineer verifying a new substation panel uses a CAT IV meter to confirm
+that isolation is real before working — the *prove dead* procedure, where the meter is
+tested on a known source, used to test the circuit, then tested on the known source again.
+Both proving steps are mandatory, and the reason is exactly the fourth flashcard above.
+
+A maintenance technician uses insulation resistance rather than a DMM for winding tests —
+a DMM's ohms range applies a few volts and tells you the winding is continuous, which is
+not the same as telling you it is insulated. A megger applies 500 V or more and asks a
+genuinely different question.
+
+And a protection engineer uses a DMM for continuity and secondary wiring checks, then puts
+it away and uses a relay test set for anything involving timing or phase — because, again,
+the DMM cannot see phase.
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="What is the difference between a true-RMS and an average-responding multimeter?">
+    An average-responding meter rectifies the input, measures the average and multiplies by
+    the form factor 1.111, which is only correct for a pure sine wave. A true-RMS meter
+    computes the square root of the mean square directly, so it is correct for any waveform
+    within its bandwidth and crest factor limits.
+
+    On distorted waveforms — rectifier loads, phase-controlled loads — an average-responding
+    meter reads low, typically by 10 to 40%, with no indication that anything is wrong.
+  </Q>
+
+  <Q q="What does ±(0.5% of reading + 3 counts) mean?">
+    Two error terms. The first is proportional to the measured value and comes from gain
+    error in the divider and reference. The second is a fixed error of three units in the
+    last displayed digit, from offset and quantisation.
+
+    The consequence is that percentage accuracy gets worse as the reading gets smaller
+    relative to the range — which is why you always use the lowest range that holds the
+    reading.
+  </Q>
+
+  <Q q="Why is the input impedance of a DMM 10 MΩ?">
+    So it does not load the circuit. The meter is in parallel with what it measures, so its
+    impedance must be much higher than the source impedance at that node, or the act of
+    measuring changes the value being measured. Older analogue meters at 20 kΩ/V loaded
+    high-impedance circuits noticeably.
+  </Q>
+</Viva>
+
+<Viva band="procedure">
+  <Q q="How do you connect a multimeter to measure current, and why is it different from voltage?">
+    In series, with the circuit broken and de-energised while you insert it, and with the
+    red lead moved to the current jack. An ammeter is a low impedance and must carry the
+    current being measured; a voltmeter is a high impedance and goes across the component.
+
+    Connecting an ammeter in parallel places a near short circuit across the source.
+  </Q>
+
+  <Q q="What is CAT III 600 V, and is it safer than CAT II 1000 V?">
+    CAT III 600 V describes transient overvoltage withstand at distribution level — fixed
+    installations, busbars, distribution boards — at a working voltage of 600 V.
+
+    And yes, at a distribution board the CAT III 600 V meter is safer, because the category
+    reflects available fault energy at that location. Nearer the source, the same voltage
+    can deliver far more energy into a fault, and the CAT III instrument has the clearances
+    and input protection to survive it. Category first, voltage second.
+  </Q>
+
+  <Q q="Your meter reads zero across a circuit you believe is live. What do you conclude?">
+    Nothing yet. A zero reading is consistent with a dead circuit, a flat battery, a blown
+    current fuse, a broken lead, or the wrong function selected.
+
+    Prove the meter on a known live source. If it reads correctly there, the circuit is
+    genuinely dead — and even then, proper practice is to prove the meter again afterwards,
+    in case it failed between the two tests.
+  </Q>
+</Viva>
+
+<Viva band="application">
+  <Q q="Why can a DMM not measure power factor?">
+    Power factor is the cosine of the phase angle between voltage and current. A DMM
+    measures one magnitude at a time and has no phase reference and no second synchronised
+    channel, so the angle is simply not available to it.
+
+    You can infer it indirectly — measure V, I and P with a wattmeter, then compute
+    cos φ = P/(VI) — but the DMM alone cannot supply P either.
+  </Q>
+
+  <Q q="In Experiment 1, why is a DMM not sufficient on its own?">
+    The experiment needs sending and receiving voltage, line current, and real and reactive
+    power at both ends. A DMM gives the first two as magnitudes, but voltage regulation with
+    inductive and capacitive loads is fundamentally about the *phase* relationship — the
+    approximate drop is I(R cos φ ± X sin φ), and the sign depends entirely on whether the
+    load current leads or lags.
+
+    Without phase you can record that the voltage fell, but not explain why, and the PV
+    curve needs real power directly. Hence the power analyser.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  A DMM gives you an accurate **magnitude** and nothing else — no phase, no waveform, no
+  transient. Check whether it is true-RMS before recording any AC reading, use the lowest
+  range that holds the value, and treat a zero reading as unproven until the meter has been
+  tested on a known live source.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 61010-2-033 — Safety requirements for hand-held multimeters',
+      note: 'The source of the CAT ratings. Worth reading the scope section at least once.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 61557 — Equipment for testing electrical safety in low-voltage distribution',
+    },
+    {
+      kind: 'manual',
+      title: 'ABC of Multimeter Safety',
+      by: 'Fluke Corporation',
+      note: 'The application note that popularised the CAT explanation. Vendor material, but technically sound and freely available.',
+    },
+    {
+      kind: 'book',
+      title: 'Electronic Instrumentation and Measurements',
+      by: 'David A. Bell',
+      note: 'Chapters on dual-slope conversion and on error analysis in instruments.',
+    },
+    {
+      kind: 'book',
+      title: 'A Course in Electrical and Electronic Measurements and Instrumentation',
+      by: 'A. K. Sawhney',
+      note: 'The standard Indian text; the measurement-error chapters are the useful part here.',
+    },
+  ]}
+/>

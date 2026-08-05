@@ -1,0 +1,54 @@
+---
+/**
+ * The numbered procedure for an experiment.
+ *
+ * An ordered list would nearly do, but a lab procedure needs two things a list
+ * cannot carry: a per-step safety flag, and a "what you should see" line that
+ * is visually distinct from the instruction itself. Reading an instruction and
+ * knowing what confirms you did it right are different acts.
+ */
+interface Props {
+  title?: string;
+}
+
+const { title } = Astro.props;
+---
+
+<div class="not-prose my-8">
+  {
+    title && (
+      <p class="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-subtle">{title}</p>
+    )
+  }
+  <ol class="lab-steps space-y-0">
+    <slot />
+  </ol>
+</div>
+
+<style>
+  /* The connecting rail between step markers. Drawn on the list rather than
+     per-step so the last item's tail can be trimmed with one rule. */
+  .lab-steps :global(> li) {
+    position: relative;
+    padding-left: 3rem;
+    padding-bottom: 1.5rem;
+  }
+
+  .lab-steps :global(> li::before) {
+    content: '';
+    position: absolute;
+    left: 0.9375rem;
+    top: 2rem;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+
+  .lab-steps :global(> li:last-child) {
+    padding-bottom: 0;
+  }
+
+  .lab-steps :global(> li:last-child::before) {
+    display: none;
+  }
+</style>

@@ -252,6 +252,168 @@ const lessons = defineCollection({
   }),
 });
 
+/* ==========================================================================
+   Laboratory Academy
+   --------------------------------------------------------------------------
+   Four collections mirroring the Learning Hub's shape:
+
+     labCourses → experiments        (like tracks → lessons)
+     instruments                     (a flat reference set, cross-linked)
+     labGuides                       (Before the Lab · Safety)
+
+   A course splits into `parts` — PSAO runs five hardware experiments before
+   the mid-semester exam and five MATLAB ones after — so the two halves are
+   data, not prose, and the second half renders as real (upcoming) cards
+   before its content exists.
+   ========================================================================== */
+
+const LAB_ICONS = [
+  'meter',
+  'clamp',
+  'supply',
+  'variac',
+  'transformer',
+  'ct',
+  'analyzer',
+  'load',
+  'capacitor',
+  'line',
+  'relay',
+  'motor',
+  'breaker',
+  'scope',
+  'shield',
+  'bench',
+  'book',
+  'wave',
+] as const;
+
+const labStatus = z.enum(['active', 'upcoming', 'planned']);
+
+const labCourses = defineCollection({
+  loader: file('./src/content/lab-courses.json'),
+  schema: z.object({
+    id: z.string(),
+    title: z.string(),
+    /** The course code on the registration slip, e.g. EE6P004. */
+    code: z.string().optional(),
+    semester: z.number().int().positive().optional(),
+    tagline: z.string(),
+    description: z.string(),
+    icon: z.enum(LAB_ICONS),
+    order: z.number(),
+    status: labStatus,
+    parts: z
+      .array(
+        z.object({
+          id: z.string(),
+          title: z.string(),
+          /** Free text: 'Before mid-semester'. Timing is a fact, not a schema. */
+          timing: z.string(),
+          /** How many experiments this part will hold when complete. */
+          count: z.number().int().positive(),
+          status: labStatus,
+          description: z.string(),
+        }),
+      )
+      .default([]),
+  }),
+});
+
+const experiments = defineCollection({
+  loader: glob({ base: './src/content/experiments', pattern: '**/*.{md,mdx}' }),
+  schema: z.object({
+    title: z.string(),
+    /** Matches an `id` in lab-courses.json. */
+    course: z.string(),
+    /** Matches a `parts[].id` on that course. */
+    part: z.string(),
+    /** The number on the official experiment sheet. */
+    number: z.number().int().positive(),
+    /**
+     * The lettered parts as the sheet groups them — 1(a) and 1(b) share a
+     * bench and a theory section, so they are one page with two measurement
+     * sections rather than two pages.
+     */
+    subparts: z.array(z.object({ label: z.string(), title: z.string() })).default([]),
+    description: z.string(),
+    objectives: z.array(z.string()).min(1),
+    /** Instrument ids on the bench — rendered as links, so a typo shows. */
+    instruments: z.array(z.string()).default([]),
+    /** Learning Hub lesson ids worth reading first, e.g. 'matlab/variables'. */
+    relatedLessons: z.array(z.string()).default([]),
+    prerequisites: z.array(z.string()).default([]),
+    estimatedMinutes: z.number().int().positive(),
+    difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
+    /**
+     * Where this actually stands. A page prepared but not yet performed says
+     * so on its face — which is what keeps the section truthful as it grows,
+     * and what stops a predicted trend from ever reading as a measurement.
+     */
+    status: z.enum(['prepared', 'performed', 'written-up']).default('prepared'),
+    performedOn: z.coerce.date().optional(),
+    /** Short hazard labels shown in the header, e.g. 'Live 415 V three-phase'. */
+    hazards: z.array(z.string()).default([]),
+    simulation: z.array(z.enum(['matlab', 'python'])).default([]),
+    tags: z.array(z.string()).default([]),
+    updated: z.coerce.date().optional(),
+    draft: z.boolean().default(false),
+  }),
+});
+
+const instruments = defineCollection({
+  loader: glob({ base: './src/content/instruments', pattern: '**/*.{md,mdx}' }),
+  schema: z.object({
+    title: z.string(),
+    /** Used on cards and inline chips where the full name is too long. */
+    shortTitle: z.string().optional(),
+    category: z.enum([
+      'measurement',
+      'source',
+      'protection',
+      'load',
+      'machine',
+      'transformer',
+      'switchgear',
+      'data',
+    ]),
+    tagline: z.string(),
+    description: z.string(),
+    icon: z.enum(LAB_ICONS),
+    order: z.number().default(99),
+    difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
+    estimatedMinutes: z.number().int().positive(),
+    /**
+     * Typical bench specifications. Marked typical rather than measured —
+     * these describe the class of instrument, not one serial number.
+     */
+    specs: z
+      .array(z.object({ label: z.string(), value: z.string(), note: z.string().optional() }))
+      .default([]),
+    hazards: z.array(z.string()).default([]),
+    tags: z.array(z.string()).default([]),
+    updated: z.coerce.date().optional(),
+    draft: z.boolean().default(false),
+  }),
+});
+
+const labGuides = defineCollection({
+  loader: glob({ base: './src/content/lab-guides', pattern: '**/*.{md,mdx}' }),
+  schema: z.object({
+    title: z.string(),
+    section: z.enum(['before', 'safety']),
+    order: z.number(),
+    description: z.string(),
+    objectives: z.array(z.string()).min(1),
+    estimatedMinutes: z.number().int().positive(),
+    /** Which rung of the Level 0–5 roadmap this serves. */
+    level: z.number().int().min(0).max(5).default(0),
+    tags: z.array(z.string()).default([]),
+    updated: z.coerce.date().optional(),
+    draft: z.boolean().default(false),
+  }),
+});
+
 const publications = defineCollection({
   loader: file('./src/content/publications.json'),
   schema: z.object({
@@ -280,4 +442,8 @@ export const collections = {
   tracks,
   modules,
   lessons,
+  labCourses,
+  experiments,
+  instruments,
+  labGuides,
 };

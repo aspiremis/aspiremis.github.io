@@ -1,0 +1,68 @@
+---
+/**
+ * The instrument list for an experiment, rendered from the frontmatter.
+ *
+ * Built from resolved collection entries rather than hand-written prose, so an
+ * instrument that gets renamed or a typo'd id shows up as a missing card
+ * instead of a dead link. The inverse view — "which experiments use this
+ * instrument" — comes off the same data on the instrument page.
+ */
+import LabIcon from './LabIcon.astro';
+import { instrumentPath } from '../../lib/lab';
+import type { Instrument } from '../../lib/lab';
+
+interface Props {
+  instruments: Instrument[];
+  /** Ids from frontmatter that matched no instrument page yet. */
+  missing?: string[];
+}
+
+const { instruments, missing = [] } = Astro.props;
+---
+
+<div class="not-prose my-8">
+  <p class="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-subtle">On the bench</p>
+
+  <ul class="grid gap-3 sm:grid-cols-2">
+    {
+      instruments.map((instrument) => (
+        <li>
+          <a
+            href={instrumentPath(instrument)}
+            class="group flex h-full items-start gap-3.5 rounded-card border border-line bg-surface p-4 transition-colors hover:border-accent-border hover:bg-surface-hover"
+          >
+            <span class="mt-0.5 shrink-0 text-subtle transition-colors group-hover:text-accent">
+              <LabIcon name={instrument.data.icon} class="h-5 w-5" />
+            </span>
+            <span class="min-w-0">
+              <span class="block text-[15px] font-medium leading-snug text-fg transition-colors group-hover:text-accent">
+                {instrument.data.shortTitle ?? instrument.data.title}
+              </span>
+              <span class="mt-1 block text-[13px] leading-relaxed text-subtle">
+                {instrument.data.tagline}
+              </span>
+            </span>
+          </a>
+        </li>
+      ))
+    }
+
+    {
+      missing.map((id) => (
+        <li>
+          <div class="flex h-full items-start gap-3.5 rounded-card border border-dashed border-line bg-bg-subtle p-4">
+            <span class="mt-0.5 shrink-0 text-subtle">
+              <LabIcon name="bench" class="h-5 w-5" />
+            </span>
+            <span class="min-w-0">
+              <span class="block text-[15px] font-medium leading-snug text-muted">{id}</span>
+              <span class="mt-1 block text-[13px] leading-relaxed text-subtle">
+                Instrument page not written yet
+              </span>
+            </span>
+          </div>
+        </li>
+      ))
+    }
+  </ul>
+</div>

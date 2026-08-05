@@ -1,0 +1,119 @@
+---
+import { getCollection, render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+import ExperimentLayout from '../../../layouts/ExperimentLayout.astro';
+
+// Shared with the Learning Hub — a callout is a callout wherever it appears.
+import Callout from '../../../components/learning/Callout.astro';
+import Analogy from '../../../components/learning/Analogy.astro';
+import KeyIdea from '../../../components/learning/KeyIdea.astro';
+import Quiz from '../../../components/learning/Quiz.astro';
+import Compare from '../../../components/learning/Compare.astro';
+import CodeFile from '../../../components/learning/CodeFile.astro';
+import Exercise from '../../../components/learning/Exercise.astro';
+import Solution from '../../../components/learning/Solution.astro';
+
+// Laboratory-specific.
+import Hazard from '../../../components/lab/Hazard.astro';
+import Figure from '../../../components/lab/Figure.astro';
+import Steps from '../../../components/lab/Steps.astro';
+import Step from '../../../components/lab/Step.astro';
+import Checklist from '../../../components/lab/Checklist.astro';
+import ObservationTable from '../../../components/lab/ObservationTable.astro';
+import Expect from '../../../components/lab/Expect.astro';
+import Viva from '../../../components/lab/Viva.astro';
+import Q from '../../../components/lab/Q.astro';
+import Part from '../../../components/lab/Part.astro';
+import Deck from '../../../components/lab/Deck.astro';
+import Flashcard from '../../../components/lab/Flashcard.astro';
+import ResourceList from '../../../components/lab/ResourceList.astro';
+import Term from '../../../components/lab/Term.astro';
+import Bench from '../../../components/lab/Bench.astro';
+
+import { getExperiments, getExperimentNeighbours, resolveInstruments } from '../../../lib/lab';
+import type { Experiment, LabCourse, Instrument } from '../../../lib/lab';
+
+interface Props {
+  experiment: Experiment;
+  course: LabCourse;
+  partTitle: string;
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const [experiments, courses] = await Promise.all([
+    getExperiments(),
+    getCollection('labCourses'),
+  ]);
+
+  return experiments.map((experiment) => {
+    const course = courses.find((c) => c.data.id === experiment.data.course)!;
+    const part = course.data.parts.find((p) => p.id === experiment.data.part);
+
+    // Experiment ids are `<course>/<slug>`; the route splits them back apart.
+    const [, ...rest] = experiment.id.split('/');
+    return {
+      params: { course: experiment.data.course, experiment: rest.join('/') },
+      props: { experiment, course, partTitle: part?.title ?? 'Experiments' },
+    };
+  });
+};
+
+const { experiment, course, partTitle } = Astro.props;
+const { Content, headings } = await render(experiment);
+
+const [{ previous, next }, instruments] = await Promise.all([
+  getExperimentNeighbours(experiment),
+  resolveInstruments(experiment),
+]);
+
+// Ids in frontmatter with no page yet render as dashed placeholders rather
+// than vanishing — a missing instrument page should be visible, not silent.
+const found = new Set(instruments.map((i: Instrument) => i.id));
+const missing = experiment.data.instruments.filter((id) => !found.has(id));
+
+/**
+ * Injected rather than imported per file, exactly as the Learning Hub does it.
+ * An experiment page is already dense; import boilerplate at the top of every
+ * one of them would be the first thing a reader saw.
+ */
+const components = {
+  Callout,
+  Analogy,
+  KeyIdea,
+  Quiz,
+  Compare,
+  CodeFile,
+  Exercise,
+  Solution,
+  Hazard,
+  Figure,
+  Steps,
+  Step,
+  Checklist,
+  ObservationTable,
+  Expect,
+  Viva,
+  Q,
+  Part,
+  Deck,
+  Flashcard,
+  ResourceList,
+  Term,
+};
+---
+
+{/* Bench sits in the layout header, not in the body: knowing what hardware
+    you'll meet belongs with the metadata, and the body's "the bench" section
+    is where each piece gets explained. */}
+<ExperimentLayout
+  experiment={experiment}
+  course={course}
+  partTitle={partTitle}
+  headings={headings}
+  previous={previous}
+  next={next}
+>
+  <Bench slot="bench" instruments={instruments} missing={missing} />
+  <Content components={components} />
+</ExperimentLayout>

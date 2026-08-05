@@ -1,0 +1,92 @@
+---
+/**
+ * Curated further reading, typed by what kind of thing each link is.
+ *
+ * The type badge is not decoration: an IEEE standard, an NPTEL lecture and a
+ * manufacturer application note demand completely different amounts of your
+ * time and carry completely different authority, and knowing which you are
+ * about to open changes whether you open it.
+ *
+ * Entries without a `url` render as plain citations. That is deliberate — a
+ * textbook chapter is worth naming even though it has nowhere to link, and it
+ * beats inventing a URL to make the row look complete.
+ */
+interface Props {
+  title?: string;
+  items: {
+    kind: 'book' | 'standard' | 'course' | 'paper' | 'manual' | 'video' | 'docs';
+    title: string;
+    by?: string;
+    url?: string;
+    note?: string;
+  }[];
+}
+
+const { title, items } = Astro.props;
+
+const KIND = {
+  book: { label: 'Book', tone: 'text-muted' },
+  standard: { label: 'Standard', tone: 'text-accent' },
+  course: { label: 'Course', tone: 'text-emerald-700 dark:text-emerald-400' },
+  paper: { label: 'Paper', tone: 'text-muted' },
+  manual: { label: 'Manual', tone: 'text-muted' },
+  video: { label: 'Video', tone: 'text-muted' },
+  docs: { label: 'Docs', tone: 'text-muted' },
+} as const;
+---
+
+<section class="not-prose my-8">
+  {
+    title && (
+      <p class="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-subtle">{title}</p>
+    )
+  }
+
+  <ul class="divide-y divide-line overflow-hidden rounded-card border border-line">
+    {
+      items.map((item) => {
+        const kind = KIND[item.kind];
+        const Row = item.url ? 'a' : 'div';
+
+        return (
+          <li>
+            <Row
+              {...(item.url ? { href: item.url, rel: 'noopener', target: '_blank' } : {})}
+              class:list={[
+                'group flex flex-wrap items-baseline gap-x-3 gap-y-1 bg-surface px-5 py-3.5',
+                item.url && 'transition-colors hover:bg-surface-hover',
+              ]}
+            >
+              <span
+                class:list={[
+                  'w-[4.5rem] shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em]',
+                  kind.tone,
+                ]}
+              >
+                {kind.label}
+              </span>
+
+              <span class="min-w-0 flex-1">
+                <span
+                  class:list={[
+                    'text-[15px] leading-relaxed text-fg',
+                    item.url && 'transition-colors group-hover:text-accent',
+                  ]}
+                >
+                  {item.title}
+                  {item.url && (
+                    <svg class="ml-1 inline h-3 w-3 align-baseline text-subtle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M7 17 17 7M9 7h8v8" />
+                    </svg>
+                  )}
+                </span>
+                {item.by && <span class="block text-[13px] text-subtle">{item.by}</span>}
+                {item.note && <span class="mt-1 block text-[13px] leading-relaxed text-subtle">{item.note}</span>}
+              </span>
+            </Row>
+          </li>
+        );
+      })
+    }
+  </ul>
+</section>

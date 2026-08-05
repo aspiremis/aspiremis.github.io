@@ -1,0 +1,83 @@
+---
+/**
+ * A figure slot that looks deliberate when it is still empty.
+ *
+ * Most of these will sit unfilled until the photographs get taken in the lab.
+ * A broken <img> or a grey box reading "image missing" would make the page look
+ * unfinished; an explicitly labelled placeholder that says what belongs here
+ * reads as a page waiting for one specific thing. It also doubles as a shot
+ * list — walk the lab, read the placeholders, take those photos.
+ *
+ * `kind` sets the aspect ratio and the placeholder wording, since a wide
+ * circuit diagram and a tall instrument photo want different boxes.
+ */
+interface Props {
+  src?: string;
+  alt?: string;
+  caption?: string;
+  /** Numbering is manual — MDX has no counter and hardcoding is clearer. */
+  label?: string;
+  kind?: 'photo' | 'diagram' | 'plot' | 'screenshot';
+  /** What to shoot, shown only while the slot is empty. */
+  needs?: string;
+}
+
+const { src, alt, caption, label, kind = 'photo', needs } = Astro.props;
+
+const KINDS = {
+  photo: { ratio: 'aspect-4/3', word: 'Photograph' },
+  diagram: { ratio: 'aspect-16/9', word: 'Diagram' },
+  plot: { ratio: 'aspect-16/10', word: 'Plot' },
+  screenshot: { ratio: 'aspect-16/10', word: 'Screenshot' },
+} as const;
+
+const k = KINDS[kind];
+---
+
+<figure class="not-prose my-8">
+  {
+    src ? (
+      <img
+        src={src}
+        alt={alt ?? caption ?? ''}
+        loading="lazy"
+        decoding="async"
+        class="w-full rounded-card border border-line bg-bg-subtle"
+      />
+    ) : (
+      <div
+        class:list={[
+          'flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line-strong bg-bg-subtle px-6 text-center',
+          k.ratio,
+        ]}
+      >
+        <svg
+          class="h-6 w-6 text-subtle"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <circle cx="8.5" cy="9.5" r="1.5" />
+          <path d="m3 17 5-4.5 3.5 3L15 11l6 5.5" />
+        </svg>
+        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">
+          {k.word} to come
+        </p>
+        {needs && <p class="max-w-sm text-[13px] leading-relaxed text-subtle">{needs}</p>}
+      </div>
+    )
+  }
+
+  {
+    (caption || label) && (
+      <figcaption class="mt-3 text-[13px] leading-relaxed text-subtle">
+        {label && <span class="font-medium text-muted">{label}.</span>} {caption}
+      </figcaption>
+    )
+  }
+</figure>

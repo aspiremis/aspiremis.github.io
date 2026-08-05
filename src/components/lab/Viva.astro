@@ -1,0 +1,40 @@
+---
+/**
+ * Viva questions with collapsible answers.
+ *
+ * Native <details> so answers are genuinely hidden until asked for, work
+ * without JavaScript, and are keyboard-operable for free — the same choice as
+ * Exercise/Solution in the Learning Hub.
+ *
+ * Grouping matters more than it looks. An examiner works outward from "what
+ * did you do" to "why does it matter", so the questions are banded by that
+ * progression rather than listed flat, and the band tells you how deep an
+ * answer is expected.
+ */
+interface Props {
+  band?: 'definition' | 'procedure' | 'analysis' | 'application';
+  title?: string;
+}
+
+const { band = 'definition', title } = Astro.props;
+
+const BANDS = {
+  definition: { label: 'Definitions', hint: 'Short, precise, one or two sentences' },
+  procedure: { label: 'Procedure', hint: 'What you did, and why in that order' },
+  analysis: { label: 'Analysis', hint: 'What the numbers mean' },
+  application: { label: 'Application', hint: 'Where this shows up in a real network' },
+} as const;
+
+const b = BANDS[band];
+---
+
+<section class="not-prose my-8">
+  <div class="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <h3 class="text-[15px] font-semibold text-fg">{title ?? b.label}</h3>
+    <p class="text-[13px] text-subtle">{b.hint}</p>
+  </div>
+
+  <div class="divide-y divide-line overflow-hidden rounded-card border border-line">
+    <slot />
+  </div>
+</section>

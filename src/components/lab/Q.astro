@@ -1,0 +1,58 @@
+---
+/**
+ * One viva question. Lives inside <Viva>.
+ *
+ * The answer is the slot. Keep it to what you could actually say out loud —
+ * a written paragraph that reads well is usually twice as long as an answer
+ * that survives being spoken under pressure.
+ */
+interface Props {
+  q: string;
+}
+
+const { q } = Astro.props;
+---
+
+<details class="group bg-surface">
+  <summary
+    class="flex cursor-pointer list-none items-start gap-3 px-5 py-3.5 transition-colors hover:bg-surface-hover"
+  >
+    <svg
+      class="mt-1 h-3.5 w-3.5 shrink-0 text-subtle transition-transform group-open:rotate-90"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+    <span class="text-[15px] leading-relaxed text-fg">{q}</span>
+  </summary>
+
+  <div class="viva-answer border-t border-line bg-bg-subtle px-5 py-4 pl-[2.9rem] text-[15px] leading-relaxed text-muted">
+    <slot />
+  </div>
+</details>
+
+<style>
+  /* Safari still paints a disclosure marker without this. */
+  summary::-webkit-details-marker { display: none; }
+
+  .viva-answer :global(p) { margin: 0.5rem 0; }
+  .viva-answer :global(p:first-child) { margin-top: 0; }
+  .viva-answer :global(p:last-child) { margin-bottom: 0; }
+  .viva-answer :global(ul),
+  .viva-answer :global(ol) { margin: 0.5rem 0; padding-left: 1.25rem; }
+  .viva-answer :global(li) { margin: 0.25rem 0; }
+  .viva-answer :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+</style>

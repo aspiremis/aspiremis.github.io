@@ -1,0 +1,1122 @@
+---
+title: Voltage Regulation and the PV Curve of a Transmission Line
+course: psao
+part: hardware
+number: 1
+subparts:
+  - label: a
+    title: Voltage regulation with resistive, inductive and capacitive loads
+  - label: b
+    title: The power–voltage (PV) curve of an HVAC line
+description: Why a transmission line's receiving-end voltage falls under inductive load and rises under capacitive load, and why there is a maximum power beyond which no voltage solution exists at all.
+objectives:
+  - Predict the sign and rough size of the voltage drop from the load power factor alone
+  - Derive the PV curve from the two-bus power flow equations and explain the nose point
+  - Distinguish a voltage limit from a thermal limit, and say which binds first
+instruments:
+  - digital-multimeter
+  - transmission-line-trainer
+  - variac
+  - rlc-load-bank
+  - power-analyzer
+relatedLessons:
+  - matlab/project-transmission-line
+  - matlab/load-models
+  - matlab/plotting
+prerequisites: []
+estimatedMinutes: 120
+difficulty: beginner
+status: prepared
+hazards:
+  - Live 415 V three-phase
+  - Charged capacitors after switch-off
+  - Voltage RISE above nominal under capacitive load
+simulation:
+  - matlab
+  - python
+tags: ['psao', 'transmission-line', 'voltage-regulation', 'pv-curve', 'voltage-stability']
+---
+
+Two questions, one bench.
+
+The first is old and settled: when you load a transmission line, what happens to the
+voltage at the far end? The answer turns out to depend almost entirely on the *phase* of
+the load current, not its size — and with a capacitive load the voltage goes **up**, which
+is not what intuition suggests.
+
+The second question is the one that ends blackouts. Push more and more power down the same
+line and the receiving voltage sags further and further — until at some point there is no
+solution at all. Not a slow decline: an actual cliff, past which the equations have no real
+answer. That cliff is the nose of the PV curve, and finding it is what Part (b) is about.
+
+## Why this experiment exists
+
+<Callout type="engineering">
+  On 28 September 2003, Italy lost supply to essentially the entire country. On 4 November
+  2006, a single planned line switching in northern Germany split the European grid into
+  three islands. Both events are, in part, stories about how much power a corridor of lines
+  can carry before voltage collapses rather than sags.
+
+  The mathematics you will derive in twenty minutes below — a quadratic in $V^2$ with a
+  discriminant that goes negative — is the same mathematics a system operator's voltage
+  stability assessment runs on a network of thousands of buses.
+
+  The bench version has one line and one load. The structure is identical.
+</Callout>
+
+Three things make this the right first experiment.
+
+It is **visible**. Increase the inductive load and watch a voltmeter fall. Switch to
+capacitive and watch it rise past the source voltage. You do not need instrumentation to
+believe it.
+
+It is **predictive**. The approximate drop formula tells you the sign and roughly the size
+before you switch anything on. An experiment where you know what should happen is an
+experiment where a wrong reading means something.
+
+And it **sets up everything else**. Experiment 3 measures the Ferranti effect, which is
+this same voltage rise driven by the line's own capacitance. Experiment 3(b) adds shunt
+compensation, which is this same effect used deliberately. Experiment 5 measures the ZIP
+load model, which changes the answer to Part (b) — because a constant-power load makes the
+nose sharper than a constant-impedance one.
+
+## Theory
+
+### The short-line model
+
+For a line short enough that shunt capacitance can be ignored — which is what "simplified"
+means in the experiment title — the line is a series impedance:
+
+$$
+Z = R + jX
+$$
+
+and the two ends are related by one equation:
+
+$$
+V_S = V_R + I\,Z
+$$
+
+Take the receiving-end voltage as the phase reference, $V_R = V_R \angle 0°$, and let the
+current lag it by $\varphi$:
+
+$$
+I = I\angle{-\varphi} = I(\cos\varphi - j\sin\varphi)
+$$
+
+Substituting:
+
+$$
+V_S = V_R + I(\cos\varphi - j\sin\varphi)(R + jX)
+$$
+
+$$
+V_S = \underbrace{V_R + I(R\cos\varphi + X\sin\varphi)}_{\text{in phase with } V_R} + j\underbrace{I(X\cos\varphi - R\sin\varphi)}_{\text{in quadrature}}
+$$
+
+The quadrature term rotates the phasor — it produces the load angle — but contributes very
+little to the *magnitude*, because it adds in quadrature to a much larger in-phase
+component. So to a good approximation:
+
+$$
+\boxed{\;\Delta V = |V_S| - |V_R| \approx I\,(R\cos\varphi + X\sin\varphi)\;}
+$$
+
+<KeyIdea>
+  For a **leading** load the current angle flips sign, and so does the reactive term:
+
+  $$\Delta V \approx I(R\cos\varphi - X\sin\varphi)$$
+
+  Since $X \gg R$ on any transmission line, that second term dominates. A sufficiently
+  capacitive load makes $\Delta V$ **negative** — the receiving end sits *above* the
+  sending end. Nothing is generating voltage; the line's own reactance is being driven
+  backwards by leading current.
+</KeyIdea>
+
+### Reading the formula before touching the bench
+
+The formula predicts all three cases in the experiment sheet, without a single measurement:
+
+<Compare
+  headings={['Load', 'φ', 'ΔV ≈ I(R cos φ ± X sin φ)', 'Prediction']}
+  rows={[
+    { option: 'Resistive', when: '0°', cost: 'I·R only — the X term vanishes', recommended: false },
+    { option: 'Inductive (lagging)', when: '+φ', cost: 'I(R cos φ + X sin φ) — both terms add', recommended: false },
+    { option: 'Capacitive (leading)', when: '−φ', cost: 'I(R cos φ − X sin φ) — the X term subtracts', recommended: false },
+  ]}
+/>
+
+So: **small drop, large drop, rise**. In that order. And because $X \gg R$, the inductive
+drop should be several times the resistive drop at the same current — that ratio is the
+sharpest check on whether your readings are sensible.
+
+Voltage regulation is this drop expressed as a fraction of the loaded voltage:
+
+$$
+\text{VR}\% = \frac{|V_{R,\text{no load}}| - |V_{R,\text{full load}}|}{|V_{R,\text{full load}}|}\times 100
+$$
+
+For a short line with no shunt path, no load means no current, so $V_{R,\text{no load}} = V_S$.
+Capacitive load gives a **negative** regulation, which is a correct and slightly startling
+result the first time you compute it.
+
+### From two equations to the PV curve
+
+Now Part (b). Model the source as a stiff voltage $E$ behind the line reactance $X$,
+feeding a load drawing $P + jQ$ at voltage $V$. Neglect $R$ for now — we will come back to
+why that matters on a real bench.
+
+The current is:
+
+$$
+I = \frac{E\angle\delta - V\angle 0}{jX}
+$$
+
+and the complex power delivered to the load is $S = V I^*$, which expands to:
+
+$$
+P = \frac{EV\sin\delta}{X}, \qquad Q = \frac{EV\cos\delta - V^2}{X}
+$$
+
+These are the standard two-bus power flow equations. Now eliminate $\delta$ — rearrange
+both, square, and add, using $\sin^2\delta + \cos^2\delta = 1$:
+
+$$
+(PX)^2 + (QX + V^2)^2 = (EV)^2
+$$
+
+Expanding gives a quadratic in $V^2$:
+
+$$
+\boxed{\;V^4 + V^2\left(2QX - E^2\right) + X^2\left(P^2 + Q^2\right) = 0\;}
+$$
+
+with solution:
+
+$$
+V^2 = \frac{\left(E^2 - 2QX\right) \pm \sqrt{\left(E^2 - 2QX\right)^2 - 4X^2\left(P^2+Q^2\right)}}{2}
+$$
+
+Everything interesting is in that discriminant.
+
+<Callout type="engineering">
+  **Two solutions, one discriminant, three consequences.**
+
+  The $\pm$ gives **two voltages** for the same power. The upper root is the normal
+  operating point. The lower root is a real solution to the equations at which the same
+  power is delivered at low voltage and very high current — physically reachable, and
+  unstable, because there the usual control actions push the system the wrong way.
+
+  When the discriminant reaches **zero**, the two roots merge. That is the nose. Beyond it
+  the discriminant is negative and **there is no real voltage at all** — not a low voltage,
+  no solution. The load is asking for more power than the line can deliver at any voltage.
+
+  This is why a load-flow program *diverges* near collapse rather than returning a bad
+  answer. It is not a numerical failure. There is genuinely nothing to find.
+</Callout>
+
+At unity power factor ($Q = 0$) the algebra collapses to something you can quote:
+
+$$
+P_{\max} = \frac{E^2}{2X}, \qquad V_{\text{critical}} = \frac{E}{\sqrt{2}} \approx 0.707\,E
+$$
+
+The critical voltage is **independent of the line reactance** — a striking result. Halving
+$X$ doubles the transferable power but leaves the collapse voltage at the same 0.707 pu.
+
+<Callout type="warning" title="0.707 pu is not a warning threshold">
+  It is where collapse has already occurred, for a lossless line at unity power factor.
+
+  Real systems operate with lagging load, which pulls the nose down and to the left, and
+  real operating limits sit at 0.95 pu. Nobody plans to approach 0.707 — the number is a
+  bound, not a target, and quoting it as an operating limit in a viva is a mistake.
+</Callout>
+
+<Analogy>
+  Think of the line as a pipe and $\delta$ as the pressure difference across it.
+
+  Opening the valve further increases flow — up to a point. Past that point, the pressure
+  drop needed to push more through has grown so large that the pressure at the far end has
+  collapsed, and the flow you get *falls*. Pushing harder gets you less.
+
+  In the electrical case: $P = EV\sin\delta / X$ has $V$ in it, and $V$ is itself falling
+  as you load. Past the nose, $V$ falls faster than $\sin\delta$ rises.
+</Analogy>
+
+## Safety and pre-lab
+
+<Hazard title="This bench is energised at 415 V three-phase">
+  Three specific things about *this* experiment, beyond the general safety module.
+
+  **The capacitor bank stores charge.** After switching off, the capacitors in the load
+  bank and any line-model shunt capacitance hold voltage — potentially at close to peak
+  value. Wait for the discharge resistors, then verify with a meter before touching
+  anything. Do not trust a lamp or an indicator.
+
+  **The voltage can go ABOVE nominal.** Under capacitive load the receiving end rises above
+  the sending end. Do not assume the far end is the low-voltage end; check both.
+
+  **Near the nose in Part (b) the current is high.** As voltage falls, the current for the
+  same power rises. Watch the ammeter, not only the voltmeter, and stop at the trainer's
+  rated current whether or not you have reached the nose.
+</Hazard>
+
+<Checklist
+  id="psao-1-prelab"
+  title="Pre-lab checklist"
+  tone="safety"
+  items={[
+    'Read the safety module and the transmission line trainer page in full',
+    'Record the trainer nameplate: rated voltage, rated current, R and X per phase',
+    'Confirm the variac is at ZERO before energising, and that you know which way increases',
+    'Confirm the load bank is set to minimum and all capacitor steps are OFF',
+    'Identify the emergency stop and confirm you can reach it from where you will stand',
+    'Confirm the multimeter is true-RMS and within calibration',
+    'Confirm the power analyser CT polarity and phase assignment with your demonstrator',
+    'Have your demonstrator check the wiring before you energise — every time',
+    'Agree who operates the variac and who records; do not do both alone',
+  ]}
+/>
+
+<Callout type="tip" title="Record the nameplate values before anything else">
+  Every prediction on this page needs your trainer's actual $R$ and $X$ per phase. Without
+  them you can observe trends but you cannot check magnitudes, which is most of the value
+  of the experiment.
+
+  If the panel gives only line length and per-kilometre values, multiply them out and write
+  the result in your record.
+</Callout>
+
+## The circuit
+
+<Figure
+  kind="diagram"
+  label="Figure 1"
+  caption="Single line diagram: variac-fed supply, series line model, and switchable R–L–C load with metering at both ends."
+  needs="Draw the SLD from your trainer panel — supply, variac, line model with its R and X blocks, load bank, and the two metering points. Label the actual terminal numbers on your panel so the wiring section matches the hardware in front of you."
+/>
+
+<Figure
+  kind="photo"
+  label="Figure 2"
+  caption="The transmission line trainer panel as wired for this experiment."
+  needs="Photograph the wired panel before energising, with the meter positions visible. This is the shot that makes the write-up reproducible — and it also serves as your record if a reading later looks wrong."
+/>
+
+The topology is the same for both parts:
+
+- The **variac** sets the sending-end voltage, so you control $V_S$ independently of load.
+- The **line model** provides the series $R + jX$. On most trainers this is a set of
+  switchable sections, so you can pick a line length.
+- The **load bank** provides switchable resistive, inductive and capacitive steps.
+- **Metering** goes at both ends: a voltmeter at each end, an ammeter in the line, and the
+  power analyser at the receiving end for $P$, $Q$ and power factor.
+
+<Callout type="warning" title="Set the sending-end voltage once, then leave the variac alone">
+  Both parts of this experiment measure how the *receiving* voltage responds to load. If
+  you adjust the variac to correct the voltage as you go, you have measured nothing — you
+  have measured your own reflexes.
+
+  Set $V_S$ to nominal, record it, and touch nothing but the load from then on. Re-check
+  $V_S$ at every step and note it, because a weak supply will sag on its own and you need
+  to know if it did.
+</Callout>
+
+<Part label="a" title="Voltage regulation with R, L and C loads" measures="How the receiving-end voltage responds to load power factor at constant sending-end voltage.">
+
+#### Procedure
+
+<Steps>
+  <Step n={1} title="Wire the circuit and have it checked" hazard="Do not energise before your demonstrator has checked the wiring.">
+    Supply → variac → line model → load bank, with metering at both ends. Confirm the load
+    bank is at minimum and all capacitor steps are off.
+  </Step>
+
+  <Step n={2} title="Energise and set the sending-end voltage" expect="the receiving-end voltage nearly equal to the sending end — the line is unloaded, so there is almost no drop">
+    Raise the variac slowly to nominal. Record $V_S$ and the no-load $V_R$.
+
+    The small difference between them is your no-load check: it should be close to zero.
+    A large gap means something is drawing current that should not be.
+  </Step>
+
+  <Step n={3} title="Sweep the resistive load" expect="a small, steady fall in receiving voltage">
+    Increase the resistive load in equal steps. At each step record $V_S$, $V_R$, $I$, $P$,
+    $Q$ and power factor. Take a full set at each step before moving on.
+  </Step>
+
+  <Step n={4} title="Return to no load, then sweep the inductive load" expect="a noticeably larger fall than the resistive case at the same current">
+    Reduce to minimum, confirm $V_R$ returns to its no-load value, then repeat with the
+    inductive steps.
+
+    Matching the *current* rather than the load setting is what makes the two sweeps
+    comparable.
+  </Step>
+
+  <Step n={5} title="Return to no load, then sweep the capacitive load" hazard="Capacitors store charge. De-energise and verify discharge before rewiring." expect="the receiving voltage RISING, and passing above the sending end">
+    Repeat with the capacitor steps. Watch $V_R$ rather than the load setting — this is the
+    result that surprises people, and it is worth seeing happen.
+  </Step>
+
+  <Step n={6} title="Shut down safely">
+    Load to minimum, variac to zero, isolate, and verify the capacitors have discharged
+    before disconnecting anything.
+  </Step>
+</Steps>
+
+#### Expected outcomes
+
+<Expect
+  quantity="Receiving-end voltage under resistive load"
+  trend="falls slowly and almost linearly with current"
+  magnitude="drop ≈ I·R, the smallest of the three cases"
+>
+  With $\varphi = 0$ the reactive term vanishes entirely and only $IR$ remains. Since $R$
+  is the smaller of the two line parameters, this is the gentlest of the three curves.
+
+  If your resistive drop is comparable to your inductive drop at the same current, either
+  the line model is unusually resistive — check the nameplate — or the load bank is not as
+  purely resistive as labelled. The power analyser will tell you: check that the power
+  factor really is close to unity.
+</Expect>
+
+<Expect
+  quantity="Receiving-end voltage under inductive load"
+  trend="falls substantially faster than the resistive case at equal current"
+  magnitude="drop ≈ I(R cos φ + X sin φ) — several times the resistive drop"
+>
+  Both terms now contribute, and the $X\sin\varphi$ term dominates because $X \gg R$. This
+  is the case a distribution engineer worries about, and it is why voltage support is a
+  reactive-power problem rather than a real-power one.
+
+  The ratio between the inductive and resistive drops at the same current is roughly
+  $(R\cos\varphi + X\sin\varphi)/R$, so it is a direct measure of your line's X/R ratio.
+  Computing it is the cleanest check that your two sweeps are consistent with each other.
+</Expect>
+
+<Expect
+  quantity="Receiving-end voltage under capacitive load"
+  trend="RISES, and crosses above the sending-end voltage"
+  magnitude="drop ≈ I(R cos φ − X sin φ), which goes negative once X sin φ exceeds R cos φ"
+>
+  Leading current flips the sign of the reactive term. Once the capacitive load is large
+  enough that $X\sin\varphi > R\cos\varphi$, the drop is negative and the receiving end
+  sits above the sending end.
+
+  There is no energy source at the far end. The leading current drives the line reactance
+  in the opposite sense, and the voltage across it adds to rather than subtracts from the
+  source.
+
+  This is the same physics as the Ferranti effect in Experiment 3 — there the capacitance
+  is the line's own rather than a load — and the same physics that shunt capacitor banks
+  exploit deliberately in Experiment 3(b). Three experiments, one mechanism.
+</Expect>
+
+#### Observations
+
+<ObservationTable
+  title="A.1 — Resistive load"
+  index={{ label: 'Step', values: ['No load', '1', '2', '3', '4', '5', '6'] }}
+  columns={[
+    { label: 'V_S', unit: 'V' },
+    { label: 'V_R', unit: 'V' },
+    { label: 'I', unit: 'A' },
+    { label: 'P', unit: 'W' },
+    { label: 'Q', unit: 'var' },
+    { label: 'PF', unit: '—' },
+    { label: 'ΔV', unit: 'V', derived: true },
+    { label: 'VR', unit: '%', derived: true },
+  ]}
+  caption="Record V_S at every step, not just the first — a supply that sags under load will otherwise appear as a line effect."
+/>
+
+<ObservationTable
+  title="A.2 — Inductive load"
+  index={{ label: 'Step', values: ['No load', '1', '2', '3', '4', '5', '6'] }}
+  columns={[
+    { label: 'V_S', unit: 'V' },
+    { label: 'V_R', unit: 'V' },
+    { label: 'I', unit: 'A' },
+    { label: 'P', unit: 'W' },
+    { label: 'Q', unit: 'var' },
+    { label: 'PF', unit: '—' },
+    { label: 'ΔV', unit: 'V', derived: true },
+    { label: 'VR', unit: '%', derived: true },
+  ]}
+/>
+
+<ObservationTable
+  title="A.3 — Capacitive load"
+  index={{ label: 'Step', values: ['No load', '1', '2', '3', '4', '5', '6'] }}
+  columns={[
+    { label: 'V_S', unit: 'V' },
+    { label: 'V_R', unit: 'V' },
+    { label: 'I', unit: 'A' },
+    { label: 'P', unit: 'W' },
+    { label: 'Q', unit: 'var' },
+    { label: 'PF', unit: '—' },
+    { label: 'ΔV', unit: 'V', derived: true },
+    { label: 'VR', unit: '%', derived: true },
+  ]}
+  caption="Expect ΔV and VR% to be negative here. A negative regulation is a correct result, not an arithmetic slip."
+/>
+
+#### Calculations and analysis
+
+For each row, compute:
+
+1. $\Delta V = V_S - V_R$, and $\text{VR}\% = (V_S - V_R)/V_R \times 100$
+2. The power factor angle $\varphi = \cos^{-1}(\text{PF})$, signed by whether $Q$ is
+   positive or negative
+3. The predicted drop $I(R\cos\varphi \pm X\sin\varphi)$ from your nameplate $R$ and $X$
+4. The percentage difference between predicted and measured
+
+Then plot all three sweeps as $V_R$ against $I$ on one set of axes, with the sending-end
+voltage as a horizontal reference line. Three curves that fan out from a common no-load
+point is the picture this experiment produces.
+
+<Callout type="tip" title="Plot predicted and measured on the same axes">
+  Two curves per load type — measured points, and the approximate-formula prediction as a
+  line. Agreement validates both your wiring and your understanding; disagreement localises
+  which one is wrong.
+
+  Expect the approximation to be good at small angles and to drift at large ones, because
+  the quadrature term you neglected grows. Quantifying that drift is a better result than
+  reporting agreement.
+</Callout>
+
+</Part>
+
+<Part label="b" title="The power–voltage (PV) curve" measures="Receiving-end voltage as real power is increased at fixed power factor, approaching the maximum transferable power.">
+
+#### Procedure
+
+<Steps>
+  <Step n={1} title="Set the sending-end voltage and leave it" expect="a stable V_S that you re-confirm at every step">
+    Same circuit as Part (a). Set $V_S$ to nominal and record it.
+  </Step>
+
+  <Step n={2} title="Increase real power in small steps at unity power factor" expect="V_R falling, slowly at first and then faster">
+    Use the resistive load only. Take a full reading set at each step: $V_S$, $V_R$, $I$,
+    $P$, $Q$, PF.
+
+    Steps must get **smaller** as you go. The curve's interesting region is where it turns,
+    and equal load-bank steps take you through it too coarsely.
+  </Step>
+
+  <Step n={3} title="Watch the current, and stop at the rated value" hazard="Current rises steeply as voltage falls. The thermal limit will very likely arrive before the nose.">
+    Record where you stopped and why. On most teaching benches you stop on current, not on
+    reaching the nose — and that fact is itself a result worth reporting.
+  </Step>
+
+  <Step n={4} title="Repeat at lagging power factor" expect="the whole curve lower, and the turning point at lower power">
+    Add inductive load alongside the resistive to hold a roughly constant lagging power
+    factor — around 0.8 if the bank allows it. Sweep again.
+  </Step>
+
+  <Step n={5} title="If time allows, repeat at leading power factor" expect="the curve higher, with more power transferable before it turns">
+    Capacitive steps alongside resistive. This is the compensation result, previewed.
+  </Step>
+
+  <Step n={6} title="Shut down safely">
+    Load to minimum, variac to zero, isolate, verify discharge.
+  </Step>
+</Steps>
+
+#### Expected outcomes
+
+<Expect
+  quantity="The PV curve at unity power factor"
+  trend="falls gently, then steepens, turning back on itself at the nose"
+  magnitude="theoretical P_max = E²/2X for a lossless line; expect measurably less"
+>
+  The curve is the upper branch of the quadratic solution. Near no load it is almost flat —
+  which is exactly why voltage is a poor early warning of proximity to collapse. Most of
+  the voltage change happens in the last part of the range.
+
+  You will very likely not reach the nose. The trainer's rated current arrives first, which
+  is the honest and useful outcome: on a real short line, the **thermal limit binds before
+  the voltage-stability limit**. That ordering reverses on long lines and heavily loaded
+  corridors, which is when voltage stability becomes the operator's binding constraint.
+</Expect>
+
+<Expect
+  quantity="The effect of lagging power factor"
+  trend="the entire curve drops, and the nose moves to lower power"
+  magnitude="from the discriminant: positive Q reduces (E² − 2QX), shrinking the region with a real solution"
+>
+  Look at the quadratic. Lagging $Q$ enters as $-2QX$ inside the squared term and as
+  $+Q^2$ inside the subtracted one — so it attacks the discriminant twice over. The
+  region where a real voltage exists shrinks from both directions.
+
+  Leading $Q$ does the reverse, which is exactly why shunt capacitors and SVCs are the
+  standard response to a voltage stability problem. Experiment 3(b) measures that directly.
+</Expect>
+
+<Expect
+  quantity="Agreement with the lossless prediction"
+  trend="measured maximum power below E²/2X, and the turning voltage above 0.707 E"
+  magnitude="the gap grows with the trainer's R/X ratio"
+>
+  The derivation neglected $R$. A teaching trainer has a much lower X/R ratio than a real
+  transmission line, so the resistive drop is a larger share of the total.
+
+  Series resistance dissipates real power and adds an in-phase drop, both of which reduce
+  the deliverable power and lift the turning voltage. So expect $P_{\max}$ below the
+  lossless figure and $V_{\text{critical}}$ above $0.707E$.
+
+  **Quantifying that gap is a better result than matching the ideal formula.** Compare the
+  lossless prediction against a numerical solution that includes $R$ — the simulation
+  section below does exactly this — and report both.
+</Expect>
+
+#### Observations
+
+<ObservationTable
+  title="B.1 — Unity power factor"
+  rows={10}
+  columns={[
+    { label: 'V_S', unit: 'V' },
+    { label: 'V_R', unit: 'V' },
+    { label: 'I', unit: 'A' },
+    { label: 'P', unit: 'W' },
+    { label: 'Q', unit: 'var' },
+    { label: 'PF', unit: '—' },
+    { label: 'V_R / V_S', unit: 'pu', derived: true },
+  ]}
+  caption="Take smaller steps as the voltage starts to fall faster. Ten rows is a guide — use more near the turn."
+/>
+
+<ObservationTable
+  title="B.2 — Lagging power factor (target ≈ 0.8)"
+  rows={10}
+  columns={[
+    { label: 'V_S', unit: 'V' },
+    { label: 'V_R', unit: 'V' },
+    { label: 'I', unit: 'A' },
+    { label: 'P', unit: 'W' },
+    { label: 'Q', unit: 'var' },
+    { label: 'PF', unit: '—' },
+    { label: 'V_R / V_S', unit: 'pu', derived: true },
+  ]}
+/>
+
+<ObservationTable
+  title="B.3 — Leading power factor (if time allows)"
+  rows={8}
+  columns={[
+    { label: 'V_S', unit: 'V' },
+    { label: 'V_R', unit: 'V' },
+    { label: 'I', unit: 'A' },
+    { label: 'P', unit: 'W' },
+    { label: 'Q', unit: 'var' },
+    { label: 'PF', unit: '—' },
+    { label: 'V_R / V_S', unit: 'pu', derived: true },
+  ]}
+/>
+
+#### Calculations and analysis
+
+Plot $V_R$ (or $V_R/V_S$ in per unit) on the vertical axis against $P$ on the horizontal —
+this orientation, with voltage vertical, is the convention and makes the nose read as a
+nose.
+
+Overlay all three power factors, and overlay the theoretical curves computed from your
+nameplate $R$ and $X$.
+
+Then state, explicitly:
+
+- The maximum power you reached, and **why you stopped** — current limit, or the turn
+- The measured $V_R/V_S$ at that point
+- How the lagging curve compares with the unity curve at the same power
+- The gap between your measurements and the lossless $E^2/2X$, with $R$ offered as the
+  explanation and the numerical solution as evidence
+
+<Callout type="warning" title="Do not extrapolate to a nose you did not reach">
+  It is tempting to fit a curve through your points and read off where it would have turned.
+
+  Resist it. The extrapolation is dominated by the very region you have no data in, and the
+  load model changes character there. Report the range you measured and say plainly that
+  the nose lies beyond it. A stated limit is a result; an extrapolated nose is a guess
+  wearing a graph.
+</Callout>
+
+</Part>
+
+## Simulation
+
+Both parts model in a few lines. Run these **before** the lab with your nameplate values —
+then you walk in already knowing what the meters should read.
+
+<CodeFile name="voltage_regulation.m">
+```matlab
+function voltage_regulation()
+% Predicts Part (a) for all three load types.
+%
+% REPLACE R, X and Vs with your trainer's nameplate values before use.
+% Everything here is a prediction, not a measurement.
+
+R  = 2.0;      % ohm per phase   <-- from the panel
+X  = 8.0;      % ohm per phase   <-- from the panel
+Vs = 230;      % V phase-neutral <-- your chosen sending-end voltage
+
+I = linspace(0, 5, 60);                 % line current sweep, A
+
+cases = struct( ...
+    'name', {'Resistive', 'Inductive 0.8 lag', 'Capacitive 0.8 lead'}, ...
+    'phi',  {0, acos(0.8), -acos(0.8)});
+
+figure; hold on; grid on
+
+for k = 1:numel(cases)
+    phi = cases(k).phi;
+
+    % Exact: solve for Vr given Vs, Z and the current phasor
+    Vr_exact = abs(Vs - I .* exp(-1j*phi) * (R + 1j*X));
+
+    % Approximate drop formula from the derivation
+    Vr_approx = Vs - I .* (R*cos(phi) + X*sin(phi));
+
+    plot(I, Vr_exact,  'LineWidth', 1.6, 'DisplayName', cases(k).name)
+    plot(I, Vr_approx, '--', 'HandleVisibility', 'off')
+end
+
+yline(Vs, ':', 'V_S', 'LineWidth', 1.2)
+xlabel('Line current (A)')
+ylabel('Receiving-end voltage (V)')
+title('Predicted voltage regulation — solid: exact, dashed: approximation')
+legend('Location', 'southwest')
+
+% The capacitive curve should cross ABOVE Vs. If it does not, X is too
+% small relative to R for the leading term to dominate — check the
+% nameplate values before blaming the experiment.
+end
+```
+</CodeFile>
+
+<CodeFile name="pv_curve.m">
+```matlab
+function pv_curve()
+% Part (b): PV curves at three power factors, lossless and with R.
+
+E = 230;       % V, stiff source behind the line
+X = 8.0;       % ohm per phase
+R = 2.0;       % ohm per phase — set to 0 to see the textbook curve
+
+pfs = [1.0, 0.8, 0.8];
+lag = [true, true, false];          % third case is leading
+
+figure; hold on; grid on
+
+for k = 1:numel(pfs)
+    phi = acos(pfs(k));
+    if ~lag(k), phi = -phi; end
+
+    P = linspace(0, 1.2 * E^2/(2*X), 400);
+    Q = P .* tan(phi);
+
+    % V^4 + V^2 (2QX - E^2) + X^2 (P^2 + Q^2) = 0
+    b = 2*Q*X - E^2;
+    c = X^2 * (P.^2 + Q.^2);
+    disc = b.^2 - 4*c;
+
+    ok = disc >= 0;                          % beyond this, NO real solution
+    V_upper = sqrt((-b(ok) + sqrt(disc(ok))) / 2);
+    V_lower = sqrt((-b(ok) - sqrt(disc(ok))) / 2);
+
+    label = sprintf('pf = %.2f %s', pfs(k), ternary(lag(k), 'lag', 'lead'));
+    h = plot(P(ok), V_upper, 'LineWidth', 1.8, 'DisplayName', label);
+    plot(P(ok), V_lower, ':', 'Color', h.Color, 'HandleVisibility', 'off')
+end
+
+% Validation: at unity pf the lossless nose must sit at E^2/2X, 0.707E
+plot(E^2/(2*X), E/sqrt(2), 'ko', 'MarkerFaceColor', 'k', ...
+     'DisplayName', 'Theoretical nose (pf = 1)')
+
+xlabel('Real power delivered (W)')
+ylabel('Receiving-end voltage (V)')
+title('PV curves — solid: stable branch, dotted: unstable branch')
+legend('Location', 'southwest')
+end
+
+function out = ternary(cond, a, b)
+if cond, out = a; else, out = b; end
+end
+```
+</CodeFile>
+
+<CodeFile name="pv_curve.py">
+```python
+"""PV curves for a two-bus system — the Python equivalent.
+
+Solves the same quadratic in V^2 and marks where the discriminant goes
+negative, which is where no real voltage solution exists.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def pv_curve(E, X, pf, lagging=True, n=400, p_max_factor=1.2):
+    """Upper and lower voltage branches against real power.
+
+    Returns (P, V_upper, V_lower), each masked to where a solution exists.
+    """
+    phi = np.arccos(pf) * (1 if lagging else -1)
+
+    P = np.linspace(0, p_max_factor * E**2 / (2 * X), n)
+    Q = P * np.tan(phi)
+
+    b = 2 * Q * X - E**2
+    c = X**2 * (P**2 + Q**2)
+    disc = b**2 - 4 * c
+
+    ok = disc >= 0                       # past this point: voltage collapse
+    return (
+        P[ok],
+        np.sqrt((-b[ok] + np.sqrt(disc[ok])) / 2),
+        np.sqrt((-b[ok] - np.sqrt(disc[ok])) / 2),
+    )
+
+
+if __name__ == '__main__':
+    E, X = 230.0, 8.0                    # <-- your nameplate values
+
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+
+    for pf, lagging, label in [(1.0, True, 'pf = 1.00'),
+                               (0.8, True, 'pf = 0.80 lag'),
+                               (0.8, False, 'pf = 0.80 lead')]:
+        P, V_up, V_lo = pv_curve(E, X, pf, lagging)
+        line, = ax.plot(P, V_up, lw=1.8, label=label)
+        ax.plot(P, V_lo, ls=':', lw=1.2, color=line.get_color())
+
+    # Validate against the closed form before believing the plot
+    p_nose, v_nose = E**2 / (2 * X), E / np.sqrt(2)
+    ax.plot(p_nose, v_nose, 'ko', ms=5, label='Theoretical nose (pf = 1)')
+
+    P1, V1, _ = pv_curve(E, X, 1.0)
+    assert np.isclose(P1.max(), p_nose, rtol=0.01), 'nose does not match E^2/2X'
+    assert np.isclose(V1[-1], v_nose, rtol=0.01), 'critical voltage is not E/sqrt(2)'
+
+    ax.set_xlabel('Real power delivered (W)')
+    ax.set_ylabel('Receiving-end voltage (V)')
+    ax.set_title('PV curves — solid: stable, dotted: unstable')
+    ax.legend(loc='lower left')
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    plt.show()
+```
+</CodeFile>
+
+<Callout type="tip" title="The two asserts are the point of the Python version">
+  Checking the numerical curve against the closed-form $E^2/2X$ and $E/\sqrt{2}$ before
+  plotting is the habit worth carrying: **two independent routes to the same number**.
+
+  If the assert fails, the code is wrong. If it passes and the plot still looks wrong, your
+  intuition about the plot is what needs revising. Either outcome is useful; a plot with no
+  check behind it is neither.
+</Callout>
+
+## Where this shows up in practice
+
+**Distribution planning.** A feeder's voltage profile is calculated with exactly the
+approximate drop formula, summed section by section. When a new industrial load with poor
+power factor connects at the end of a long rural feeder, this calculation is what decides
+whether a capacitor bank, a voltage regulator or a reconductoring job is needed.
+
+**Reactive power pricing.** Utilities penalise low power factor, and the formula shows why:
+the $X\sin\varphi$ term means a lagging customer causes voltage drop for every other
+customer on the feeder, without consuming much energy. The penalty prices an externality.
+
+**Voltage stability assessment.** System operators compute PV curves — usually called
+nose curves — for critical corridors, and set transfer limits from a margin to the nose,
+typically 5% on power. The lower branch you plotted as a dotted line is why the criterion
+is a *margin* rather than a voltage threshold: by the time voltage looks bad, the margin
+has already gone.
+
+**Solar hosting capacity.** Distributed PV injects real power at the far end of a feeder,
+which reverses the sign of $I$ and pushes the voltage *up* — the same arithmetic as your
+capacitive case. The upper voltage limit is now the binding constraint on how much PV a
+feeder can host, which inverts a century of distribution design.
+
+<Callout type="engineering">
+  That last one is worth pausing on, because it connects this bench directly to current
+  research.
+
+  For a hundred years distribution networks were designed around one assumption: power
+  flows outward, and voltage falls with distance. Every regulator setting, tap changer and
+  protection scheme encodes it.
+
+  Rooftop solar breaks the assumption. At midday on a lightly loaded feeder, power flows
+  *backwards* and the far end becomes the highest-voltage point. The physics is unchanged —
+  it is still $\Delta V \approx I(R\cos\varphi + X\sin\varphi)$, with $I$ reversed — but
+  every operational rule built on the old assumption now points the wrong way.
+
+  And note which term dominates *here*: distribution feeders have low X/R, so the
+  $R\cos\varphi$ term matters as much as the reactive one. Real power injection moves the
+  voltage. That is why PV inverters are now required to provide reactive support.
+</Callout>
+
+## Extending this into a project
+
+<Exercise n={1} kind="practice" title="Turn Part (b) into a hosting capacity study">
+  Combine both parts into something closer to a research question.
+
+  <Solution>
+    The natural extension: instead of a load at the receiving end, model a **generator** —
+    negative $P$ — and find the injection at which the receiving voltage hits the upper
+    statutory limit rather than the lower one.
+
+    ```python
+    def hosting_limit(E, X, R, v_max=1.05, pf=1.0):
+        """Largest real power injection before the upper voltage limit binds."""
+        from scipy.optimize import brentq
+
+        def violation(p_inject):
+            v = solve_receiving_voltage(E, R, X, -p_inject, pf)
+            return v / E - v_max
+
+        return brentq(violation, 0, 10 * E**2 / (2 * X))
+    ```
+
+    Three things make this a genuine study rather than an exercise.
+
+    **Sweep the X/R ratio.** A transmission line and a distribution feeder behave
+    completely differently, and the crossover — where real power injection stops mattering
+    more than reactive — is the interesting number.
+
+    **Add the inverter power factor as a variable.** Modern grid codes let inverters absorb
+    reactive power to hold voltage down. Quantifying how much hosting capacity that buys is
+    a real and current question.
+
+    **Report a curve, not a number.** Hosting capacity depends on load at the time of peak
+    generation, so the honest answer is a distribution across load conditions rather than a
+    single megawatt figure. The Python track's capstone builds exactly this.
+
+    This is also, more or less, the shape of a publishable minor project — which is worth
+    knowing when a supervisor asks what you might work on.
+  </Solution>
+</Exercise>
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Define voltage regulation.">
+    The change in receiving-end voltage from no load to full load, expressed as a fraction
+    of the full-load voltage:
+
+    VR% = (|V_R,no-load| − |V_R,full-load|) / |V_R,full-load| × 100
+
+    For a short line with no shunt path, the no-load receiving voltage equals the sending
+    voltage, since no current flows and there is no drop.
+  </Q>
+
+  <Q q="Can voltage regulation be negative? What does that mean physically?">
+    Yes — under a leading (capacitive) load. The approximate drop is I(R cos φ − X sin φ),
+    and once X sin φ exceeds R cos φ the drop is negative, so the receiving end sits above
+    the sending end.
+
+    No energy is being generated at the far end. Leading current drives the line reactance
+    in the opposite sense, so the voltage developed across it adds to the source rather
+    than subtracting from it. It is the same mechanism as the Ferranti effect.
+  </Q>
+
+  <Q q="What is the nose point of a PV curve?">
+    The maximum real power the system can deliver, where the two solutions of the voltage
+    quadratic merge and the discriminant reaches zero.
+
+    Beyond it the discriminant is negative and there is no real voltage solution at all —
+    the load demands more power than the line can supply at any voltage. This is why a
+    load-flow diverges near collapse rather than returning a poor answer: there is nothing
+    to converge to.
+  </Q>
+</Viva>
+
+<Viva band="procedure">
+  <Q q="Why must the sending-end voltage be held constant throughout?">
+    Because the experiment measures how the receiving voltage responds to load. If you
+    adjust the variac as you go, the change you record is your correction, not the line's
+    behaviour.
+
+    You still record V_S at every step — a supply that sags under load would otherwise
+    appear as a line effect and corrupt every computed regulation figure.
+  </Q>
+
+  <Q q="Why take smaller steps near the end of the PV sweep?">
+    The curve is nearly flat at light load and turns sharply near the nose. Equal steps put
+    most of your data where nothing is happening and almost none where the behaviour
+    changes.
+
+    This is also the operational point: voltage is a poor early indicator of proximity to
+    collapse, precisely because most of the change occurs in the last part of the range.
+  </Q>
+
+  <Q q="You stopped at rated current without reaching the nose. Is the experiment a failure?">
+    No — it is a result. On a short line the thermal limit binds before the voltage
+    stability limit, and demonstrating that ordering is a legitimate finding.
+
+    Report the maximum power reached, the reason you stopped, and the theoretical nose from
+    E²/2X for comparison. What you must not do is extrapolate a nose from data that stops
+    well short of it.
+  </Q>
+</Viva>
+
+<Viva band="analysis">
+  <Q q="Your measured maximum power is below E²/2X. Why?">
+    The closed form neglects series resistance. A teaching trainer has a far lower X/R ratio
+    than a real transmission line, so R contributes both a dissipative loss and an in-phase
+    voltage drop, and both reduce the deliverable power.
+
+    Series resistance also lifts the critical voltage above 0.707E. Solving the full
+    quadratic with R included, rather than the lossless form, is what closes the gap — and
+    quantifying that gap is a better result than reproducing the ideal figure.
+  </Q>
+
+  <Q q="Why does lagging power factor lower the whole PV curve?">
+    Look at the discriminant of V⁴ + V²(2QX − E²) + X²(P² + Q²) = 0.
+
+    Lagging Q reduces (E² − 2QX), shrinking the squared term, and simultaneously increases
+    X²(P² + Q²), enlarging the subtracted term. It attacks the discriminant from both
+    directions, so the region with a real solution shrinks and the nose arrives at lower
+    power.
+
+    Leading Q does the reverse, which is exactly why shunt compensation is the standard
+    remedy for a voltage stability problem.
+  </Q>
+
+  <Q q="What is the significance of the lower branch of the PV curve?">
+    It is a mathematically valid operating point delivering the same power at low voltage
+    and high current. Real systems do not operate there, because it is unstable under the
+    usual control actions: on the lower branch, increasing load admittance *decreases*
+    delivered power, so a load-restoring control such as a tap changer drives the voltage
+    down further rather than recovering it.
+
+    That mechanism — tap changers acting to restore voltage and thereby accelerating
+    collapse — is a documented contributor to real voltage collapse events.
+  </Q>
+</Viva>
+
+<Viva band="application">
+  <Q q="Where would you use this analysis in a real utility?">
+    Feeder voltage profile calculations in distribution planning; setting transfer limits on
+    transmission corridors from PV curve margins, typically 5% on power; sizing capacitor
+    banks and SVCs; and increasingly, determining solar hosting capacity, where the same
+    equations run with reversed current and the upper voltage limit binds instead of the
+    lower.
+  </Q>
+
+  <Q q="How does distributed solar change the picture?">
+    It reverses the sign of the current, so the voltage rises with distance rather than
+    falling — the far end of the feeder becomes its highest-voltage point at midday.
+
+    The physics is unchanged; what changes is which limit binds. And on distribution
+    feeders, where X/R is low, the R cos φ term is comparable to the reactive one, so real
+    power injection moves the voltage significantly. That is the reason modern grid codes
+    require inverters to provide reactive support.
+  </Q>
+</Viva>
+
+## Common mistakes and troubleshooting
+
+<Compare
+  headings={['Symptom', 'Likely cause', 'Check']}
+  rows={[
+    { option: 'No-load V_R noticeably below V_S', when: 'Something is drawing current', cost: 'Load bank not at minimum; a capacitor step left on; metering burden' },
+    { option: 'Capacitive load gives no voltage rise', when: 'X too small relative to R, or too little capacitance', cost: 'Nameplate X/R ratio; whether more capacitor steps are available' },
+    { option: 'Resistive and inductive drops are similar', when: 'Load is not as pure as labelled', cost: 'Read the power factor on the analyser rather than trusting the label' },
+    { option: 'Power factor reads negative or nonsensical', when: 'CT polarity reversed', cost: 'CT orientation and phase assignment with your demonstrator' },
+    { option: 'V_S drifts down as load increases', when: 'The supply itself is sagging', cost: 'Record V_S every step and use the measured value in every calculation' },
+    { option: 'Readings jump between steps', when: 'Loose connection, or reading before settling', cost: 'Connections when de-energised; wait for the reading to settle' },
+  ]}
+/>
+
+<Callout type="warning" title="The most common error is arithmetic, not wiring">
+  Using the *nominal* sending-end voltage in the regulation calculation instead of the value
+  you measured at that step.
+
+  If the supply sagged by 2 V under load and you used the nominal figure, every regulation
+  number in your table is wrong by an amount that varies with load — which looks exactly
+  like a real effect and is very hard to spot afterwards. Use the measured $V_S$ from the
+  same row, every time.
+</Callout>
+
+## Frequently asked
+
+<Viva band="definition" title="FAQ">
+  <Q q="Why is the drop formula an approximation? When does it break?">
+    It keeps only the component of the drop in phase with V_R and discards the quadrature
+    part. Since the quadrature term adds in quadrature to a much larger in-phase component,
+    its contribution to the magnitude is second-order.
+
+    It breaks down at large load angles and at very high loading — precisely the conditions
+    of Part (b) near the nose. That is why Part (b) needs the full quadratic rather than the
+    approximation.
+  </Q>
+
+  <Q q="Why plot voltage on the vertical axis when power is the independent variable?">
+    Convention, and it earns its keep: with V vertical the curve reads as a nose, and the
+    two solutions for a given power appear one above the other, which is the whole point.
+    Plotted the other way it is a sideways parabola and the two branches are much harder to
+    interpret.
+  </Q>
+
+  <Q q="Is the critical voltage really always 0.707 pu?">
+    Only for a lossless line at unity power factor. Adding resistance raises it; lagging
+    power factor changes it; a constant-power load characteristic changes it again.
+
+    Treat 0.707 as a reference result that shows the critical voltage is independent of X in
+    the ideal case — a genuinely useful insight — rather than as a number to expect on a
+    real system.
+  </Q>
+</Viva>
+
+## References
+
+<ResourceList
+  items={[
+    {
+      kind: 'book',
+      title: 'Power System Analysis',
+      by: 'John J. Grainger and William D. Stevenson Jr.',
+      note: 'Chapters 5–6: transmission line models, ABCD parameters, voltage regulation. The standard derivation of the approximate drop formula.',
+    },
+    {
+      kind: 'book',
+      title: 'Power System Stability and Control',
+      by: 'Prabha Kundur',
+      note: 'Chapter 14 on voltage stability — the authoritative treatment of PV curves, the lower branch, and the tap-changer mechanism.',
+    },
+    {
+      kind: 'book',
+      title: 'Modern Power System Analysis',
+      by: 'D. P. Kothari and I. J. Nagrath',
+      note: 'The standard Indian text; transmission line performance and compensation.',
+    },
+    {
+      kind: 'paper',
+      title: 'Voltage Stability of Electric Power Systems',
+      by: 'Thierry Van Cutsem and Costas Vournas',
+      note: 'Book-length and worth it if you take voltage stability further. The load modelling chapters connect directly to Experiment 5.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEEE Std 1729 — Guide for Electric Power Distribution Reliability Indices',
+      note: 'Context for how voltage limits are set and applied in practice.',
+    },
+    {
+      kind: 'course',
+      title: 'NPTEL — Power System Analysis',
+      note: 'Lecture series covering transmission line modelling and voltage stability. Search the NPTEL catalogue for the current run.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  The receiving-end voltage responds to the **phase** of the load current, not its size:
+  $\Delta V \approx I(R\cos\varphi \pm X\sin\varphi)$, with the sign set by lagging or
+  leading — which is why a capacitive load raises the voltage.
+
+  Push real power far enough and the voltage quadratic's discriminant goes negative: no
+  solution exists at any voltage. On a short line the thermal limit arrives first, and
+  demonstrating *that ordering* is the honest result of Part (b).
+</KeyIdea>

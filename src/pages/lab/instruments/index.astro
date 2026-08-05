@@ -1,0 +1,110 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import ProgressStore from '../../../components/learning/ProgressStore.astro';
+import ProgressRing from '../../../components/learning/ProgressRing.astro';
+import LabIcon from '../../../components/lab/LabIcon.astro';
+import { DIFFICULTY, formatDuration } from '../../../lib/learning';
+import { getInstruments, instrumentPath, INSTRUMENT_CATEGORIES } from '../../../lib/lab';
+
+const instruments = await getInstruments();
+const ids = instruments.map((i) => i.id);
+
+const grouped = INSTRUMENT_CATEGORIES.map((category) => ({
+  ...category,
+  items: instruments.filter((i) => i.data.category === category.id),
+})).filter((g) => g.items.length > 0);
+---
+
+<BaseLayout
+  title="Electrical Lab Instruments"
+  description="What every instrument on a power systems bench is, why it exists, how it works inside, and how to use it without damaging it or yourself."
+  showProgress
+>
+  <ProgressStore />
+
+  <PageHeader
+    eyebrow="Laboratory Academy · Level 1"
+    title="Every instrument on the bench"
+    lead="A meter you do not understand is a meter you will misread. Before any experiment, this is what each instrument is for, what it is actually doing inside, how to connect it, and — the part manuals skip — what it cannot tell you."
+  >
+    <div class="mt-10 flex flex-wrap items-center gap-x-10 gap-y-6">
+      <ProgressRing lessons={ids} label="Instrument coverage" size={96} />
+
+      <dl class="grid grid-cols-2 gap-x-10 gap-y-4">
+        <div>
+          <dt class="text-xs text-subtle">Instruments</dt>
+          <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">{instruments.length}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-subtle">Reading time</dt>
+          <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">
+            {formatDuration(instruments.reduce((s, i) => s + i.data.estimatedMinutes, 0))}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  </PageHeader>
+
+  <div class="mx-auto max-w-(--container-wide) px-5 pb-24 sm:px-8">
+    {
+      grouped.map((group) => (
+        <section class="mt-16">
+          <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-line pb-4">
+            <h2 class="text-h3 font-semibold tracking-tight text-fg">{group.label}</h2>
+            <p class="text-[14px] text-subtle">{group.blurb}</p>
+          </div>
+
+          <ul class="mt-7 grid gap-4 md:grid-cols-2">
+            {group.items.map((instrument) => {
+              const d = instrument.data;
+              const difficulty = DIFFICULTY[d.difficulty];
+
+              return (
+                <li>
+                  <a
+                    href={instrumentPath(instrument)}
+                    class="group flex h-full gap-4 rounded-card border border-line bg-surface p-5 transition-colors hover:border-accent-border hover:bg-surface-hover"
+                    data-lesson-tick={instrument.id}
+                  >
+                    <span class="mt-0.5 shrink-0 text-subtle transition-colors group-hover:text-accent">
+                      <LabIcon name={d.icon} class="h-6 w-6" />
+                    </span>
+
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-[16px] font-medium leading-snug text-fg transition-colors group-hover:text-accent">
+                        {d.title}
+                      </span>
+                      <span class="mt-1.5 block text-[14px] leading-relaxed text-muted">
+                        {d.tagline}
+                      </span>
+
+                      <span class="mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[13px]">
+                        <span class={difficulty.tone}>{difficulty.label}</span>
+                        <span class="text-subtle" aria-hidden="true">·</span>
+                        <span class="text-subtle">{formatDuration(d.estimatedMinutes)}</span>
+                        {d.hazards.length > 0 && (
+                          <>
+                            <span class="text-subtle" aria-hidden="true">·</span>
+                            <span class="text-red-700 dark:text-red-400">
+                              {d.hazards.length} hazard{d.hazards.length > 1 ? 's' : ''}
+                            </span>
+                          </>
+                        )}
+                      </span>
+                    </span>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))
+    }
+
+    <p class="mt-14 max-w-(--container-prose) text-[13px] leading-relaxed text-subtle">
+      Written in the order my own experiments need them, so the instruments on the PSAO bench
+      come first. The rest arrive as later labs demand them rather than as stubs.
+    </p>
+  </div>
+</BaseLayout>

@@ -1,0 +1,69 @@
+---
+/**
+ * One lettered sub-part of an experiment — 1(a), 1(b).
+ *
+ * The official sheet groups sub-parts under a single numbered experiment
+ * because they share a bench, a wiring diagram and a theory section. So the
+ * page shares those too, and this component scopes only what genuinely
+ * differs: the procedure, the expected outcome, the table, the analysis.
+ *
+ * Rendered as a banded section rather than just a heading so that on a long
+ * page it is always obvious which part's procedure you are reading.
+ */
+interface Props {
+  label: string;
+  title: string;
+  /** One line on what this part measures, distinct from the other part. */
+  measures?: string;
+}
+
+const { label, title, measures } = Astro.props;
+---
+
+<section class="lab-part not-prose my-10 scroll-mt-24" id={`part-${label}`}>
+  <header class="flex items-start gap-4 rounded-t-card border border-line bg-bg-subtle px-5 py-4">
+    <span
+      class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-accent-border bg-accent-tint font-mono text-[15px] font-semibold text-accent"
+      aria-hidden="true">{label}</span
+    >
+    <div class="min-w-0">
+      <h3 class="text-[17px] font-semibold leading-snug text-fg">
+        Part {label} — {title}
+      </h3>
+      {measures && <p class="mt-1 text-[14px] leading-relaxed text-muted">{measures}</p>}
+    </div>
+  </header>
+
+  <div class="part-body rounded-b-card border border-t-0 border-line px-5 py-6 sm:px-7">
+    <slot />
+  </div>
+</section>
+
+<style>
+  /* The slot holds full prose — headings, tables, components — so the
+     typographic rhythm has to be restored inside the band. */
+  .part-body :global(p) { margin: 1rem 0; font-size: 16px; line-height: 1.75; color: var(--fg-muted); }
+  .part-body :global(p:first-child) { margin-top: 0; }
+  .part-body :global(p:last-child) { margin-bottom: 0; }
+
+  .part-body :global(h4) {
+    margin: 1.75rem 0 0.75rem;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .part-body :global(h4:first-child) { margin-top: 0; }
+
+  .part-body :global(ul),
+  .part-body :global(ol) { margin: 1rem 0; padding-left: 1.35rem; color: var(--fg-muted); }
+  .part-body :global(li) { margin: 0.4rem 0; line-height: 1.7; }
+
+  .part-body :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+</style>

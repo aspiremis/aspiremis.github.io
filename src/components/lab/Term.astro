@@ -1,0 +1,62 @@
+---
+/**
+ * A glossary term with its definition inline.
+ *
+ * Uses <details> in an inline layout rather than a hover tooltip. Tooltips
+ * fail on touch, fail for keyboard users, and vanish while you are still
+ * reading them — none of which is acceptable for the one mechanism a beginner
+ * uses to decode a sentence.
+ *
+ * The trade is that opening one nudges the line. That is a fair price for a
+ * definition that stays put while you read it.
+ */
+interface Props {
+  word: string;
+}
+
+const { word } = Astro.props;
+---
+
+<details class="lab-term">
+  <summary>
+    <span class="lab-term-word">{word}</span>
+  </summary>
+  <span class="lab-term-def"><slot /></span>
+</details>
+
+<style>
+  .lab-term {
+    display: inline;
+  }
+
+  .lab-term summary {
+    display: inline;
+    cursor: help;
+    list-style: none;
+  }
+
+  .lab-term summary::-webkit-details-marker { display: none; }
+
+  .lab-term-word {
+    border-bottom: 1px dotted var(--accent);
+    color: inherit;
+  }
+
+  .lab-term summary:focus-visible .lab-term-word {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  .lab-term-def {
+    display: block;
+    margin: 0.5rem 0;
+    padding: 0.65rem 0.9rem;
+    border-left: 2px solid var(--accent-border);
+    background: var(--bg-subtle);
+    border-radius: 0 6px 6px 0;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--fg-muted);
+  }
+</style>

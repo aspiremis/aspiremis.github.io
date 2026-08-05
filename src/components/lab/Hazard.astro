@@ -1,0 +1,74 @@
+---
+/**
+ * A physical-danger box. Red, and red appears nowhere else on this site.
+ *
+ * That scarcity is the whole design. `Callout type="warning"` already covers
+ * "this will give you a wrong answer"; Hazard is reserved for "this will hurt
+ * you" — live conductors, stored charge, rotating shafts. If it starts showing
+ * up on every page it has stopped working, so use it sparingly.
+ */
+interface Props {
+  title?: string;
+  /** Shown as a small tag: 'Live 415 V', 'Stored charge', 'Rotating parts'. */
+  level?: 'caution' | 'danger';
+}
+
+const { title, level = 'danger' } = Astro.props;
+
+const STYLES = {
+  danger: {
+    box: 'border-red-600/40 bg-red-500/[0.08]',
+    accent: 'text-red-700 dark:text-red-400',
+    label: 'Danger',
+  },
+  caution: {
+    box: 'border-orange-600/35 bg-orange-500/[0.07]',
+    accent: 'text-orange-700 dark:text-orange-400',
+    label: 'Caution',
+  },
+} as const;
+
+const style = STYLES[level];
+---
+
+<aside
+  class:list={['not-prose my-7 rounded-card border-2 p-5', style.box]}
+  role="note"
+  aria-label={title ?? style.label}
+>
+  <p
+    class:list={[
+      'flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em]',
+      style.accent,
+    ]}
+  >
+    <svg
+      class="h-4 w-4 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M10.3 3.9 2.4 17.4A2 2 0 0 0 4.1 20.4h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+      <path d="M12 9v4.5M12 17v.5" />
+    </svg>
+    {title ?? style.label}
+  </p>
+
+  <div class="hazard-body mt-2.5 text-[15px] leading-relaxed text-fg">
+    <slot />
+  </div>
+</aside>
+
+<style>
+  .hazard-body :global(p) { margin: 0.5rem 0; }
+  .hazard-body :global(p:first-child) { margin-top: 0; }
+  .hazard-body :global(p:last-child) { margin-bottom: 0; }
+  .hazard-body :global(ul),
+  .hazard-body :global(ol) { margin: 0.5rem 0; padding-left: 1.25rem; }
+  .hazard-body :global(li) { margin: 0.3rem 0; }
+  .hazard-body :global(strong) { font-weight: 650; }
+</style>

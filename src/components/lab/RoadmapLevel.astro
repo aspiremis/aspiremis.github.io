@@ -1,0 +1,77 @@
+---
+/**
+ * One rung of the Level 0–5 ladder.
+ *
+ * The ladder is used at two scales — as the Academy's roadmap on /lab, and as
+ * the stage markers inside an experiment page — so this renders in two modes.
+ * `compact` is the inline badge; the full form is the roadmap card.
+ *
+ * Keeping both in one component is what stops the two from drifting apart,
+ * which would quietly turn the roadmap back into decoration.
+ */
+interface Props {
+  level: number;
+  title?: string;
+  blurb?: string;
+  compact?: boolean;
+  href?: string;
+  /** Marks the rung the reader is currently standing on. */
+  current?: boolean;
+}
+
+const { level, title, blurb, compact = false, href, current = false } = Astro.props;
+---
+
+{
+  compact ? (
+    <span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-bg-subtle px-2.5 py-0.5 font-mono text-[11px] font-medium text-subtle">
+      L{level}
+      {title && <span class="font-sans font-normal">{title}</span>}
+    </span>
+  ) : (
+    <li class="relative">
+      {(() => {
+        const Wrap = href ? 'a' : 'div';
+        return (
+          <Wrap
+            {...(href ? { href } : {})}
+            class:list={[
+              'group flex gap-5 rounded-card border p-5 transition-colors',
+              current
+                ? 'border-accent-border bg-accent-tint'
+                : 'border-line bg-surface',
+              href && 'hover:border-accent-border hover:bg-surface-hover',
+            ]}
+          >
+            <span
+              class:list={[
+                'flex h-11 w-11 shrink-0 items-center justify-center rounded-full border font-mono text-[15px] font-semibold',
+                current
+                  ? 'border-accent bg-accent text-accent-contrast'
+                  : 'border-line-strong bg-bg-subtle text-muted',
+              ]}
+              aria-hidden="true"
+            >
+              {level}
+            </span>
+
+            <span class="min-w-0 pt-1.5">
+              <span
+                class:list={[
+                  'block text-[15px] font-medium leading-snug',
+                  current ? 'text-accent' : 'text-fg',
+                  href && 'transition-colors group-hover:text-accent',
+                ]}
+              >
+                {title}
+              </span>
+              {blurb && (
+                <span class="mt-1.5 block text-[14px] leading-relaxed text-muted">{blurb}</span>
+              )}
+            </span>
+          </Wrap>
+        );
+      })()}
+    </li>
+  )
+}

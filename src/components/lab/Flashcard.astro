@@ -1,0 +1,110 @@
+---
+/**
+ * A flip card for the things that have to be recalled, not reasoned out —
+ * definitions, standard ratings, relay symbols.
+ *
+ * CSS-only. The flip is driven by :focus-within and a checkbox-free
+ * :has() selector rather than JavaScript, so a deck of twenty cards costs
+ * nothing and still works with the keyboard.
+ */
+interface Props {
+  front: string;
+  /** Optional grouping label, e.g. 'IS 3043' or 'Relay codes'. */
+  tag?: string;
+}
+
+const { front, tag } = Astro.props;
+---
+
+<div class="flashcard not-prose">
+  <button type="button" class="flashcard-inner" aria-label={`Flip card: ${front}`}>
+    <span class="flashcard-face flashcard-front">
+      {tag && <span class="flashcard-tag">{tag}</span>}
+      <span class="flashcard-text">{front}</span>
+      <span class="flashcard-hint">Tap to reveal</span>
+    </span>
+    <span class="flashcard-face flashcard-back">
+      <span class="flashcard-body"><slot /></span>
+    </span>
+  </button>
+</div>
+
+<style>
+  .flashcard {
+    perspective: 1000px;
+  }
+
+  .flashcard-inner {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-height: 9rem;
+    cursor: pointer;
+    text-align: left;
+    transform-style: preserve-3d;
+    transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* Flip on click (via :focus, which a button gets) and on hover, so it works
+     on touch and pointer alike without any script. */
+  .flashcard-inner:focus,
+  .flashcard-inner:hover {
+    transform: rotateY(180deg);
+  }
+
+  .flashcard-face {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card, 0.75rem);
+    background: var(--surface);
+    backface-visibility: hidden;
+    overflow-y: auto;
+  }
+
+  .flashcard-back {
+    transform: rotateY(180deg);
+    background: var(--accent-tint);
+    border-color: var(--accent-border);
+  }
+
+  .flashcard-tag {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--fg-subtle);
+  }
+
+  .flashcard-text {
+    font-size: 15px;
+    line-height: 1.5;
+    font-weight: 500;
+    color: var(--fg);
+  }
+
+  .flashcard-hint {
+    margin-top: auto;
+    font-size: 12px;
+    color: var(--fg-subtle);
+  }
+
+  .flashcard-body {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--fg-muted);
+  }
+
+  .flashcard-body :global(p) { margin: 0.35rem 0; }
+  .flashcard-body :global(p:first-child) { margin-top: 0; }
+
+  /* A flip is decorative; readers who asked for less motion get an instant
+     swap rather than no answer at all. */
+  @media (prefers-reduced-motion: reduce) {
+    .flashcard-inner { transition: none; }
+  }
+</style>

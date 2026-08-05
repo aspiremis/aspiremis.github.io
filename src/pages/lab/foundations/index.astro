@@ -1,0 +1,125 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import ProgressStore from '../../../components/learning/ProgressStore.astro';
+import ProgressRing from '../../../components/learning/ProgressRing.astro';
+import LabIcon from '../../../components/lab/LabIcon.astro';
+import { formatDuration } from '../../../lib/learning';
+import { getGuides, guidePath } from '../../../lib/lab';
+
+const [before, safety] = await Promise.all([getGuides('before'), getGuides('safety')]);
+const guides = [...before, ...safety];
+const ids = guides.map((g) => g.id);
+
+const SECTIONS = [
+  {
+    id: 'safety',
+    title: 'Laboratory Safety',
+    icon: 'shield',
+    blurb:
+      'Read this first, and read all of it. Everything else on this site assumes you have.',
+    items: safety,
+  },
+  {
+    id: 'before',
+    title: 'Before Entering the Lab',
+    icon: 'book',
+    blurb:
+      'What a session actually looks like, and the literacy it quietly assumes — diagrams, nameplates, units, records.',
+    items: before,
+  },
+] as const;
+---
+
+<BaseLayout
+  title="Before Entering the Lab"
+  description="Laboratory safety, and everything a first-time student is assumed to already know — reading diagrams and nameplates, recording observations, writing up, and surviving a viva."
+  showProgress
+>
+  <ProgressStore />
+
+  <PageHeader
+    eyebrow="Laboratory Academy · Level 0"
+    title="Before you touch anything"
+    lead="Every lab manual I have read begins at the experiment. None of them explain what a laboratory session actually is, how to read the diagram on the first page, or what the numbers on a machine's nameplate mean. This is the part nobody writes down, written down."
+  >
+    <div class="mt-10 flex flex-wrap items-center gap-x-10 gap-y-6">
+      <ProgressRing lessons={ids} label="Foundations progress" size={96} />
+
+      <dl class="grid grid-cols-2 gap-x-10 gap-y-4">
+        <div>
+          <dt class="text-xs text-subtle">Pages</dt>
+          <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">{guides.length}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-subtle">Reading time</dt>
+          <dd class="mt-0.5 font-mono text-2xl font-semibold text-fg">
+            {formatDuration(guides.reduce((s, g) => s + g.data.estimatedMinutes, 0))}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  </PageHeader>
+
+  <div class="mx-auto max-w-(--container-wide) px-5 pb-24 sm:px-8">
+    {
+      SECTIONS.filter((s) => s.items.length > 0).map((section) => (
+        <section class="mt-16">
+          <div class="flex items-start gap-4 border-b border-line pb-4">
+            <span
+              class:list={[
+                'mt-0.5 shrink-0',
+                section.id === 'safety' ? 'text-red-700 dark:text-red-400' : 'text-accent',
+              ]}
+            >
+              <LabIcon name={section.icon} class="h-6 w-6" />
+            </span>
+            <div class="min-w-0">
+              <h2 class="text-h3 font-semibold tracking-tight text-fg">{section.title}</h2>
+              <p class="mt-1 text-[14px] leading-relaxed text-subtle">{section.blurb}</p>
+            </div>
+          </div>
+
+          <ol class="mt-7 space-y-3">
+            {section.items.map((guide, i) => (
+              <li>
+                <a
+                  href={guidePath(guide)}
+                  class="group flex gap-5 rounded-card border border-line bg-surface p-5 transition-colors hover:border-accent-border hover:bg-surface-hover"
+                  data-lesson-tick={guide.id}
+                >
+                  <span
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-bg-subtle font-mono text-[14px] text-muted"
+                    aria-hidden="true"
+                  >
+                    {i + 1}
+                  </span>
+
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-[16px] font-medium leading-snug text-fg transition-colors group-hover:text-accent">
+                      {guide.data.title}
+                    </span>
+                    <span class="mt-1.5 block text-[14px] leading-relaxed text-muted">
+                      {guide.data.description}
+                    </span>
+                    <span class="mt-2.5 block text-[13px] text-subtle">
+                      {formatDuration(guide.data.estimatedMinutes)}
+                    </span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ))
+    }
+
+    {
+      guides.length === 0 && (
+        <p class="mt-16 text-[15px] text-muted">
+          These pages are being written now. The safety module lands first.
+        </p>
+      )
+    }
+  </div>
+</BaseLayout>

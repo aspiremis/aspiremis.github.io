@@ -1,0 +1,87 @@
+---
+import { render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+
+import InstrumentLayout from '../../../layouts/InstrumentLayout.astro';
+
+import Callout from '../../../components/learning/Callout.astro';
+import Analogy from '../../../components/learning/Analogy.astro';
+import KeyIdea from '../../../components/learning/KeyIdea.astro';
+import Quiz from '../../../components/learning/Quiz.astro';
+import Compare from '../../../components/learning/Compare.astro';
+import CodeFile from '../../../components/learning/CodeFile.astro';
+import Exercise from '../../../components/learning/Exercise.astro';
+import Solution from '../../../components/learning/Solution.astro';
+
+import Hazard from '../../../components/lab/Hazard.astro';
+import Figure from '../../../components/lab/Figure.astro';
+import Steps from '../../../components/lab/Steps.astro';
+import Step from '../../../components/lab/Step.astro';
+import Checklist from '../../../components/lab/Checklist.astro';
+import Spec from '../../../components/lab/Spec.astro';
+import Viva from '../../../components/lab/Viva.astro';
+import Q from '../../../components/lab/Q.astro';
+import Deck from '../../../components/lab/Deck.astro';
+import Flashcard from '../../../components/lab/Flashcard.astro';
+import ResourceList from '../../../components/lab/ResourceList.astro';
+import Term from '../../../components/lab/Term.astro';
+
+import { getInstruments, experimentsUsing } from '../../../lib/lab';
+import type { Instrument } from '../../../lib/lab';
+
+interface Props {
+  instrument: Instrument;
+  previous: Instrument | null;
+  next: Instrument | null;
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const instruments = await getInstruments();
+
+  return instruments.map((instrument, i) => ({
+    params: { instrument: instrument.id },
+    props: {
+      instrument,
+      previous: i > 0 ? instruments[i - 1]! : null,
+      next: i < instruments.length - 1 ? instruments[i + 1]! : null,
+    },
+  }));
+};
+
+const { instrument, previous, next } = Astro.props;
+const { Content, headings } = await render(instrument);
+const usedIn = await experimentsUsing(instrument.id);
+
+const components = {
+  Callout,
+  Analogy,
+  KeyIdea,
+  Quiz,
+  Compare,
+  CodeFile,
+  Exercise,
+  Solution,
+  Hazard,
+  Figure,
+  Steps,
+  Step,
+  Checklist,
+  Spec,
+  Viva,
+  Q,
+  Deck,
+  Flashcard,
+  ResourceList,
+  Term,
+};
+---
+
+<InstrumentLayout
+  instrument={instrument}
+  headings={headings}
+  usedIn={usedIn}
+  previous={previous}
+  next={next}
+>
+  <Content components={components} />
+</InstrumentLayout>

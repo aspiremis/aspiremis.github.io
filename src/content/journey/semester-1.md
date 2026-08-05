@@ -83,10 +83,12 @@ courses:
       and nonlinear alternatives; voltage and frequency regulation and power dispatch
       in distributed generators; optimal capacity sizing; large-scale integration.
 labs:
-  - 'Load flow on IEEE test systems, hand-verified against published results'
-  - 'Economic dispatch and unit commitment in MATLAB'
-  - 'Protection scheme experiments on the laboratory hardware'
-  - 'Harmonic measurement and THD computation against IEEE 519 limits'
+  - 'PSAO hardware: voltage regulation and the PV curve of a transmission line'
+  - 'PSAO hardware: overcurrent protection of a three-phase induction motor'
+  - 'PSAO hardware: Ferranti effect, ABCD parameters and shunt compensation'
+  - 'PSAO hardware: under/over frequency and under/over voltage relays'
+  - 'PSAO hardware: ZIP load characteristics'
+  - 'PSAO simulation: five MATLAB experiments, after the mid-semester exam'
 highlights:
   - 'Wrote a Newton-Raphson load flow from scratch instead of calling a library — the single most useful thing I have done so far'
   - 'Understood why the fast decoupled method works, and exactly which assumptions break it'
