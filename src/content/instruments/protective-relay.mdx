@@ -1,0 +1,363 @@
+---
+title: Protective Relays
+shortTitle: Protective relay
+category: protection
+tagline: The device that decides when to disconnect, and how long to wait first
+description: A relay measures, compares against a setting, and issues a trip. The interesting part is the waiting — inverse-time curves exist so that the relay nearest a fault operates first, and Experiments 2 and 4 are both about setting that correctly.
+icon: relay
+order: 12
+difficulty: intermediate
+estimatedMinutes: 40
+specs:
+  - label: Types
+    value: 'Electromechanical, static, numerical'
+  - label: Current setting (Is)
+    value: '50–200% of rated in steps'
+  - label: Time multiplier (TMS)
+    value: '0.05–1.0'
+  - label: IEC curves
+    value: 'Normal, very, extremely inverse; long-time inverse'
+  - label: Instantaneous element
+    value: 'ANSI 50 — no intentional delay'
+  - label: Typical operating time
+    value: '20–40 ms for numerical, plus breaker time'
+  - label: Auxiliary supply
+    value: '110 V DC or 240 V AC'
+hazards:
+  - CT secondaries feeding the relay must never be open-circuited
+  - Trip outputs may operate live switchgear
+tags: ['instrument', 'protection', 'relay', 'overcurrent', 'idmt', 'coordination']
+---
+
+A protective relay does three things: **measure** something, **compare** it against a
+setting, and **decide** whether to trip.
+
+The measurement and the comparison are straightforward. Everything interesting is in the
+deciding — specifically, in how long the relay waits before it acts.
+
+## Why waiting is the whole subject
+
+A fault on a distribution feeder is seen by every relay upstream of it, all the way back to
+the source. If they all trip, one fault on a spur takes out the entire substation.
+
+So the relay **nearest** the fault must operate first, and every relay behind it must wait
+long enough to give the nearest one a chance. That is **coordination**, and it is what
+protection engineering is mostly about.
+
+<Analogy>
+  Think of it as a queue where politeness is enforced by delay.
+
+  Every relay that can see the fault agrees something is wrong. Rather than all acting at
+  once, each waits an amount that depends on how far it is from the problem — nearest waits
+  least.
+
+  If the nearest one clears it, everyone else sees the fault disappear and stands down. If
+  it fails, the next one along has already been counting and takes over. Backup is built
+  into the timing, not into a separate system.
+</Analogy>
+
+## Inverse-time curves
+
+The waiting is not a fixed delay. It depends on **how large** the fault current is: a
+severe fault is cleared quickly, a marginal overload is tolerated longer.
+
+The IEC characteristic:
+
+$$
+t = \text{TMS} \times \frac{k}{\left(\dfrac{I}{I_s}\right)^{\alpha} - 1}
+$$
+
+where $I_s$ is the current setting and TMS the time multiplier.
+
+<Compare
+  headings={['Curve', 'k', 'α', 'Use']}
+  rows={[
+    { option: 'Standard (normal) inverse', when: '0.14', cost: '0.02', recommended: true },
+    { option: 'Very inverse', when: '13.5', cost: '1.0' },
+    { option: 'Extremely inverse', when: '80', cost: '2.0' },
+    { option: 'Long-time inverse', when: '120', cost: '1.0' },
+  ]}
+/>
+
+<Callout type="engineering">
+  The curve choice is not arbitrary — it is matched to what you are protecting.
+
+  **Standard inverse** is the general-purpose feeder curve, and its shallow slope
+  ($\alpha = 0.02$) means the operating time changes only gradually with current, which
+  makes coordination between successive relays straightforward.
+
+  **Extremely inverse** ($\alpha = 2$) has $t \propto 1/I^2$, which is the same shape as the
+  thermal $I^2t$ withstand of a cable or a transformer. So the relay's curve tracks the
+  damage curve of the equipment it protects — closely enough that it can be allowed nearer
+  to it. It is also the right choice for coordinating with downstream **fuses**, which have
+  a steeply inverse characteristic of their own.
+
+  **Very inverse** sits between them, and is used where fault current varies substantially
+  with fault position along a feeder.
+
+  Choosing the curve is choosing what the relay is trying to imitate.
+</Callout>
+
+<Callout type="warning" title="Notice the −1 in the denominator">
+  At $I = I_s$ exactly, the denominator is zero and the operating time is **infinite**.
+
+  This is correct, and it means the current setting is a threshold the relay approaches
+  asymptotically rather than a trip point. A relay set at 100% of rated current does not
+  operate at 100% — it takes a meaningful margin above the setting before the operating time
+  becomes finite and useful.
+
+  So a setting of 125% of full load current is normal, and setting a relay "at" the load
+  current would leave it effectively inoperative for small overloads.
+</Callout>
+
+## Three generations
+
+<Compare
+  headings={['', 'Electromechanical', 'Static', 'Numerical']}
+  rows={[
+    { option: 'Principle', when: 'Induction disc — torque against a spring', cost: 'Analogue electronics and comparators', recommended: false },
+    { option: 'Setting', when: 'Physical plug and dial', cost: 'Switches and potentiometers' },
+    { option: 'Functions per unit', when: 'One', cost: 'One or a few' },
+    { option: 'Self-monitoring', when: 'None', cost: 'Limited' },
+    { option: 'Records', when: 'None — a flag', cost: 'Limited' },
+    { option: 'Still in service?', when: 'Yes, widely, and reliable', cost: 'Being replaced' },
+  ]}
+/>
+
+A **numerical** relay samples the CT and VT secondaries, computes phasors digitally — usually
+by a discrete Fourier transform over one cycle — and implements many protection functions in
+software on one platform. It self-monitors, records disturbances, timestamps events, and
+communicates over IEC 61850.
+
+<Callout type="engineering">
+  The induction disc relay is worth understanding even though it is being replaced, because
+  its physics is why the curves have the shape they do.
+
+  Current through the coil produces a flux; eddy currents in an aluminium disc produce a
+  torque proportional to roughly $I^2$; the disc rotates against a control spring and a
+  permanent-magnet damper until a contact closes.
+
+  Higher current means more torque, means faster rotation, means shorter operating time —
+  the inverse characteristic arises from the mechanics, not from a designer's choice.
+
+  The **time multiplier setting** simply changes how far the disc must travel before the
+  contacts meet. That is why TMS is a clean multiplier on the whole curve: it scales the
+  distance, not the speed.
+
+  Numerical relays reproduce these curves in software for backward compatibility — the
+  equations in IEC 60255 are, in effect, a mathematical description of a spinning aluminium
+  disc.
+</Callout>
+
+## Coordination in practice
+
+<Steps title="Setting a pair of relays">
+  <Step n={1} title="Establish the maximum load current" expect="a number from the actual load, not the cable rating">
+    The setting must be above maximum load — including any short-term overload you intend
+    to ride through — so the relay does not operate on normal conditions.
+  </Step>
+
+  <Step n={2} title="Establish the minimum fault current" expect="the smallest fault the relay must still detect">
+    Usually a high-resistance earth fault at the far end of the protected zone. The setting
+    must be **below** this, or the relay will not see the fault at all.
+  </Step>
+
+  <Step n={3} title="Choose the current setting between the two" hazard="If minimum fault current is below maximum load current, overcurrent protection cannot work here — you need a different principle.">
+    Typically 125–150% of maximum load. The gap between load and fault current is what makes
+    overcurrent protection possible; on a weak system that gap can vanish.
+  </Step>
+
+  <Step n={4} title="Set the downstream relay's TMS to the minimum that is selective" expect="the fastest clearance the coordination allows">
+    Nearest the fault should be fastest.
+  </Step>
+
+  <Step n={5} title="Add the grading margin for the upstream relay" expect="typically 0.3–0.4 s between successive relays">
+    The margin covers the downstream **breaker operating time** (about 60–100 ms), the
+    downstream relay's **overshoot** after the current stops, CT and relay **errors**, and a
+    **safety factor**.
+
+    Modern numerical relays allow 0.25–0.3 s; electromechanical ones need 0.4 s or more,
+    largely because of overshoot.
+  </Step>
+
+  <Step n={6} title="Verify at both extremes" expect="selectivity at maximum AND minimum fault current">
+    Coordination that works at maximum fault current can fail at minimum, because the two
+    curves converge. Check both ends.
+  </Step>
+</Steps>
+
+<Callout type="warning" title="Grading accumulates, and that is the real constraint">
+  With four relays in series at 0.4 s each, the relay nearest the source waits 1.2 s beyond
+  the fastest — while carrying full fault current the whole time.
+
+  That is a long time for a transformer or a busbar to sit in a fault, and it is why
+  overcurrent grading alone becomes impractical on systems with many levels.
+
+  The answer is protection that is **inherently selective** rather than time-graded:
+  differential protection (ANSI 87) compares current in and out of a zone and needs no delay
+  at all, and distance protection (ANSI 21) determines fault position directly from
+  impedance. Both trip fast regardless of how many levels exist upstream.
+</Callout>
+
+## The relay test set
+
+You cannot wait for a real fault. A **relay test set** injects controlled current and
+voltage into the relay's inputs and measures what it does.
+
+<Compare
+  headings={['Test', 'What it establishes']}
+  rows={[
+    { option: 'Pickup', when: 'The current at which the relay just starts to operate — checks Is', recommended: true },
+    { option: 'Operating time at several multiples', when: 'That the measured curve matches the declared characteristic and TMS' },
+    { option: 'Instantaneous element', when: 'That the 50 element picks up at its setting with no intentional delay' },
+    { option: 'Trip circuit', when: 'That the output contact actually operates the breaker trip coil' },
+    { option: 'Directional / phase angle', when: 'That the relay responds correctly to fault direction' },
+  ]}
+/>
+
+<Callout type="tip" title="Plot measured points against the theoretical curve">
+  For Experiment 2, inject at 2×, 3×, 5× and 10× the setting and record the operating time
+  at each. Plot those points on log-log axes with the IEC equation as a line through them.
+
+  Log-log matters: an inverse curve is close to a straight line on those axes, so a
+  systematic deviation is immediately visible in a way it is not on linear axes.
+
+  Remember to state whether your recorded time includes the breaker operating time or only
+  the relay's own decision time. They differ by 60–100 ms, and confusing them will make an
+  otherwise correct relay look slow.
+</Callout>
+
+<Hazard title="Two hazards on a protection bench">
+  **CT secondaries.** A relay is fed from CTs. Short the secondary before disconnecting the
+  relay from it — the open-circuit CT hazard from the instrument transformer page applies in
+  full, and a protection lab is where it actually happens.
+
+  **Trip outputs.** The relay's output contact may be wired to a real breaker trip coil.
+  Testing a relay that is still connected to live switchgear will trip it. Confirm what the
+  trip contact is wired to before you inject anything.
+</Hazard>
+
+## In your experiments
+
+**Experiment 2** — overcurrent protection of an induction motor. The complication is that a
+motor's starting current is five to seven times its full-load current for several seconds,
+and the relay must **not** trip on that while still protecting against a genuine overload.
+That is the whole setting problem, and it is why the curve choice and the TMS matter rather
+than just the pickup.
+
+**Experiment 4** — under/over frequency (ANSI 81) and under/over voltage (27/59) relays.
+Different measurands, same three-part structure: measure, compare, delay. Underfrequency
+load shedding is the last automatic defence a power system has against total collapse, and
+its settings are graded by frequency rather than by time.
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="What is an IDMT relay?">
+    Inverse Definite Minimum Time. Its operating time falls as fault current rises — following
+    t = TMS × k / ((I/Is)^α − 1) — approaching a definite minimum at very high currents.
+
+    The inverse shape allows relays in series to be graded: the one nearest a fault sees the
+    largest current, operates fastest, and clears before the ones behind it.
+  </Q>
+
+  <Q q="What do the current setting and time multiplier do?">
+    The current setting Is is the threshold the relay compares against — it must be above
+    maximum load and below minimum fault current. The time multiplier TMS scales the whole
+    operating-time curve without changing its shape.
+
+    On an induction disc relay TMS physically changes how far the disc must travel before the
+    contacts meet, which is why it is a clean multiplier.
+  </Q>
+
+  <Q q="Why does the IDMT equation have a −1 in the denominator?">
+    So that at I = Is exactly, the operating time is infinite. The setting is an asymptotic
+    threshold rather than a trip point, and a meaningful margin above it is needed before the
+    operating time becomes usefully finite.
+
+    This is why relays are set at around 125% of full load rather than at 100%.
+  </Q>
+</Viva>
+
+<Viva band="analysis">
+  <Q q="Why is extremely inverse used to protect a transformer or to grade with fuses?">
+    Its α = 2 gives t ∝ 1/I², the same shape as the thermal I²t withstand of cables and
+    transformers — so the relay curve tracks the damage curve of the equipment and can be set
+    closer to it.
+
+    Fuses have a steeply inverse characteristic of their own, so an extremely inverse relay
+    grades with them where a standard inverse curve would cross.
+  </Q>
+
+  <Q q="What determines the grading margin between two relays?">
+    Four contributions: the downstream breaker operating time, roughly 60–100 ms; the
+    downstream relay's overshoot after current ceases; CT and relay errors; and a safety
+    factor.
+
+    Numerical relays allow 0.25–0.3 s; electromechanical ones need 0.4 s or more, mostly
+    because of overshoot in the mechanism.
+  </Q>
+
+  <Q q="Why does overcurrent grading become impractical with many levels?">
+    Because the margins accumulate. Four relays in series at 0.4 s each leave the one nearest
+    the source waiting 1.2 s while carrying full fault current — too long for a transformer
+    or busbar.
+
+    The answer is inherently selective protection: differential (87), which compares current
+    in and out of a zone and needs no time delay, or distance (21), which determines fault
+    position from impedance. Both operate fast regardless of how many levels lie upstream.
+  </Q>
+</Viva>
+
+<Viva band="application">
+  <Q q="Why is setting overcurrent protection for a motor harder than for a feeder?">
+    Because starting current is five to seven times full-load current for several seconds,
+    and it is a normal condition. The relay must ride through it and still protect against a
+    genuine sustained overload only slightly above rated current.
+
+    That gap is narrow, which is why curve selection and TMS matter more here than pickup
+    alone — and why dedicated motor protection relays model the thermal state of the winding
+    rather than relying on current magnitude alone.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  A relay measures, compares and **waits** — and the waiting is the subject. Inverse-time
+  curves exist so the relay nearest a fault operates first, with a grading margin covering
+  breaker time, overshoot and errors. Those margins accumulate, which is why differential and
+  distance protection exist: they are selective by principle rather than by delay.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 60255-151 — Measuring relays: functional requirements for over/under current protection',
+      note: 'Where the IDMT curve constants k and α are defined.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEEE Std C37.112 — Inverse-time characteristic equations for overcurrent relays',
+      note: 'The ANSI equivalent, with slightly different curve shapes.',
+    },
+    {
+      kind: 'book',
+      title: 'Network Protection and Automation Guide',
+      by: 'Alstom / GE Grid Solutions',
+      note: 'Freely available and genuinely the best single reference on protection. The coordination chapter is what to read first.',
+    },
+    {
+      kind: 'book',
+      title: 'Power System Protection and Switchgear',
+      by: 'Badri Ram and D. N. Vishwakarma',
+      note: 'The standard Indian text.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEEE Std C37.2 — Device function numbers',
+      note: 'The 27 / 50 / 51 / 59 / 81 / 87 numbering used throughout.',
+    },
+  ]}
+/>

@@ -1,0 +1,212 @@
+---
+title: Clamp Meter
+shortTitle: Clamp meter
+category: measurement
+tagline: Measures current without breaking the circuit — and without inserting anything
+description: A clamp meter reads current through a conductor's magnetic field, so nothing is inserted and no burden voltage appears. That freedom costs accuracy, and there are three ways to hold one that give a wrong answer.
+icon: clamp
+order: 2
+difficulty: beginner
+estimatedMinutes: 25
+specs:
+  - label: AC current range
+    value: '0–600 A typical'
+  - label: DC capability
+    value: Only on Hall-effect models
+    note: A plain CT-based clamp cannot read DC at all
+  - label: Accuracy
+    value: '±(2–3% of reading + 5 counts)'
+    note: Substantially worse than a DMM in series
+  - label: Jaw opening
+    value: '30–50 mm'
+  - label: Low-current floor
+    value: 'Poor below about 1 A'
+    note: Use a leakage-rated clamp or ten turns through the jaw
+hazards:
+  - Clamping over insulation is safe; touching a bare conductor is not
+tags: ['instrument', 'measurement', 'current', 'ct']
+---
+
+The clamp meter solves the one problem that makes an ammeter awkward: to measure current in
+series, you have to break the circuit.
+
+A clamp reads the **magnetic field** around a conductor instead. Nothing is inserted,
+nothing is disconnected, and no burden voltage appears in the circuit you are measuring.
+
+## How it works
+
+<Compare
+  headings={['Type', 'Principle', 'Reads DC?']}
+  rows={[
+    { option: 'Current transformer', when: 'The jaw is a split core; the conductor is a one-turn primary', cost: 'No — a transformer needs changing flux', recommended: false },
+    { option: 'Hall effect', when: 'A Hall sensor in the core gap measures flux density directly', cost: 'Yes — flux magnitude, not its rate of change' },
+    { option: 'Rogowski coil', when: 'An air-cored flexible loop; output is proportional to di/dt', cost: 'No — needs an integrator, and cannot read DC' },
+  ]}
+/>
+
+<Callout type="engineering">
+  The CT-based clamp is the common one and the cheapest, and its limitation follows directly
+  from Faraday's law: an induced voltage requires **changing** flux. A DC current produces
+  constant flux, so it induces nothing and the meter reads zero.
+
+  A Hall-effect device measures flux density itself, so it responds to DC. On a bench with
+  battery banks, PV strings or a DC link this is not a convenience — it is the difference
+  between a reading and no reading.
+
+  Rogowski coils are the interesting third option. Having no iron core, they cannot
+  saturate, so a single flexible loop measures from a few amperes to tens of kiloamperes
+  with a linear response. That is why fault recorders and large switchgear use them. The
+  price is that the output is proportional to $di/dt$ and must be integrated, which costs
+  low-frequency accuracy and rules out DC entirely.
+</Callout>
+
+## The three ways to hold it wrong
+
+<Hazard title="Clamp exactly one conductor" level="caution">
+  This is the mistake everyone makes once.
+
+  Clamp a phase **and** its neutral together and the two currents are equal and opposite, so
+  their fields cancel and the meter reads approximately **zero**. On a two-core flex that
+  looks exactly like a dead circuit.
+
+  Not merely a wrong reading — a dangerously reassuring one. Separate the conductor you want
+  before clamping, or use a clamp adapter designed for the job.
+</Hazard>
+
+<Callout type="warning" title="Close the jaw completely">
+  A gap in the magnetic circuit, even a small one, drops the reading substantially. Dirt,
+  a bent tip or a jaw not fully latched all do it.
+
+  You can hear and feel a properly closed jaw click. If a reading looks low, reseat before
+  suspecting the circuit.
+</Callout>
+
+<Callout type="warning" title="Centre the conductor">
+  Accuracy is specified with the conductor centred. Held against one side of the jaw, the
+  reading can shift by a few per cent — enough to matter when the specification is only
+  ±2% to begin with.
+
+  Nearby conductors carrying large currents also couple in. On a crowded panel, pull the
+  conductor clear if you can.
+</Callout>
+
+## Reading small currents
+
+Below roughly 1 A a general-purpose clamp is not trustworthy — the resolution and the
+zero offset dominate.
+
+<Callout type="tip" title="Ten turns through the jaw">
+  Pass the conductor through the jaw **N** times and the meter sees N times the current.
+  Divide the reading by N.
+
+  Ten turns turns a 0.3 A current into a 3 A reading, which is comfortably inside the
+  instrument's good range, and improves the effective resolution by the same factor.
+
+  This works because a clamp measures ampere-turns, not amperes. It is the same fact that
+  makes a CT ratio work, used deliberately.
+</Callout>
+
+For genuine leakage measurement — milliamperes — you need a **leakage clamp**, which has a
+much more sensitive core and heavy magnetic shielding. Clamping phase and neutral
+*together* is then the correct technique rather than the mistake: any imbalance between
+them is current returning by another path, which is exactly what an RCD detects.
+
+## Clamp or DMM?
+
+<Compare
+  headings={['Situation', 'Use', 'Why']}
+  rows={[
+    { option: 'Circuit already energised and running', when: 'Clamp', cost: 'No need to break the circuit or de-energise', recommended: true },
+    { option: 'You need 1% accuracy', when: 'DMM in series', cost: 'A clamp is ±2–3% at best' },
+    { option: 'Currents above 10 A', when: 'Clamp', cost: 'Beyond most DMM current inputs and their fuses' },
+    { option: 'Small currents in a low-voltage circuit', when: 'DMM', cost: 'But watch the burden voltage' },
+    { option: 'DC current', when: 'Hall-effect clamp, or DMM', cost: 'A CT clamp reads zero' },
+    { option: 'Checking a circuit is genuinely dead', when: 'Neither — use a voltage tester', cost: 'Zero current does not mean zero voltage' },
+  ]}
+/>
+
+<Callout type="engineering">
+  The last row matters more than it looks.
+
+  A clamp reading zero amperes tells you no current is flowing. It says **nothing** about
+  voltage. An isolated but energised circuit with no load draws no current and reads zero on
+  a clamp while sitting at full voltage.
+
+  Proving dead is a voltage test, and it follows the three-step procedure in the safety
+  module. A clamp has no part in it.
+</Callout>
+
+## In your experiments
+
+In Experiment 1 the line current is the independent variable in every plot, and a clamp
+lets you take it without breaking into the circuit at each load step — which matters,
+because every disconnection is an opportunity to introduce a loose connection.
+
+For the recorded observations, prefer the power analyser's current channel: it is more
+accurate and it is phase-referenced, which the clamp is not. Use the clamp as an
+independent cross-check. Two instruments disagreeing is how you find a CT ratio entered
+wrongly.
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Why can a standard clamp meter not measure DC?">
+    A CT-based clamp works by transformer action, which requires **changing** flux to induce
+    a secondary voltage. A steady DC current produces constant flux, so nothing is induced
+    and the meter reads zero.
+
+    A Hall-effect clamp measures flux density directly rather than its rate of change, so it
+    responds to DC as well as AC.
+  </Q>
+
+  <Q q="What happens if you clamp both the phase and neutral conductors together?">
+    Their currents are equal and opposite, so the fields cancel and the meter reads
+    approximately zero — indistinguishable from a dead circuit.
+
+    Used deliberately with a sensitive leakage clamp, though, this is the correct technique:
+    any residual reading is current returning by a path other than the neutral, which is
+    exactly what an RCD detects.
+  </Q>
+</Viva>
+
+<Viva band="procedure">
+  <Q q="How would you measure 300 mA accurately with a clamp meter?">
+    Pass the conductor through the jaw ten times and divide the reading by ten. The meter
+    sees 3 A, which is inside its accurate range, and the effective resolution improves
+    tenfold.
+
+    A clamp responds to ampere-turns, not amperes — the same principle a CT ratio uses,
+    applied deliberately.
+  </Q>
+
+  <Q q="Your clamp reads lower than expected. What do you check first?">
+    Whether the jaw is fully closed and latched, then whether the conductor is centred, then
+    whether more than one conductor is inside the jaw.
+
+    All three reduce the reading, and none of them produce any indication that something is
+    wrong.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  A clamp measures the field around **one** conductor without inserting anything — so no
+  burden voltage, and no need to break the circuit. Clamp two conductors and the fields
+  cancel to a reassuring zero; and a CT-based clamp cannot see DC at all, because
+  transformer action needs changing flux.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 61010-2-032 — Safety requirements for hand-held current sensors',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 61869-2 — Instrument transformers: additional requirements for current transformers',
+      note: 'The theory behind the CT-based clamp, in its full form.',
+    },
+  ]}
+/>

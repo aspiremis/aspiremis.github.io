@@ -1,0 +1,307 @@
+---
+title: Power Analyzer
+shortTitle: Power analyser
+category: measurement
+tagline: The only instrument on the bench that can see phase
+description: P, Q, S, power factor and THD all require voltage and current measured simultaneously with their phase relationship intact. This is the instrument that does that, and Blondel's theorem is why it needs fewer channels than you would expect.
+icon: analyzer
+order: 3
+difficulty: intermediate
+estimatedMinutes: 35
+specs:
+  - label: Channels
+    value: '3 voltage, 3 current'
+  - label: Quantities
+    value: 'V, I, P, Q, S, PF, φ, f, energy, THD'
+  - label: Accuracy
+    value: '±(0.2–0.5% of reading) typical for a bench instrument'
+  - label: Sampling
+    value: 'Typically ≥ 10 kHz per channel'
+    note: Sets the harmonic order it can resolve
+  - label: Current input
+    value: Direct, or via external CT
+    note: The CT ratio must be entered in the instrument or every power reading is wrong
+  - label: Connection modes
+    value: '1P2W, 3P3W, 3P4W'
+hazards:
+  - Voltage inputs connect directly to a live system
+  - CT secondaries must never be open-circuited
+tags: ['instrument', 'measurement', 'power', 'power-factor', 'harmonics']
+---
+
+Your multimeter can measure 230 V and 4.7 A and cannot tell you the power, because
+the answer depends on the **phase angle** between them and a DMM has no phase reference.
+
+The power analyser samples voltage and current simultaneously and computes from the
+waveforms. Everything else follows from that one capability.
+
+## What it actually computes
+
+Real power is the average of the instantaneous product:
+
+$$
+P = \frac{1}{T}\int_0^T v(t)\,i(t)\,\mathrm{d}t
+$$
+
+which for sampled data is simply the mean of $v_k i_k$. Note that this definition is
+**correct for any waveform** — it does not assume a sinusoid anywhere.
+
+Apparent power uses the RMS values:
+
+$$
+S = V_{\text{rms}} \, I_{\text{rms}}
+$$
+
+and reactive power is what remains:
+
+$$
+Q = \sqrt{S^2 - P^2}
+$$
+
+Power factor is the ratio:
+
+$$
+\text{PF} = \frac{P}{S}
+$$
+
+<Callout type="engineering">
+  **Power factor and cos φ are not the same thing**, and the distinction becomes important
+  the moment a nonlinear load appears.
+
+  For a pure sinusoid they coincide. With harmonics present, current flows at frequencies
+  the voltage does not contain — and those harmonic currents carry no real power while
+  contributing fully to $I_{\text{rms}}$, and therefore to $S$.
+
+  So true power factor splits into two parts:
+
+  $$\text{PF} = \underbrace{\cos\varphi_1}_{\text{displacement}} \times \underbrace{\frac{I_1}{I_{\text{rms}}}}_{\text{distortion}}$$
+
+  A rectifier load can have a displacement factor near 1.0 — its fundamental current is
+  almost in phase with the voltage — and a true power factor of 0.6, entirely because of
+  harmonics.
+
+  Capacitors correct the *displacement* term and do nothing at all for the *distortion*
+  term. That is why power factor correction on a modern installation full of electronic
+  loads often disappoints, and why harmonic filters exist as a separate remedy.
+</Callout>
+
+## Blondel's theorem
+
+How many wattmeters do you need for a three-phase system? Fewer than three.
+
+**Blondel's theorem**: for a system of $n$ conductors, $n-1$ wattmeter elements are
+sufficient to measure total power, with the common reference taken on the unmeasured
+conductor.
+
+<Compare
+  headings={['System', 'Conductors', 'Elements needed']}
+  rows={[
+    { option: 'Single phase', when: '2 (phase + neutral)', cost: '1' },
+    { option: 'Three phase, three wire', when: '3', cost: '2 — the two-wattmeter method', recommended: true },
+    { option: 'Three phase, four wire', when: '4 (with neutral)', cost: '3' },
+  ]}
+/>
+
+### The two-wattmeter method
+
+For a three-wire system, connect two elements with the third phase as the common reference.
+Then:
+
+$$
+P_{\text{total}} = W_1 + W_2
+$$
+
+and, for a **balanced** load, the power factor angle follows from the difference:
+
+$$
+\tan\varphi = \sqrt{3}\;\frac{W_1 - W_2}{W_1 + W_2}
+$$
+
+<Callout type="engineering">
+  **One wattmeter reads negative below 0.5 power factor**, and this alarms students every
+  time.
+
+  Work through the balanced case. The two elements read:
+
+  $$W_1 = V_L I_L \cos(30° - \varphi), \qquad W_2 = V_L I_L \cos(30° + \varphi)$$
+
+  At $\varphi = 0$ (unity PF) both read the same. At $\varphi = 60°$ — power factor 0.5 —
+  the second becomes $\cos 90° = 0$, so $W_2$ reads **zero**. Beyond that it goes
+  **negative**.
+
+  Nothing is wrong. The sum is still the total power. If your instrument or your wiring
+  cannot show a negative reading you must reverse that element's connections and subtract
+  its reading manually — which is exactly the trap in the classic two-wattmeter laboratory
+  experiment.
+
+  Note also that the $\tan\varphi$ formula assumes balance. On an unbalanced load the sum
+  is still correct but the power factor derived this way is not.
+</Callout>
+
+## Connecting it
+
+<Steps title="Setup order">
+  <Step n={1} title="Choose the wiring mode" expect="the instrument's display to match your actual circuit topology">
+    1P2W, 3P3W or 3P4W. Selecting the wrong mode gives readings that look plausible and
+    are wrong by a factor related to √3 — the single most common error with this
+    instrument.
+  </Step>
+
+  <Step n={2} title="Connect voltage inputs" hazard="These connect directly to a live system. De-energise first.">
+    Phase to the V inputs, with the common reference on the correct terminal for your mode.
+  </Step>
+
+  <Step n={3} title="Connect current inputs, observing polarity" hazard="If using external CTs, short the secondary before making or breaking any connection.">
+    The CT has a polarity mark — P1/P2 on the primary, S1/S2 on the secondary. Reversed
+    polarity gives negative power on that phase.
+  </Step>
+
+  <Step n={4} title="Enter the CT and PT ratios" expect="displayed primary values, not secondary ones">
+    An instrument reading 4.2 A on a 100/5 CT is seeing 84 A in the primary. If the ratio
+    is not entered, every current, power and energy figure is wrong by that factor.
+
+    This is the setting people forget, and the resulting error is a clean multiple — which
+    makes it *easy to spot if you sanity-check* and invisible if you do not.
+  </Step>
+
+  <Step n={5} title="Verify before recording" expect="power factor between −1 and 1, and a positive total power for a passive load">
+    A PF above 1, or a negative total power on a load, means a connection is wrong. Fix it
+    before taking a single reading.
+  </Step>
+</Steps>
+
+<Callout type="warning" title="Sanity-check the first reading against a hand calculation">
+  Take V, I and PF off the display and compute $\sqrt{3}\,V_L I_L \cos\varphi$ yourself.
+  If it does not match the displayed total power, something in the setup is wrong.
+
+  Thirty seconds here catches the wrong wiring mode, an un-entered CT ratio and a reversed
+  CT — the three errors that otherwise contaminate an entire session's data.
+</Callout>
+
+## Harmonics
+
+Because it samples the waveform, the analyser can transform it and report the harmonic
+content:
+
+$$
+\text{THD}_I = \frac{\sqrt{\sum_{h=2}^{H} I_h^2}}{I_1}
+$$
+
+<Callout type="engineering">
+  Two things constrain what a harmonic reading means.
+
+  **Sampling rate sets the ceiling.** By Nyquist, an instrument sampling at 10 kHz can
+  resolve at most 100th harmonic content on a 50 Hz system — in practice rather less, after
+  anti-alias filtering. Harmonics above that are not merely missed; if the filter is
+  inadequate they **alias** down and appear as spurious low-order content.
+
+  **The window must be synchronised.** The transform assumes an integer number of cycles.
+  If the window does not line up, energy leaks between bins and the spectrum smears. Good
+  instruments lock to the fundamental and adjust the window continuously; IEC 61000-4-7
+  specifies a 200 ms window synchronised to ten cycles at 50 Hz.
+
+  This is why THD from a cheap analyser and a laboratory-grade one can differ noticeably on
+  the same load, and why the standard specifies the measurement method rather than only the
+  limit.
+</Callout>
+
+## What it cannot do
+
+- **Transients.** It averages over a window. A sub-cycle event is smeared or missed
+  entirely — that needs a recorder with a trigger, or an oscilloscope.
+- **Above its bandwidth.** Switching-frequency content from a converter is outside the
+  range of most bench analysers.
+- **Tell you a connection is wrong.** It computes faithfully from whatever it is given. The
+  only defence is the sanity check.
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Why can a multimeter not measure real power?">
+    Real power is the average of the instantaneous product of voltage and current, so it
+    depends on their phase relationship. A DMM measures one magnitude at a time, has no
+    phase reference and no second synchronised channel.
+
+    You could compute P from V, I and a separately measured power factor — but the DMM
+    cannot supply the power factor either, for the same reason.
+  </Q>
+
+  <Q q="State Blondel's theorem.">
+    For a system of n conductors, n−1 wattmeter elements are sufficient to measure the total
+    power, provided the common reference is taken on the unmeasured conductor.
+
+    So a three-wire three-phase system needs two elements — the two-wattmeter method — and a
+    four-wire system with a neutral needs three.
+  </Q>
+
+  <Q q="What is the difference between power factor and cos φ?">
+    cos φ is the displacement factor — the cosine of the angle between the fundamental
+    voltage and fundamental current. True power factor is P/S, which also accounts for
+    harmonic current contributing to I_rms without carrying real power.
+
+    PF = displacement × distortion. They are equal only for a pure sinusoid, and a rectifier
+    load can have cos φ near 1.0 with a true power factor of 0.6.
+  </Q>
+</Viva>
+
+<Viva band="procedure">
+  <Q q="In the two-wattmeter method, one wattmeter reads negative. Is something wrong?">
+    No. Below 0.5 power factor the second element reads negative, because it measures
+    V_L I_L cos(30° + φ) and that cosine changes sign beyond φ = 60°.
+
+    The total is still W1 + W2, with the negative value subtracted. At exactly 0.5 power
+    factor that element reads zero.
+  </Q>
+
+  <Q q="Your analyser shows a power factor of 1.4. What do you conclude?">
+    That a connection is wrong, because power factor is P/S and P can never exceed S.
+
+    Most likely the CT ratio is not entered — or is entered on only some channels — so the
+    currents and hence S are scaled wrongly relative to P. Reversed CT polarity or the wrong
+    wiring mode produce similar impossibilities.
+
+    An impossible reading is useful: it is unambiguous, where a merely wrong one is not.
+  </Q>
+</Viva>
+
+<Viva band="application">
+  <Q q="Why does adding capacitors sometimes fail to fix a poor power factor?">
+    Because capacitors correct only the displacement component. If the poor power factor
+    comes from harmonic distortion — a large population of rectifier loads — the distortion
+    factor is unchanged and the improvement is small.
+
+    Worse, the capacitors add capacitance that can resonate with the system's inductance at
+    a harmonic frequency, amplifying the very currents causing the problem. That is why
+    detuned reactors are fitted in series with capacitor banks on harmonic-rich
+    installations.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  The power analyser is the only instrument on the bench that sees **phase**, which is why
+  P, Q, PF and THD all come from it. Enter the CT ratio and check the wiring mode before
+  recording anything — then verify the first reading against a hand calculation, because the
+  instrument computes faithfully from whatever it is given.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEEE Std 1459 — Definitions for the measurement of electric power quantities under sinusoidal, nonsinusoidal, balanced or unbalanced conditions',
+      note: 'The standard that sorts out what P, Q and S even mean once waveforms stop being sinusoidal. Genuinely worth reading.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 61000-4-7 — Testing and measurement techniques: harmonics and interharmonics',
+      note: 'Specifies the 200 ms synchronised window and the grouping rules.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEEE Std 519 — Harmonic control in electric power systems',
+      note: 'The limits themselves, and the TDD-versus-THD distinction.',
+    },
+  ]}
+/>

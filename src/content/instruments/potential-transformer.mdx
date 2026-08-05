@@ -1,0 +1,242 @@
+---
+title: Potential Transformer
+shortTitle: PT / VT
+category: transformer
+tagline: The CT's mirror image — never short this one
+description: A voltage transformer scales system voltage down to a standard 110 V. Every rule is the opposite of a CT's, and one failure mode — ferroresonance — has no equivalent on the current side at all.
+icon: transformer
+order: 8
+difficulty: intermediate
+estimatedMinutes: 30
+specs:
+  - label: Ratio
+    value: '11000/110, 33000/110 …'
+    note: Secondary standardised at 110 V line-to-line, or 110/√3
+  - label: Burden
+    value: '25–200 VA'
+  - label: Accuracy class
+    value: '0.2, 0.5, 1.0 for metering; 3P, 6P for protection'
+  - label: Rated voltage factor
+    value: '1.2 continuous, 1.5 or 1.9 for 30 s'
+    note: How much overvoltage it survives during an earth fault
+  - label: Protection
+    value: Fuses on BOTH primary and secondary
+  - label: Type
+    value: 'Wound (up to ~66 kV) or capacitor (CVT) above'
+hazards:
+  - NEVER short-circuit the secondary
+  - Primary is at full system voltage
+tags: ['instrument', 'transformer', 'pt', 'vt', 'ferroresonance']
+---
+
+A voltage transformer does for voltage what a CT does for current: scales it to a standard
+low value — 110 V — that instruments and relays are built for, with isolation from the
+primary.
+
+The useful way to learn it is as the CT's mirror image. Nearly every rule inverts.
+
+## The mirror
+
+<Compare
+  headings={['', 'Current transformer', 'Voltage transformer']}
+  rows={[
+    { option: 'Behaves as', when: 'A current source', cost: 'A voltage source' },
+    { option: 'Never do this', when: 'Open the secondary', cost: 'Short the secondary', recommended: false },
+    { option: 'Normal operating state', when: 'Near short circuit — low burden impedance', cost: 'Near open circuit — high burden impedance' },
+    { option: 'Primary connection', when: 'Series, in the line', cost: 'Parallel, across the line' },
+    { option: 'Core flux at normal load', when: 'Low, because secondary MMF opposes primary', cost: 'High — set by the applied voltage, as in any transformer' },
+    { option: 'Standard secondary', when: '1 A or 5 A', cost: '110 V' },
+    { option: 'Burden increase causes', when: 'Saturation and under-reading', cost: 'Voltage drop and under-reading' },
+  ]}
+/>
+
+<Hazard title="Never short-circuit a VT secondary">
+  A VT is a voltage source. Short its secondary and the primary voltage — fixed by the
+  system, which does not care — drives an enormous current through the winding.
+
+  The VT burns out, usually violently, and it is connected to the full system voltage while
+  doing so.
+
+  This is why VT secondaries are fused, and why the fuse rating matters: too large and it
+  will not clear before the winding fails.
+</Hazard>
+
+<Callout type="warning" title="Fuses on both sides, for different reasons">
+  **Secondary fuses** protect the VT from a fault in the wiring out to the relays and
+  meters — a short in the panel should not destroy the transformer.
+
+  **Primary fuses** protect the *system* from the VT. A VT failing internally becomes a
+  fault on the busbar it is connected to, and without a primary fuse that fault is cleared
+  by the busbar protection — tripping everything on the bus, for one small failed
+  transformer.
+
+  The two fuses face in opposite directions, protecting different things.
+</Callout>
+
+## Why the burden is high
+
+A VT is connected in parallel and should draw as little current as possible, so its burden
+is a **high** impedance — the input of a voltmeter or relay.
+
+Loading a VT more heavily than its rating causes an internal voltage drop across the
+winding impedance, so the secondary reads low and the phase shifts. Both errors move it
+outside its accuracy class.
+
+Note that this is the same *symptom* as an overloaded CT — under-reading — arriving by a
+completely different mechanism.
+
+## Ferroresonance
+
+This is the VT failure mode with no CT equivalent, and it is genuinely subtle.
+
+A VT has a **nonlinear inductance** — the magnetising inductance of its iron core, which
+falls sharply once the core saturates. Put that in a circuit with capacitance — the
+capacitance of a busbar, a cable, or the grading capacitors of a circuit breaker — and you
+have a resonant circuit whose resonant frequency depends on the amplitude.
+
+<Callout type="engineering">
+  In an ordinary LC circuit, resonance happens at one frequency and you can design around
+  it.
+
+  With a **saturable** inductance the effective L depends on how hard the core is driven, so
+  the resonant frequency moves with amplitude. The system can jump into a sustained
+  oscillation — often at a subharmonic, a third or a fifth of supply frequency — and stay
+  there, drawing large currents and developing overvoltages, until something fails or the
+  circuit is broken.
+
+  It is typically triggered by a **switching event**: energising a busbar, opening an
+  isolator, or the transient after a fault is cleared. Everything is normal, one switching
+  operation happens, and a VT that has run for twenty years begins to overheat and destroys
+  itself within minutes.
+
+  The classic mitigation is a damping resistor across the open-delta tertiary winding, which
+  absorbs energy at the subharmonic frequency and suppresses the oscillation. It is why so
+  many three-phase VT sets carry a third winding that seems to do nothing in normal
+  operation.
+</Callout>
+
+## Wound VTs and CVTs
+
+Above roughly 66 kV, a wound VT becomes very large and expensive — the insulation
+requirement dominates.
+
+A **capacitor voltage transformer** instead uses a capacitive divider to drop the system
+voltage to an intermediate level, then a conventional wound transformer from there. The
+capacitor stack is cheaper than insulating a full winding at EHV, and it can double as a
+coupling capacitor for power line carrier communication.
+
+<Compare
+  headings={['', 'Wound VT', 'CVT']}
+  rows={[
+    { option: 'Voltage range', when: 'Up to about 66 kV', cost: 'EHV — 132 kV and above', recommended: false },
+    { option: 'Accuracy', when: 'Better', cost: 'Good, but affected by frequency and burden' },
+    { option: 'Transient response', when: 'Fast and clean', cost: 'Poorer — the capacitors ring after a sudden voltage collapse' },
+    { option: 'Cost at EHV', when: 'High', cost: 'Much lower' },
+    { option: 'Extra function', when: 'None', cost: 'Doubles as a PLC coupling capacitor' },
+  ]}
+/>
+
+<Callout type="engineering">
+  The transient response row has a real protection consequence.
+
+  When a close-in fault collapses the voltage almost to zero, a CVT's capacitor stack cannot
+  follow instantly — stored energy discharges through the circuit and produces a **transient
+  output** that does not represent the actual system voltage for a cycle or more.
+
+  A distance relay measuring impedance as V/I during that window sees a voltage that is
+  wrong, and may over-reach — tripping for a fault outside its zone.
+
+  Modern numerical distance relays include specific CVT transient detection logic to handle
+  exactly this. It is a good example of protection design compensating for a known
+  measurement artefact rather than pretending the instrument is ideal.
+</Callout>
+
+## In your experiments
+
+At 415 V your bench does not need a PT — the analyser's voltage inputs connect directly.
+You will meet them in the protection lab and in any substation.
+
+What transfers now is the **mirror-image discipline**: CT secondaries are shorted before
+disconnection, VT secondaries are never shorted. Getting these the wrong way round destroys
+equipment in both directions.
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Why must a VT secondary never be shorted, when a CT secondary must be?">
+    Because they are opposite kinds of source. A CT is a current source — its primary
+    current is fixed by the system, so an open secondary leaves nothing to oppose the
+    primary MMF and the core saturates, producing kilovolts.
+
+    A VT is a voltage source — its primary voltage is fixed by the system, so a shorted
+    secondary draws enormous current and burns the winding out.
+
+    Each is safe in the state that would destroy the other.
+  </Q>
+
+  <Q q="What is the rated voltage factor of a VT?">
+    How much overvoltage the VT can withstand and for how long — typically 1.2 times rated
+    continuously, and 1.5 or 1.9 times for 30 seconds.
+
+    It matters because during an earth fault on an unearthed or impedance-earthed system,
+    the healthy phases rise toward line voltage — a factor of √3 — and the VTs on those
+    phases must survive it long enough for the protection to clear the fault.
+  </Q>
+</Viva>
+
+<Viva band="analysis">
+  <Q q="What is ferroresonance, and why does it affect VTs?">
+    A sustained oscillation between the nonlinear magnetising inductance of a VT core and
+    circuit capacitance — busbar, cable, or circuit breaker grading capacitors.
+
+    Because the inductance is saturable, the resonant frequency depends on amplitude, so the
+    circuit can lock into a sustained oscillation, often at a subharmonic, drawing large
+    currents and producing overvoltages until something fails.
+
+    It is usually triggered by a switching event. The standard mitigation is a damping
+    resistor across an open-delta tertiary winding.
+  </Q>
+
+  <Q q="Why does a CVT cause problems for distance protection?">
+    When a close-in fault collapses the voltage almost to zero, the capacitor stack cannot
+    follow instantly, and its stored energy produces a transient output that does not
+    represent the true system voltage for a cycle or more.
+
+    A distance relay computing impedance as V/I during that window sees an erroneous
+    voltage and may over-reach, tripping for a fault outside its zone. Numerical relays
+    include CVT transient detection to compensate.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  A VT is the CT's **mirror image** — a voltage source, connected in parallel, with a high
+  burden impedance, and never to be shorted. Its unique failure mode is ferroresonance,
+  where a saturable inductance and circuit capacitance lock into a sustained subharmonic
+  oscillation after an ordinary switching event.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 61869-3 — Instrument transformers: additional requirements for inductive voltage transformers',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 61869-5 — Additional requirements for capacitor voltage transformers',
+    },
+    {
+      kind: 'paper',
+      title: 'Ferroresonance in electrical power systems',
+      note: 'A well-covered topic in CIGRE working group reports; search for the ferroresonance brochures.',
+    },
+    {
+      kind: 'book',
+      title: 'Network Protection and Automation Guide',
+      by: 'Alstom / GE Grid Solutions',
+      note: 'The instrument transformer chapter covers CVT transients and their effect on distance protection.',
+    },
+  ]}
+/>

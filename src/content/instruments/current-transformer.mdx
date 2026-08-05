@@ -1,0 +1,280 @@
+---
+title: Current Transformer
+shortTitle: CT
+category: transformer
+tagline: A current source — which is why an open secondary is lethal
+description: A CT scales large primary currents down to a standard 1 A or 5 A. Understanding that it behaves as a current source rather than a voltage source explains its burden, its accuracy classes, and the one thing you must never do to it.
+icon: ct
+order: 7
+difficulty: intermediate
+estimatedMinutes: 35
+specs:
+  - label: Ratio
+    value: '100/5, 200/1, 400/5 …'
+    note: Secondary standardised at 1 A or 5 A
+  - label: Burden
+    value: '2.5–30 VA'
+    note: The total impedance the secondary may drive and still meet its class
+  - label: Metering class
+    value: '0.2, 0.5, 1.0'
+    note: The number IS the percentage error at rated current
+  - label: Protection class
+    value: '5P10, 5P20, 10P20'
+    note: '5% error up to 10 or 20 times rated current'
+  - label: Knee point
+    value: Where a 10% voltage rise causes 50% more magnetising current
+  - label: Polarity marks
+    value: 'P1/P2 primary, S1/S2 secondary'
+hazards:
+  - NEVER open-circuit the secondary while primary current flows
+tags: ['instrument', 'transformer', 'ct', 'protection', 'metering']
+---
+
+You cannot put an 800 A busbar through a meter. A current transformer scales it to a
+standard 1 A or 5 A that instruments are built for, and provides isolation from the primary
+voltage at the same time.
+
+Everything else about a CT follows from one fact: **it is a current source**.
+
+## Why that matters
+
+An ordinary transformer is driven by a voltage, and the flux in its core is set by that
+applied voltage. A CT is different — the primary current is fixed by the power system,
+which does not care what the CT is doing.
+
+Ampere-turns must balance:
+
+$$
+N_p I_p = N_s I_s + N_p I_{\text{mag}}
+$$
+
+With a burden connected, secondary current flows, its ampere-turns oppose the primary, and
+the net magnetomotive force driving the core is small. **The core flux stays low**, which is
+exactly the condition for accurate transformation.
+
+Now open the secondary. $I_s = 0$, so nothing opposes the primary ampere-turns at all. The
+entire $N_p I_p$ becomes magnetising MMF.
+
+<Hazard title="An open CT secondary can develop kilovolts">
+  The core is driven hard into saturation. Around each zero crossing the flux changes
+  extremely rapidly, and
+
+  $$e = N_s \frac{\mathrm{d}\phi}{\mathrm{d}t}$$
+
+  produces a large voltage spike across the open secondary — potentially **several
+  kilovolts** on a device that looks small and harmless.
+
+  The consequences: insulation failure, a destroyed CT, and a genuine electrocution risk to
+  whoever is holding the terminals.
+
+  The core also heats severely, because it is now supporting full flux swing with no
+  opposing MMF.
+
+  **Short the secondary before disconnecting anything from it.** This is why CT terminal
+  blocks have shorting links, and why the links are made before any meter or relay is
+  removed. It is the most common serious accident in a protection laboratory.
+</Hazard>
+
+<Analogy>
+  A CT is a current source, and a current source hates an open circuit exactly as much as a
+  voltage source hates a short.
+
+  Short a voltage source and it delivers enormous current. Open a current source and it
+  develops enormous voltage. Both are the source trying to obey its nature against an
+  impossible load.
+
+  This is also why a **voltage** transformer has the opposite rule: never short its
+  secondary. The two instrument transformers have mirror-image failure modes, and confusing
+  them is easy.
+</Analogy>
+
+## Burden
+
+The burden is the total impedance the CT drives — the relay, the meter, and the resistance
+of the leads out to them.
+
+<Callout type="engineering">
+  **Lead resistance is often the largest part of the burden**, and it is the part people
+  forget.
+
+  A CT in a switchyard might be fifty metres from its relay panel. With 2.5 mm² cable at
+  about 7 mΩ/m, and counting both go and return, that is:
+
+  $$R_{\text{leads}} = 2 \times 50 \times 0.007 = 0.7\ \Omega$$
+
+  On a **5 A** secondary the burden is $I^2 R = 25 \times 0.7 = 17.5$ VA — which may exceed
+  the CT's entire rating on its own, before the relay is even connected.
+
+  On a **1 A** secondary the same leads cost $1 \times 0.7 = 0.7$ VA. Twenty-five times
+  less, because burden goes as the square of the current.
+
+  This is precisely why 1 A secondaries are standard where cable runs are long, and 5 A
+  where the relay is close to the CT. It is not arbitrary convention.
+</Callout>
+
+Exceed the rated burden and the CT can no longer drive the required secondary current
+accurately. Its errors grow beyond class, and under fault conditions it saturates early —
+which means the protection sees less current than is actually flowing, and may not operate.
+
+## Metering and protection CTs are designed to be opposite
+
+This is the most useful thing to understand about CTs, and it surprises people.
+
+<Compare
+  headings={['', 'Metering CT', 'Protection CT']}
+  rows={[
+    { option: 'Accurate at', when: 'Around rated current — 5% to 120%', cost: 'Up to 10–20× rated current' },
+    { option: 'Under fault current', when: 'Saturates DELIBERATELY, protecting the meter', cost: 'Must stay linear so the relay sees the truth', recommended: false },
+    { option: 'Class notation', when: '0.2, 0.5, 1.0 — the % error at rated current', cost: '5P10, 10P20 — % error at that multiple of rated' },
+    { option: 'Core', when: 'Smaller, saturates early', cost: 'Larger, higher knee point' },
+    { option: 'Job', when: 'Bill accurately for normal load', cost: 'Report a fault faithfully' },
+  ]}
+/>
+
+<Callout type="engineering">
+  The two are designed to **fail in opposite directions**, and each is right for its job.
+
+  A metering CT is optimised for accuracy at normal load, because that is what you bill on.
+  When a fault multiplies the current twenty-fold, the metering CT saturates — and this is
+  a **feature**, because it limits what reaches the energy meter and stops the fault
+  destroying it.
+
+  A protection CT must do the reverse. If it saturated during a fault, the relay would see a
+  reduced current and might under-reach or fail to trip — precisely when it matters most. So
+  it has a larger core and a much higher knee point, and it stays linear well past rated
+  current at the cost of poorer accuracy at normal load.
+
+  **You cannot substitute one for the other.** Using a metering CT for protection means the
+  relay may not see the fault; using a protection CT for metering means your billing is
+  inaccurate every day.
+</Callout>
+
+## The knee point
+
+The knee point voltage is where the magnetising characteristic bends — formally, where a
+**10% increase in applied voltage causes a 50% increase in magnetising current**.
+
+Above the knee, extra applied voltage goes into magnetising the core rather than driving
+the burden. That is saturation, and beyond it the secondary current no longer represents
+the primary.
+
+The knee point is what a CT is tested against during commissioning, and it is what
+determines whether a given CT can support a given relay through a given fault.
+
+## Polarity
+
+CTs are marked **P1/P2** on the primary and **S1/S2** on the secondary. Current entering P1
+produces current leaving S1.
+
+<Callout type="warning" title="Reversed polarity gives negative power on that phase">
+  On a power analyser, a CT connected backwards makes that phase's power read negative — and
+  the total is then wrong by twice that phase's contribution.
+
+  It is easy to spot if you check: a passive load cannot have negative power. It is entirely
+  invisible if you do not.
+
+  For differential protection the consequence is worse. Reversed polarity on one side makes
+  a healthy circuit look like a permanent internal fault, and the relay trips on load. CT
+  polarity is verified during commissioning with a battery and a centre-zero voltmeter, on
+  every CT, for this reason.
+</Callout>
+
+## In your experiments
+
+Experiment 1's power analyser uses CTs on the current channels. Three things to get right:
+
+<Checklist
+  id="ct-check"
+  title="Before recording any reading"
+  items={[
+    'Shorting links are OPEN (so current flows through the burden) but present, so they can be closed before disconnecting',
+    'CT ratio entered into the analyser — otherwise every current and power reading is scaled wrongly',
+    'Polarity correct on every phase — check that no phase reads negative power on a passive load',
+    'Primary current is within the CT range — well below rating gives poor accuracy',
+    'Total burden including leads is within the CT rating',
+  ]}
+/>
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Why must a CT secondary never be open-circuited?">
+    A CT is a current source: the primary current is fixed by the system. With a burden
+    connected, secondary ampere-turns oppose the primary and the net MMF driving the core is
+    small, so flux stays low.
+
+    Open the secondary and nothing opposes the primary MMF. The core saturates hard, and the
+    very rapid flux change at each zero crossing induces a large voltage — potentially
+    kilovolts — across the open terminals. The core also overheats.
+
+    Short the secondary before disconnecting anything.
+  </Q>
+
+  <Q q="What is CT burden and why does it matter?">
+    The total impedance the secondary drives — relay, meter and lead resistance — expressed
+    in VA at rated secondary current.
+
+    Exceeding it means the CT cannot drive the required current accurately, so errors grow
+    beyond class and the CT saturates earlier under fault, which can prevent protection
+    operating.
+  </Q>
+
+  <Q q="Why are 1 A secondaries used for long cable runs and 5 A for short ones?">
+    Burden goes as I²R, so the same lead resistance costs twenty-five times more VA at 5 A
+    than at 1 A.
+
+    Fifty metres of 2.5 mm² cable is about 0.7 Ω both ways: 17.5 VA at 5 A, which can exceed
+    the CT rating on its own, versus 0.7 VA at 1 A.
+  </Q>
+</Viva>
+
+<Viva band="analysis">
+  <Q q="Can a metering CT be used for protection?">
+    No. A metering CT is designed to saturate under fault current, deliberately, to protect
+    the connected meter. A relay fed from it would see a reduced current during a fault and
+    might under-reach or fail to trip.
+
+    A protection CT has a larger core and higher knee point so it stays linear to ten or
+    twenty times rated current, at the cost of poorer accuracy at normal load. The two are
+    designed to fail in opposite directions, and neither substitutes for the other.
+  </Q>
+
+  <Q q="What is the knee point voltage?">
+    The point on the magnetising characteristic where a 10% increase in applied voltage
+    produces a 50% increase in magnetising current.
+
+    Above it, additional voltage goes into magnetising the core rather than driving the
+    burden — the secondary current stops representing the primary. It is what determines
+    whether a CT can support a given relay through a given fault.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  A CT is a **current source**, so an open secondary is the mirror image of a shorted
+  voltage source — the core saturates and kilovolts appear. Short it before disconnecting
+  anything. And metering and protection CTs are designed to behave oppositely under fault:
+  one saturates on purpose, the other must not.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 61869-2 — Instrument transformers: additional requirements for current transformers',
+      note: 'Accuracy classes, burden definitions and the knee point test.',
+    },
+    {
+      kind: 'standard',
+      title: 'IS 2705 — Current transformers',
+      note: 'The Indian standard.',
+    },
+    {
+      kind: 'book',
+      title: 'Network Protection and Automation Guide',
+      by: 'Alstom / GE Grid Solutions',
+      note: 'The CT chapter is the best free treatment of saturation and transient performance available.',
+    },
+  ]}
+/>

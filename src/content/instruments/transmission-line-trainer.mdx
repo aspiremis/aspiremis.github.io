@@ -1,0 +1,293 @@
+---
+title: Transmission Line Trainer
+shortTitle: Line trainer
+category: network
+tagline: Lumped components standing in for a line hundreds of kilometres long
+description: A bench panel of resistors, inductors and capacitors arranged as π sections, modelling a transmission line at a voltage and power you can safely stand next to. What the model captures, what it cannot, and how many sections you actually need.
+icon: line
+order: 9
+difficulty: intermediate
+estimatedMinutes: 35
+specs:
+  - label: Sections
+    value: 'Typically 3–6 switchable π sections'
+    note: Each represents a fixed length of line
+  - label: Series resistance
+    value: '1–5 Ω per section'
+  - label: Series reactance
+    value: '5–20 Ω per section'
+  - label: Shunt capacitance
+    value: 'Split half at each end of the section'
+    note: What produces the Ferranti effect in Experiment 3
+  - label: Rated voltage
+    value: '240 V or 415 V'
+  - label: Rated current
+    value: '2–5 A'
+    note: Usually what stops your PV curve sweep before the nose
+hazards:
+  - Live at bench voltage throughout
+  - Shunt capacitors retain charge after switch-off
+tags: ['instrument', 'network', 'transmission-line', 'pi-model', 'ferranti']
+---
+
+A real 400 kV line is 300 km long and carries a gigawatt. This panel is a metre wide and
+carries a few amperes, and the equations describing them are the same.
+
+That substitution is what makes Experiments 1 and 3 possible at all.
+
+## What a line actually is
+
+A transmission line has four parameters, all **distributed** along its length rather than
+lumped anywhere:
+
+<Compare
+  headings={['Parameter', 'Symbol', 'Physical origin', 'Dominant effect']}
+  rows={[
+    { option: 'Series resistance', when: 'R (Ω/km)', cost: 'Conductor resistivity', recommended: false },
+    { option: 'Series inductance', when: 'L (H/km)', cost: 'Magnetic field around the conductors' },
+    { option: 'Shunt capacitance', when: 'C (F/km)', cost: 'Electric field between conductors and to earth' },
+    { option: 'Shunt conductance', when: 'G (S/km)', cost: 'Leakage and corona — usually negligible' },
+  ]}
+/>
+
+Strictly, the line obeys the telegrapher's equations and the exact solution involves
+hyperbolic functions of the propagation constant $\gamma = \sqrt{(R + j\omega L)(G + j\omega C)}$.
+
+For lines short enough — and for teaching — a **lumped** approximation is close enough, and
+far easier to build.
+
+## The π model
+
+Concentrate the whole series impedance in the middle, and split the total shunt admittance
+into two halves, one at each end:
+
+$$
+Z = (R + j\omega L)\,\ell, \qquad \frac{Y}{2} = \frac{j\omega C \,\ell}{2}
+$$
+
+<Compare
+  headings={['Line length', 'Model', 'Shunt capacitance?']}
+  rows={[
+    { option: 'Short (< 80 km)', when: 'Series impedance only', cost: 'Neglected — this is Experiment 1(a)', recommended: false },
+    { option: 'Medium (80–250 km)', when: 'Single π section', cost: 'Included, split at both ends — Experiment 3' },
+    { option: 'Long (> 250 km)', when: 'Exact hyperbolic, or several π sections', cost: 'Distributed effects matter' },
+  ]}
+/>
+
+<Callout type="engineering">
+  **Whether to include the shunt capacitance is what separates your two experiments.**
+
+  Experiment 1(a) says "simplified" line: series impedance only, and the model predicts that
+  no-load receiving voltage equals sending voltage, because with no load there is no current
+  and therefore no drop.
+
+  Experiment 3 measures the **Ferranti effect** — the receiving voltage *rising* above the
+  sending voltage on an unloaded line. That is impossible in the short-line model. It
+  requires the shunt capacitance, because the charging current drawn by that capacitance
+  flows through the series inductance and produces a voltage rise.
+
+  So the two experiments use the same panel with different sections engaged, and the
+  difference between their models is the entire physical content of the second one. If your
+  trainer lets you switch the shunt capacitors in and out, doing Experiment 1(a) both ways
+  is a genuinely instructive five minutes.
+</Callout>
+
+## ABCD parameters
+
+Any two-port network relates its ends by:
+
+$$
+\begin{bmatrix} V_S \\ I_S \end{bmatrix} =
+\begin{bmatrix} A & B \\ C & D \end{bmatrix}
+\begin{bmatrix} V_R \\ I_R \end{bmatrix}
+$$
+
+For a nominal π section:
+
+$$
+A = D = 1 + \frac{ZY}{2}, \qquad B = Z, \qquad C = Y\left(1 + \frac{ZY}{4}\right)
+$$
+
+<Callout type="tip" title="Two checks that catch most algebra errors">
+  **$AD - BC = 1$** for any passive reciprocal network. This must hold for your measured
+  parameters too, and it is the fastest check on a set of ABCD measurements.
+
+  **$A = D$** for a symmetrical network — which a π section is. If your measured A and D
+  differ substantially, the two halves are not matched, or one measurement is wrong.
+
+  Experiment 3(a) asks you to determine ABCD parameters from open-circuit and short-circuit
+  tests. Verify both identities before you believe the result.
+</Callout>
+
+And note what $A$ means physically: with the receiving end open ($I_R = 0$), $V_S = A V_R$,
+so $V_R = V_S / A$. Since $A = 1 + ZY/2$ and $ZY$ is **negative real** for a lossless line
+($j\omega L \times j\omega C = -\omega^2 LC$), $|A| < 1$ — and the receiving voltage exceeds
+the sending voltage. That is the Ferranti effect, falling straight out of the algebra.
+
+## How many sections
+
+A single π section is a poor model of a long line, because it lumps at one point something
+that is genuinely spread out. Splitting the line into $n$ shorter π sections in cascade
+improves the approximation, and the error falls roughly as $1/n^2$.
+
+<Callout type="engineering">
+  There is a diminishing-returns argument here worth knowing.
+
+  For a 300 km line at 50 Hz, one π section might give a few per cent error in the
+  receiving-end voltage; three sections brings it under one per cent; ten sections buys
+  almost nothing more, because you have already reached the accuracy of your knowledge of
+  R, L and C.
+
+  This is the same trade as mesh refinement in any numerical method: refine until the
+  discretisation error drops below the uncertainty in your inputs, then stop. Refining
+  further produces a more precise answer to a question whose data does not support it.
+</Callout>
+
+Your trainer's sections also let you **vary the line length** as an experimental variable —
+engage more sections for a longer line and watch the regulation worsen and the Ferranti
+effect strengthen.
+
+## Reading the panel
+
+<Steps title="Before your first use">
+  <Step n={1} title="Find the nameplate or the panel legend" expect="R, X and C per section, or per kilometre with a stated length">
+    Every prediction in Experiments 1 and 3 needs these numbers. Without them you can
+    observe trends but not check magnitudes.
+  </Step>
+
+  <Step n={2} title="Identify how sections are engaged" expect="switches or links, and a clear indication of which are in circuit">
+    Note which sections you used in your record — a result from three sections is not
+    comparable with one from five.
+  </Step>
+
+  <Step n={3} title="Identify the shunt capacitor switches" hazard="These are the components that hold charge after switch-off.">
+    And whether they can be disabled, which lets you compare the short-line and π models
+    directly.
+  </Step>
+
+  <Step n={4} title="Note the rated current" expect="the value that will end your PV curve sweep">
+    Experiment 1(b) almost certainly stops on this rather than on reaching the nose.
+  </Step>
+
+  <Step n={5} title="Compute the X/R ratio" expect="a number well below a real line's 5–20">
+    A trainer's inductors have real winding resistance, so X/R is lower than a transmission
+    line's. This is the single biggest reason your measurements will depart from textbook
+    predictions, and knowing the number in advance lets you say so quantitatively.
+  </Step>
+</Steps>
+
+<Callout type="warning" title="A trainer's X/R ratio is not a transmission line's">
+  A 400 kV line has X/R between about 10 and 20 — reactance dominates so completely that
+  many analyses neglect R entirely.
+
+  A bench trainer's inductors are wound with real wire and have real resistance, so X/R
+  might be 3 or 4. That is closer to a **distribution feeder** than a transmission line.
+
+  Consequences you should expect and report:
+
+  - The resistive term in $\Delta V \approx I(R\cos\varphi + X\sin\varphi)$ contributes more
+    than the textbook implies.
+  - The capacitive voltage rise is weaker, because $R\cos\varphi$ has more to overcome.
+  - Your measured $P_{\max}$ in Experiment 1(b) falls below the lossless $E^2/2X$, and the
+    turning voltage sits above $0.707E$.
+
+  None of these is an error. Quantifying them, with the measured X/R as the explanation, is
+  a better result than matching an idealised formula.
+</Callout>
+
+## What the model cannot show you
+
+- **Travelling waves and reflections.** A lumped model has no propagation delay, so it
+  cannot represent a surge travelling along the line — which is what surge arresters and
+  travelling-wave fault locators are about.
+- **Corona and weather effects.** No electric field stress at bench voltage.
+- **Skin effect and temperature.** R is fixed on the panel; a real conductor's resistance
+  rises with both frequency and temperature.
+- **Mutual coupling** between circuits on the same tower, and the untransposed asymmetry
+  that produces negative-sequence voltage on real lines.
+
+<Callout type="tip" title="Say what the model omits in your discussion">
+  A report that states the trainer's X/R and names the effects the lumped model cannot
+  represent demonstrates you understand the model as a **model**.
+
+  That is a different and better thing than understanding the experiment, and it is what a
+  viva is usually probing for when it asks "how realistic is this?"
+</Callout>
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Why is a transmission line modelled as a π section rather than a simple series impedance?">
+    Because the shunt capacitance is physically distributed along the line and cannot be
+    neglected beyond about 80 km. The π model splits the total shunt admittance in half and
+    places one half at each end, with the whole series impedance between.
+
+    Without the shunt branch, the model cannot produce the Ferranti effect at all — no-load
+    receiving voltage would simply equal sending voltage.
+  </Q>
+
+  <Q q="What are ABCD parameters and what identities must they satisfy?">
+    They relate sending-end voltage and current to receiving-end voltage and current for any
+    two-port network.
+
+    For a passive reciprocal network AD − BC = 1, and for a symmetrical network A = D. Both
+    hold for a π section, and checking them is the fastest verification of a set of measured
+    parameters.
+  </Q>
+</Viva>
+
+<Viva band="analysis">
+  <Q q="Why does your trainer's behaviour differ from a real transmission line?">
+    Principally the X/R ratio. A real 400 kV line has X/R of 10 to 20; a bench trainer's
+    inductors have significant winding resistance, giving perhaps 3 or 4 — closer to a
+    distribution feeder.
+
+    So the resistive term contributes more to the voltage drop, the capacitive rise is
+    weaker, and the maximum transferable power falls below the lossless E²/2X while the
+    critical voltage sits above 0.707E.
+
+    The lumped model also cannot represent travelling waves, corona, skin effect or mutual
+    coupling between circuits.
+  </Q>
+
+  <Q q="How many π sections do you need to model a long line?">
+    Enough that the discretisation error drops below the uncertainty in your knowledge of R,
+    L and C. For a 300 km line, one section might give a few per cent error and three brings
+    it under one per cent; beyond that the improvement is smaller than the data supports.
+
+    The alternative is the exact solution using hyperbolic functions of the propagation
+    constant, which has no discretisation error at all.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  The π model concentrates the series impedance and splits the shunt admittance at both ends
+  — and **that shunt branch is the entire physical content of the Ferranti effect**, absent
+  from the short-line model. Record your trainer's X/R: at 3 or 4 rather than a real line's
+  10 to 20, it explains most of the gap between your measurements and the textbook.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'book',
+      title: 'Power System Analysis',
+      by: 'John J. Grainger and William D. Stevenson Jr.',
+      note: 'Chapters 4–6: line parameters from geometry, the models, and the exact hyperbolic solution.',
+    },
+    {
+      kind: 'book',
+      title: 'Elements of Power System Analysis',
+      by: 'William D. Stevenson Jr.',
+      note: 'The classic derivation of ABCD parameters for each line model.',
+    },
+    {
+      kind: 'book',
+      title: 'Modern Power System Analysis',
+      by: 'D. P. Kothari and I. J. Nagrath',
+      note: 'Transmission line performance, with worked Indian-system examples.',
+    },
+  ]}
+/>

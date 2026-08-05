@@ -1,0 +1,231 @@
+---
+title: Isolation Transformer
+shortTitle: Isolation transformer
+category: transformer
+tagline: Breaks the connection to earth, so a single touch has nowhere to return
+description: A 1:1 transformer that changes no voltage and does one important thing — it removes the earth reference, so touching one output conductor completes no circuit. Why that works, and the leakage capacitance that limits it.
+icon: transformer
+order: 6
+difficulty: beginner
+estimatedMinutes: 25
+specs:
+  - label: Ratio
+    value: '1:1 (240 V / 240 V)'
+    note: 'Some provide a step or multiple taps, but 1:1 is the isolation case'
+  - label: Rating
+    value: '0.5–5 kVA on a laboratory bench'
+  - label: Isolation
+    value: 'Galvanic — typically tested at 2.5 kV or more'
+  - label: Screening
+    value: Optional electrostatic (Faraday) shield
+    note: Reduces capacitive coupling between windings
+  - label: Leakage capacitance
+    value: 'Typically 100 pF – 1 nF'
+    note: 'The reason isolation is not perfect at high frequency'
+hazards:
+  - The output is still 240 V between its own conductors
+tags: ['instrument', 'transformer', 'isolation', 'safety']
+---
+
+An isolation transformer changes nothing about the voltage. It changes what the voltage is
+*referenced to*, and that turns out to matter a great deal.
+
+## Why a single touch is normally dangerous
+
+Your mains supply has its neutral bonded to earth at the supply transformer. So the earth
+under your feet is a conductor connected back to the source.
+
+Touch a live conductor while standing on that earth and you have completed a circuit:
+live → through you → to earth → back to the transformer neutral. Current flows, and the
+numbers from the safety module apply.
+
+<Analogy>
+  Think of a bird on a transmission line.
+
+  It sits on 400 kV and is entirely unharmed, because it touches only one conductor. There
+  is no path back to the source, so no current flows regardless of the voltage.
+
+  An isolation transformer makes **you** the bird. Its secondary is not earthed anywhere, so
+  touching one output conductor completes no circuit — there is nowhere for the current to
+  return.
+</Analogy>
+
+## What it actually does
+
+Two separate windings, coupled magnetically, with no electrical connection between them.
+Power crosses the core; conductors do not.
+
+The secondary is therefore **floating** — neither of its terminals has a defined
+relationship to earth. Touching either one on its own draws no current.
+
+<Hazard title="Touching BOTH output conductors is exactly as dangerous as before">
+  Isolation removes the earth path. It does not remove the 240 V between the two output
+  terminals.
+
+  A hand on each output conductor completes the secondary circuit and puts the full voltage
+  across you — and the current path is hand to hand, straight through the chest, which is
+  the worst case.
+
+  So the one-hand rule still applies. Isolation protects against the accidental *single*
+  contact, which is the common accident. It protects against nothing else.
+</Hazard>
+
+## Where it earns its keep
+
+<Compare
+  headings={['Situation', 'Why isolation helps']}
+  rows={[
+    { option: 'Oscilloscope on a mains circuit', when: 'A scope probe ground is bonded to earth. Clipping it to a live point shorts that point to earth through the probe', recommended: true },
+    { option: 'Fault finding on live equipment', when: 'A single accidental contact does not complete a circuit' },
+    { option: 'Sensitive measurement', when: 'Breaks earth loops that inject mains hum into low-level signals' },
+    { option: 'Medical equipment', when: 'IT earthing systems in operating theatres are built on exactly this principle' },
+    { option: 'Feeding a variac', when: 'Restores the isolation the variac cannot provide' },
+  ]}
+/>
+
+<Callout type="engineering">
+  **The oscilloscope case is the one that destroys equipment in teaching labs.**
+
+  A mains-powered oscilloscope has its probe ground clip bonded to the mains earth through
+  the instrument's chassis and power lead. Clip it to any point that is not at earth
+  potential and you have connected that point to earth — a short circuit through the probe
+  lead, which is not designed to carry fault current.
+
+  The result is a vaporised probe ground lead, a damaged scope input, tripped protection,
+  and occasionally an arc in someone's hand.
+
+  Three correct solutions, in order of preference:
+
+  1. A **differential probe** — measures between two points with no earth reference at all.
+     This is the right answer.
+  2. An **isolation transformer on the circuit under test**, so its "neutral" can be
+     clipped safely.
+  3. A **battery-powered scope**.
+
+  And the wrong one, which people do anyway: cutting the earth pin off the oscilloscope's
+  mains lead. This floats the entire instrument chassis — every knob and connector you touch
+  — at whatever potential the probe ground is clipped to. Never do this.
+</Callout>
+
+## Isolation is frequency dependent
+
+The windings are physically adjacent, so there is capacitance between them. At mains
+frequency its impedance is enormous and the isolation is effectively perfect. As frequency
+rises, that impedance falls:
+
+$$
+X_C = \frac{1}{2\pi f C}
+$$
+
+For $C = 500$ pF: about **6.4 MΩ** at 50 Hz — genuinely isolating. At 100 kHz it is
+**3.2 kΩ**, which isolates nothing.
+
+<Callout type="warning" title="Switching noise crosses an isolation transformer">
+  This is why isolating a variable speed drive does not stop its switching transients from
+  reaching the rest of the bench, and why an isolation transformer alone is not an EMC fix.
+
+  An **electrostatically screened** transformer — a Faraday shield of earthed foil between
+  the windings — intercepts most of that capacitive current and returns it to earth before
+  it reaches the secondary. If your bench transformer has a screen terminal, it must be
+  earthed to do anything.
+</Callout>
+
+## Isolation transformer or RCD?
+
+They protect against different things, and a bench often has both.
+
+<Compare
+  headings={['', 'Isolation transformer', 'RCD']}
+  rows={[
+    { option: 'Mechanism', when: 'Prevents the current path existing', cost: 'Detects the current and disconnects fast' },
+    { option: 'Single contact with one conductor', when: 'No current flows at all', cost: 'Current flows for up to 40 ms, then trips' },
+    { option: 'Contact with both conductors', when: 'NO PROTECTION', cost: 'NO PROTECTION — the current is balanced' },
+    { option: 'Second fault while a first exists', when: 'No protection — the secondary is now referenced', cost: 'Protects normally' },
+    { option: 'Best for', when: 'Deliberate work on live low-power equipment', cost: 'General installation protection', recommended: false },
+  ]}
+/>
+
+<Callout type="engineering">
+  The row worth dwelling on is the second-fault one.
+
+  Once an isolated secondary develops **one** fault to earth — a damaged lead touching a
+  frame, say — that conductor is now earth-referenced, and the isolation is silently gone.
+  Nothing indicates this, because a single fault on an isolated system causes no current
+  and no symptom.
+
+  The system now behaves exactly like an earthed one, and the *next* accidental contact is
+  a normal electrocution.
+
+  This is precisely why IT earthing systems — the same principle at installation scale, used
+  in hospitals — are required to have **insulation monitoring devices** that alarm on the
+  first fault. Isolation with no monitoring degrades to no isolation without telling anyone.
+</Callout>
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="What does an isolation transformer protect against, and what does it not?">
+    It removes the earth reference from the secondary, so a single contact with one output
+    conductor completes no circuit and no current flows.
+
+    It does not protect against touching both output conductors — the full secondary voltage
+    is still there, and that path is hand to hand through the chest. It also does not
+    protect once a first earth fault has appeared on the secondary, because the system is
+    then referenced again.
+  </Q>
+
+  <Q q="Why is an autotransformer not an isolation transformer?">
+    An autotransformer has one winding with a tap, so primary and secondary are electrically
+    continuous — the output shares the supply neutral. Isolation requires two windings
+    coupled only magnetically.
+  </Q>
+</Viva>
+
+<Viva band="procedure">
+  <Q q="Why is it dangerous to connect an oscilloscope probe ground to a live point?">
+    The probe ground is bonded to mains earth through the instrument chassis and its power
+    lead. Clipping it to a non-earth point shorts that point to earth through a lead never
+    designed to carry fault current.
+
+    The correct solutions are a differential probe, an isolation transformer on the circuit
+    under test, or a battery-powered scope. Removing the scope's earth pin is not a
+    solution — it floats the whole chassis, including everything you touch.
+  </Q>
+
+  <Q q="Why does an isolation transformer not stop switching noise?">
+    Because the windings are physically adjacent and there is capacitance between them. At
+    50 Hz that capacitance presents megohms and the isolation is effectively perfect, but
+    its impedance falls as 1/f — at 100 kHz a 500 pF coupling is only a few kilohms.
+
+    An electrostatic screen between the windings, earthed, intercepts most of that
+    capacitive current.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  An isolation transformer makes you **the bird on the wire** — one conductor touched, no
+  return path, no current. It does nothing about touching both conductors, nothing after a
+  first earth fault has quietly referenced the secondary, and nothing at high frequency
+  where inter-winding capacitance bridges it.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 61558-2-4 — Safety of transformers: particular requirements for isolating transformers',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 60364-4-41 — Protection against electric shock',
+      note: 'Electrical separation as a protective measure, and the IT system requirements.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 61010-031 — Safety requirements for hand-held probe assemblies',
+      note: 'Why differential probes exist and how they are rated.',
+    },
+  ]}
+/>

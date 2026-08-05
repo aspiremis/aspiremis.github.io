@@ -1,0 +1,252 @@
+---
+title: Three-Phase Supply
+shortTitle: Three-phase supply
+category: source
+tagline: Where the energy on your bench comes from, and why there are three of them
+description: Why power systems are three-phase at all, what star and delta actually give you, why phase sequence decides which way a motor turns, and what the neutral is carrying when the load is unbalanced.
+icon: supply
+order: 4
+difficulty: beginner
+estimatedMinutes: 30
+specs:
+  - label: Line voltage
+    value: '415 V (Indian LV standard)'
+  - label: Phase voltage
+    value: '240 V line to neutral'
+    note: '415 / √3 = 240'
+  - label: Frequency
+    value: '50 Hz'
+  - label: Phase designation
+    value: 'R, Y, B (red, yellow, blue)'
+    note: 'L1, L2, L3 in IEC notation'
+  - label: Protection
+    value: 'MCB plus 30 mA RCD'
+  - label: Nominal tolerance
+    value: '±6% on voltage, ±3% on frequency'
+    note: Indian Electricity Rules; your measured V_S will drift within this
+hazards:
+  - Live 415 V between phases
+  - 240 V phase to earth
+tags: ['instrument', 'source', 'three-phase', 'phase-sequence']
+---
+
+Nearly all electrical power is generated, transmitted and consumed as three phases. It is
+worth understanding why, because the reasons explain most of what a power system looks
+like.
+
+## Why three
+
+**Constant instantaneous power.** In a single-phase system the instantaneous power pulses
+at twice the supply frequency, falling to zero twice per cycle. Sum three phases displaced
+by 120° and the pulsations cancel exactly:
+
+$$
+p(t) = \sum_{k=1}^{3} V_m I_m \cos(\omega t - \theta_k)\cos(\omega t - \theta_k - \varphi) = \tfrac{3}{2}V_m I_m \cos\varphi
+$$
+
+A constant. So a three-phase motor produces smooth torque where a single-phase one
+vibrates at 100 Hz.
+
+**A rotating magnetic field for free.** Three windings displaced 120° in space, fed by
+currents displaced 120° in time, produce a magnetic field that rotates at synchronous speed
+with no commutator, brushes or starting mechanism. The induction motor — the workhorse of
+industry — exists because of this.
+
+**Less copper.** A three-phase system delivers a given power with substantially less
+conductor material than three separate single-phase circuits, because the return currents
+share a path and, when balanced, cancel entirely.
+
+<Callout type="engineering">
+  That last point is the economic argument, and it is why the whole grid is built this way.
+
+  In a **balanced** three-phase four-wire system the three phase currents sum to zero:
+
+  $$I_R + I_Y + I_B = 0$$
+
+  so the neutral carries **nothing**. You are delivering three circuits' worth of power over
+  four conductors instead of six, and the fourth is barely loaded.
+
+  This is also why transmission lines have no neutral at all — at transmission voltages the
+  load is balanced by design, so the conductor would carry nothing and cost a great deal.
+</Callout>
+
+## Star and delta
+
+<Compare
+  headings={['', 'Star (wye)', 'Delta']}
+  rows={[
+    { option: 'Line voltage', when: '√3 × phase voltage', cost: '= phase voltage' },
+    { option: 'Line current', when: '= phase current', cost: '√3 × phase current' },
+    { option: 'Neutral', when: 'Available', cost: 'None' },
+    { option: 'Typical use', when: 'Distribution — gives two voltages from one supply', cost: 'Motors, transformer HV windings', recommended: false },
+    { option: 'Third harmonic', when: 'Flows in the neutral', cost: 'Circulates within the delta and never leaves it' },
+  ]}
+/>
+
+Both give the same total power:
+
+$$
+P = \sqrt{3}\,V_L I_L \cos\varphi
+$$
+
+<Callout type="engineering">
+  **The delta's harmonic trapping is why so many distribution transformers are Dyn11.**
+
+  Third-harmonic currents in a three-phase system are **in phase** with each other — they
+  are a zero-sequence component. In a star connection they add rather than cancel, so they
+  all flow in the neutral, which is why neutral conductors on circuits with many electronic
+  loads can carry more current than the phases.
+
+  In a delta they have nowhere to go but round and round inside the winding, so they never
+  reach the line. The delta is a harmonic trap, and it is free.
+
+  Hence the standard Dyn11 distribution transformer: the delta HV winding keeps triplen
+  harmonics off the transmission system, while the star LV winding supplies a neutral for
+  single-phase loads.
+</Callout>
+
+## Phase sequence
+
+The order in which the phases reach their peak — RYB or RBY — determines which way a
+three-phase motor turns.
+
+<Hazard title="Swapping two phases reverses a motor" level="caution">
+  This is a one-connection error with mechanical consequences. A pump running backwards may
+  not move fluid; a machine tool running backwards can destroy a workpiece or itself.
+
+  Before connecting any three-phase machine, check the sequence with a **phase sequence
+  indicator** — a small device with two lamps or a rotating disc that shows the order
+  directly.
+
+  And note: to reverse a motor deliberately you swap **any two** phases. Swapping all three
+  changes nothing.
+</Hazard>
+
+In symmetrical component terms, the sequence *is* the positive-sequence direction. Reverse
+it and you have applied negative-sequence voltage — which in an induction machine produces
+a field rotating backwards, large currents and severe heating. Negative-sequence protection
+exists for exactly this.
+
+## Unbalance
+
+When phase loads differ, three things happen:
+
+- **The neutral carries current.** In a four-wire system the residual returns through the
+  neutral, which is why it must be sized properly and never fused or switched.
+- **Phase voltages shift.** With any impedance in the neutral, the star point moves and the
+  three phase voltages become unequal — lightly loaded phases rise, heavily loaded phases
+  fall.
+- **Negative sequence appears.** Which heats motors disproportionately.
+
+<Hazard title="A broken neutral is one of the most dangerous faults in LV distribution">
+  With the neutral intact, each single-phase load sits at 240 V regardless of the others.
+
+  Break the neutral and the star point is no longer tied. The three loads are now in series
+  across 415 V, and the voltage divides in proportion to their impedances. A lightly loaded
+  phase — a few LED lamps — can rise to nearly **400 V**, while a heavily loaded phase
+  collapses.
+
+  Everything on the lightly loaded phase is destroyed at once, and this presents as
+  "several appliances failed simultaneously" rather than as an obvious electrical fault.
+
+  This is why the neutral is never fused, never switched independently, and why
+  neutral-integrity monitoring exists on distribution networks.
+</Hazard>
+
+## At your bench
+
+<Steps title="Before energising">
+  <Step n={1} title="Locate the isolator and the emergency stop" expect="you can reach both from where you will be standing">
+    Before anything else, every session.
+  </Step>
+  <Step n={2} title="Confirm the RCD is present and test it" expect="the test button trips it">
+    The test button proves the mechanism. It does not prove the earth path, but it is the
+    check available to you.
+  </Step>
+  <Step n={3} title="Check phase sequence if a machine is involved" expect="RYB on the indicator">
+    Experiment 2 uses an induction motor. Sequence decides its direction.
+  </Step>
+  <Step n={4} title="Record the supply voltage before loading" expect="a value you will re-check at every step">
+    The Indian tolerance is ±6%, so the supply genuinely moves. Recording it once and
+    assuming it thereafter contaminates every regulation figure you compute.
+  </Step>
+</Steps>
+
+<Callout type="warning" title="Your supply is not stiff">
+  Every experiment on this site assumes a fixed sending-end voltage. Your laboratory
+  supply is fed through the building's distribution, and it sags when the bench next to
+  yours switches on a load bank.
+
+  Record $V_S$ at **every** step and use the measured value in every calculation. A supply
+  sag that you attribute to your line model is the most common systematic error in
+  Experiment 1.
+</Callout>
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Why is three-phase power preferred to single-phase?">
+    Three reasons. The instantaneous power of a balanced three-phase system is constant
+    rather than pulsating at twice supply frequency, so machines produce smooth torque.
+    Three windings fed by three time-displaced currents produce a rotating magnetic field
+    without any commutator, which is what makes the induction motor possible. And a given
+    power is delivered with substantially less conductor, because balanced return currents
+    cancel.
+  </Q>
+
+  <Q q="What is the relationship between line and phase quantities?">
+    In star, line voltage is √3 times phase voltage and line current equals phase current.
+    In delta, line voltage equals phase voltage and line current is √3 times phase current.
+
+    Total power is √3 V_L I_L cos φ in both cases.
+  </Q>
+</Viva>
+
+<Viva band="analysis">
+  <Q q="Why does a delta winding trap third-harmonic currents?">
+    Third harmonics in a three-phase system are in phase with each other — a zero-sequence
+    component. In a delta they simply circulate around the closed loop and never appear in
+    the line currents.
+
+    In a star connection with a neutral they add instead of cancelling and all flow in the
+    neutral, which is why neutrals on circuits with many electronic loads can carry more
+    current than the phases.
+  </Q>
+
+  <Q q="What happens if the neutral of a four-wire supply breaks?">
+    The star point floats. The three single-phase loads are then effectively in series
+    across the line voltage, and it divides in proportion to their impedances.
+
+    A lightly loaded phase can rise to nearly 400 V and everything on it is destroyed;
+    a heavily loaded phase collapses. This is why the neutral is never fused or switched.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  Three phases give constant instantaneous power, a rotating field for free, and a neutral
+  that carries nothing when balanced. **Phase sequence decides motor direction** — swap any
+  two to reverse it — and a **broken neutral** lets the star point float, driving lightly
+  loaded phases toward line voltage.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'book',
+      title: 'Power System Analysis',
+      by: 'John J. Grainger and William D. Stevenson Jr.',
+      note: 'Chapter 1 for three-phase fundamentals; Chapter 11 for symmetrical components and unbalance.',
+    },
+    {
+      kind: 'standard',
+      title: 'IS 12360 — Voltages and frequency for AC transmission and distribution systems',
+      note: 'The Indian nominal voltages and permitted tolerances.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 60038 — IEC standard voltages',
+    },
+  ]}
+/>

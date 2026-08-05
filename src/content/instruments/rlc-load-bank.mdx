@@ -1,0 +1,229 @@
+---
+title: RLC Load Bank
+shortTitle: Load bank
+category: load
+tagline: Switchable resistance, inductance and capacitance — a load you can dial
+description: Three kinds of load in one cabinet, each drawing current at a different phase angle. Which one you engage decides whether the far-end voltage falls a little, falls a lot, or rises.
+icon: load
+order: 10
+difficulty: beginner
+estimatedMinutes: 25
+specs:
+  - label: Resistive steps
+    value: 'Typically 4–8 switchable, 200 W–1 kW each'
+    note: Wire-wound or ribbon elements; they get genuinely hot
+  - label: Inductive steps
+    value: 'Iron-cored reactors, switchable'
+  - label: Capacitive steps
+    value: 'Oil or dry film capacitors with discharge resistors'
+  - label: Voltage rating
+    value: '240 V or 415 V'
+  - label: Cooling
+    value: Natural convection or forced air
+  - label: Power factor achievable
+    value: 'Unity down to about 0.5 lagging or leading'
+    note: Depends on how the R, L and C steps combine
+hazards:
+  - Resistive elements reach high temperature and stay hot after switch-off
+  - Capacitor steps retain charge
+tags: ['instrument', 'load', 'power-factor', 'rlc']
+---
+
+The load bank is what makes the transmission line experiment an experiment. Without it you
+have a line with nothing at the end and nothing to measure.
+
+## Three loads, three phase angles
+
+<Compare
+  headings={['Element', 'Current relative to voltage', 'Power drawn', 'Effect on receiving voltage']}
+  rows={[
+    { option: 'Resistance', when: 'In phase', cost: 'P only', recommended: false },
+    { option: 'Inductance', when: 'Lags by 90°', cost: 'Q absorbed', recommended: false },
+    { option: 'Capacitance', when: 'Leads by 90°', cost: 'Q supplied', recommended: false },
+  ]}
+/>
+
+Combine them and the resultant current sits at some angle $\varphi$ between, which is
+exactly the variable Experiment 1 sweeps.
+
+<Callout type="engineering">
+  The reason this matters is the drop formula from Experiment 1:
+
+  $$\Delta V \approx I(R\cos\varphi \pm X\sin\varphi)$$
+
+  With **resistance only**, $\sin\varphi = 0$ and only the small $IR$ term survives.
+
+  With **inductance**, both terms add, and since $X > R$ the reactive one dominates — the
+  largest drop of the three.
+
+  With **capacitance**, the reactive term subtracts, and once it exceeds the resistive one
+  the drop goes negative and the voltage rises.
+
+  So the load bank is not three loads; it is a way of setting the **sign and size of the
+  reactive term**. That is the physical variable the experiment is actually sweeping.
+</Callout>
+
+## Resistive elements
+
+Usually wire-wound or ribbon resistors, sometimes literally heating elements. All the power
+they draw becomes heat, which has three practical consequences.
+
+<Hazard title="Resistive elements stay hot long after switch-off" level="caution">
+  A 1 kW element at working temperature does not cool in the time it takes you to unplug a
+  lead. Burns from load banks are far more common than shocks from them.
+
+  Look before you reach behind the cabinet, and give it time.
+</Hazard>
+
+<Callout type="warning" title="Resistance rises with temperature">
+  Metallic resistance increases with temperature — roughly 0.4% per °C for many alloys. A
+  bank that has been running at full load for twenty minutes presents measurably more
+  resistance than one just switched on.
+
+  So the current at a given "step" drifts downward as the session proceeds. This shows up in
+  Experiment 1 as an apparent nonlinearity that has nothing to do with the line.
+
+  The defence: record the **measured current**, not the nominal step number, and use the
+  measured value in every calculation. This is the same discipline as recording measured
+  $V_S$ at every step.
+</Callout>
+
+## Inductive elements
+
+Iron-cored reactors. Two things to know:
+
+**They are not pure inductances.** The winding has resistance, so an "inductive" step
+actually draws a lagging current at perhaps 0.9 power factor rather than at 90°. Check the
+analyser rather than assuming.
+
+**They can saturate.** Drive an iron-cored reactor beyond its rating and the core saturates,
+the inductance falls, and the current rises faster than linearly — while becoming
+noticeably distorted. If your inductive steps behave oddly at the top of the range, this is
+usually why.
+
+## Capacitive elements
+
+<Hazard title="Capacitors hold charge after the supply is removed">
+  Discharge resistors are fitted, and they take time — typically tens of seconds to a
+  minute. They also **fail open without any external sign**.
+
+  The procedure from the safety module applies exactly: isolate, wait, **measure** across the
+  terminals with a meter you have proved, then touch.
+
+  An extinguished indicator lamp proves nothing. A lamp needs current to glow, and it can be
+  dark while the capacitor is still charged through a failed connection.
+</Hazard>
+
+<Callout type="engineering">
+  **A capacitor's kvar depends on the square of the voltage**, which surprises people
+  constantly:
+
+  $$Q = \frac{V^2}{X_C} = V^2 \omega C$$
+
+  So a bank rated 10 kvar at 415 V delivers only about 8.1 kvar at 375 V — a 10% voltage
+  drop costs 19% of the reactive support.
+
+  This is a genuinely unfortunate characteristic. Shunt capacitors are installed to hold
+  voltage **up**, and their output falls exactly when the voltage sags and you need them
+  most. It is a positive feedback in the wrong direction, and it is one reason SVCs and
+  STATCOMs exist — a STATCOM's output falls only linearly with voltage, not as its square.
+
+  Worth carrying into Experiment 3(b) on shunt compensation, where it explains why
+  capacitors alone are not a complete answer to a weak system.
+</Callout>
+
+## Using it well
+
+<Steps title="Every sweep">
+  <Step n={1} title="Start at minimum and confirm it" expect="near-zero current before you energise">
+    All steps off, including capacitor steps — a capacitor step left on gives a no-load
+    voltage above the sending end and confuses the whole first reading.
+  </Step>
+
+  <Step n={2} title="Increase in equal steps, and record the MEASURED current" expect="the current, not the step number, as your independent variable">
+    Step numbers are nominal. Measured current is data.
+  </Step>
+
+  <Step n={3} title="Match by current when comparing load types" expect="comparable points across the R, L and C sweeps">
+    Comparing "step 3 resistive" with "step 3 inductive" compares nothing if they draw
+    different currents. Match the current and the comparison becomes meaningful.
+  </Step>
+
+  <Step n={4} title="Check the power factor on the analyser" expect="close to 1 for resistive, well below for inductive">
+    Confirms the load really is what the label says. A resistive step reading 0.85 power
+    factor means something else is engaged.
+  </Step>
+
+  <Step n={5} title="Return to minimum before switching off" hazard="Then discharge and verify the capacitor steps.">
+    Every time.
+  </Step>
+</Steps>
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Why does an inductive load cause a larger voltage drop than a resistive load at the same current?">
+    The approximate drop is I(R cos φ + X sin φ). A resistive load has sin φ = 0, so only the
+    IR term survives. An inductive load makes both terms contribute, and since X is
+    substantially larger than R on a line, the reactive term dominates.
+
+    That is why voltage support is fundamentally a reactive-power problem rather than a
+    real-power one.
+  </Q>
+
+  <Q q="Why does a capacitor bank's reactive output fall when the voltage sags?">
+    Because Q = V²ωC — the output goes as the square of the voltage. A 10% voltage drop
+    costs about 19% of the reactive support.
+
+    This is unfortunate, because capacitors are installed to hold voltage up and their
+    contribution collapses exactly when it is most needed. It is one reason SVCs and
+    STATCOMs are used on weak systems, since a STATCOM's output falls only linearly with
+    voltage.
+  </Q>
+</Viva>
+
+<Viva band="procedure">
+  <Q q="Why record measured current rather than the load step number?">
+    Because a step is nominal and the actual current drifts. Resistive elements heat as the
+    session proceeds and their resistance rises about 0.4% per °C, so the same step draws
+    progressively less current.
+
+    Using step numbers introduces an apparent nonlinearity that belongs to the load bank, not
+    the line under test.
+  </Q>
+
+  <Q q="Your 'resistive' step shows a power factor of 0.85. What do you conclude?">
+    That the load is not purely resistive. Either an inductive step is also engaged, or the
+    element has significant inductance, or the analyser's CT polarity or wiring mode is
+    wrong.
+
+    Check the analyser setup first, since a wiring error affects every reading, then check
+    which steps are actually engaged.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  The load bank sets the **sign and size of the reactive term** in
+  ΔV ≈ I(R cos φ ± X sin φ) — that is the variable Experiment 1 is really sweeping. Record
+  measured current rather than step numbers, because resistive elements heat and drift; and
+  remember a capacitor's kvar falls with the **square** of voltage, so it weakens exactly
+  when it is needed.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'book',
+      title: 'Modern Power System Analysis',
+      by: 'D. P. Kothari and I. J. Nagrath',
+      note: 'Compensation and reactive power control.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 60831 — Shunt power capacitors of the self-healing type',
+      note: 'Discharge requirements, and why the resistors are specified rather than optional.',
+    },
+  ]}
+/>

@@ -1,0 +1,281 @@
+---
+title: Capacitor Bank
+shortTitle: Capacitor bank
+category: load
+tagline: Reactive power on demand, with three ways to make things worse
+description: Shunt capacitors are the cheapest reactive support there is. They also store lethal charge, draw enormous inrush on switching, and can resonate with the system inductance at a harmonic frequency.
+icon: capacitor
+order: 11
+difficulty: intermediate
+estimatedMinutes: 30
+specs:
+  - label: Rating
+    value: 'kvar AT RATED VOLTAGE'
+    note: Output falls as the square of applied voltage
+  - label: Steps
+    value: 'Typically 4–8 switchable'
+  - label: Discharge resistors
+    value: 'Reduce residual to <50 V in 60 s (LV)'
+    note: Required by standard; they fail open silently
+  - label: Inrush current
+    value: '10–100× rated, at hundreds of Hz'
+    note: 'Far higher for back-to-back switching of an energised bank'
+  - label: Detuning reactor
+    value: 'Typically 6% or 7% where harmonics are present'
+  - label: Loss
+    value: '≈ 0.5 W/kvar'
+hazards:
+  - Stored charge — potentially lethal after isolation
+  - Severe inrush current on switching
+  - Voltage rise on lightly loaded systems
+tags: ['instrument', 'load', 'capacitor', 'reactive-power', 'resonance', 'harmonics']
+---
+
+Shunt capacitors are the cheapest way to supply reactive power, and for that reason they
+are everywhere — on distribution feeders, in substations, alongside every large motor.
+
+They are also the component most likely to cause a problem you did not anticipate.
+
+## What they do
+
+A capacitor draws leading current, which is the same as **supplying** reactive power:
+
+$$
+Q_C = \frac{V^2}{X_C} = V^2\omega C
+$$
+
+Install one near an inductive load and the capacitor supplies the reactive power locally
+instead of the network importing it over the line. Line current falls, losses fall (as the
+square of current), and the voltage drop along the line falls too.
+
+<Callout type="engineering">
+  The economics are unusually direct.
+
+  A load drawing 100 kW at 0.7 power factor lagging draws 143 kVA, so:
+
+  $$Q = \sqrt{143^2 - 100^2} \approx 102\ \text{kvar}$$
+
+  Add 102 kvar of capacitance and the reactive component is cancelled: the line now carries
+  100 kVA instead of 143. Current falls by 30%, and **losses fall by more than half**, since
+  $I^2R$ scales as the square.
+
+  That is the entire argument. Capacitors cost very little per kvar, they have no moving
+  parts, and they pay back in reduced losses and avoided reinforcement — which is why
+  utilities apply power factor penalties and why nearly every industrial installation has a
+  bank.
+</Callout>
+
+## Three ways they cause trouble
+
+### 1. Stored energy
+
+<Hazard title="A disconnected capacitor bank can still kill you">
+  $W = \tfrac{1}{2}CV^2$, and a bank of any size holds a genuinely dangerous amount at close
+  to peak voltage.
+
+  Discharge resistors are required by standard — for LV banks, residual voltage below 50 V
+  within 60 seconds. But they are a passive component in a hot cabinet and they **fail open
+  without any external indication**.
+
+  The procedure is the one from the safety module, and it has no shortcut:
+
+  1. Isolate.
+  2. Wait the full stated discharge time.
+  3. **Measure** across the terminals with a meter you have proved on a known source.
+  4. Only then touch.
+
+  There is a further subtlety: a capacitor that has been discharged can partially **recover
+  a charge** over the following minutes, as charge trapped in the dielectric redistributes.
+  This is dielectric absorption, and it is why substation practice is to apply an earthing
+  device and leave it applied, rather than discharge once and rely on it.
+</Hazard>
+
+### 2. Inrush current
+
+An uncharged capacitor is a short circuit at the instant of energisation. Closing a switch
+onto one draws a current limited only by the circuit inductance and resistance — typically
+tens of times rated current, at a frequency of several hundred hertz to a few kilohertz.
+
+<Callout type="warning" title="Back-to-back switching is far worse">
+  Energising one bank while a second is already energised is the severe case. The already-charged
+  bank discharges into the uncharged one through only the small inductance of the busbar
+  between them — a very low impedance path.
+
+  Inrush can reach a hundred times rated current at several kilohertz. This welds contactors,
+  destroys fuses and stresses the capacitors themselves.
+
+  The standard mitigations are **inrush limiting reactors** in series with each step, or
+  **point-on-wave switching** that closes the contacts at the instant the voltage difference
+  across them is zero. On a teaching bench, simply switching one step at a time with a pause
+  between is the practical version.
+</Callout>
+
+### 3. Harmonic resonance
+
+This is the one that catches engineers rather than students, and it is the most important
+thing on this page.
+
+A capacitor bank adds capacitance to a system that is predominantly inductive. Together
+they form a **parallel resonant circuit**, with resonance at:
+
+$$
+h_r = \sqrt{\frac{S_{\text{sc}}}{Q_C}}
+$$
+
+where $h_r$ is the resonant harmonic order, $S_{\text{sc}}$ the short-circuit level at the
+bus, and $Q_C$ the bank rating.
+
+<Callout type="engineering">
+  Work an example. A bus with a 50 MVA short-circuit level and a 2 Mvar bank:
+
+  $$h_r = \sqrt{\frac{50}{2}} = 5$$
+
+  Resonance at the **5th harmonic** — 250 Hz. And the 5th is one of the most abundant
+  harmonics produced by six-pulse rectifiers, which is to say by most industrial drives.
+
+  At parallel resonance the impedance seen by the harmonic current source is very high, so a
+  modest injected harmonic current produces a **large** harmonic voltage. That voltage drives
+  large circulating currents between the capacitor and the system inductance — overheating
+  the capacitors, blowing their fuses, distorting the bus voltage for everyone connected to
+  it, and occasionally destroying the bank outright.
+
+  The perverse part: the installation was working acceptably before the capacitors were
+  added *to improve* power quality.
+
+  The fix is a **detuned reactor** in series with each capacitor step — typically 6% or 7%,
+  chosen to place the series resonance just below the lowest significant harmonic, usually
+  around 3.8 to 4.2. Below that order the branch is capacitive and supplies reactive power
+  as intended; above it the branch is inductive, so it cannot form a parallel resonance with
+  the system at any harmonic frequency present.
+
+  One inductor, and an entire failure mode is removed.
+</Callout>
+
+## Voltage rise
+
+Capacitors raise voltage — that is usually the point. But on a lightly loaded system the
+rise can push voltage above the statutory limit.
+
+$$
+\Delta V \approx \frac{Q_C X}{V}
+$$
+
+This is why capacitor banks are **switched** rather than fixed: engaged as load rises, and
+disconnected at night when the load falls and their support would push the voltage too high.
+
+Automatic power factor correction controllers do exactly this, switching steps in and out to
+hold a target power factor.
+
+## Capacitors versus the alternatives
+
+<Compare
+  headings={['Device', 'Output vs voltage', 'Response', 'Cost']}
+  rows={[
+    { option: 'Fixed capacitor', when: 'Falls as V²', cost: 'None — always on', recommended: false },
+    { option: 'Switched capacitor bank', when: 'Falls as V²', cost: 'Seconds, in discrete steps', recommended: true },
+    { option: 'SVC', when: 'Falls as V²', cost: 'Cycles, continuous' },
+    { option: 'STATCOM', when: 'Falls LINEARLY with V', cost: 'Milliseconds, continuous' },
+    { option: 'Synchronous condenser', when: 'Controllable, plus inertia', cost: 'Seconds' },
+  ]}
+/>
+
+<Callout type="engineering">
+  The STATCOM row is the important comparison, and it follows directly from the V² problem.
+
+  A capacitor's reactive output collapses as the square of voltage — exactly when a sagging
+  system needs it most. A STATCOM is a voltage-source converter that can inject rated
+  current at reduced voltage, so its reactive output falls only **linearly**.
+
+  At 0.5 pu voltage, a capacitor delivers 25% of its rating. A STATCOM delivers 50%. On a
+  system approaching voltage collapse that difference decides whether the support arrives in
+  time.
+
+  It costs a great deal more, which is why capacitors remain the default and STATCOMs appear
+  where the system is weak or the response must be fast.
+</Callout>
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Why does a capacitor bank's kvar output fall when voltage drops?">
+    Because Q = V²ωC — the output depends on the square of the applied voltage. A 10%
+    voltage drop reduces the output by about 19%.
+
+    This is a genuine weakness: capacitors are installed to support voltage, and their
+    contribution collapses precisely when the voltage sags and support is most needed.
+  </Q>
+
+  <Q q="What is harmonic resonance with a capacitor bank?">
+    The bank's capacitance forms a parallel resonant circuit with the system's inductance,
+    at harmonic order h = √(S_sc / Q_C).
+
+    If that order coincides with a harmonic the load produces — the 5th is the usual
+    culprit, from six-pulse rectifiers — the high impedance at resonance turns a modest
+    harmonic current into a large harmonic voltage, driving circulating currents that
+    overheat the capacitors and distort the bus voltage for everyone.
+  </Q>
+</Viva>
+
+<Viva band="analysis">
+  <Q q="How do you prevent harmonic resonance?">
+    A detuned reactor in series with each capacitor step, typically 6% or 7%, placing the
+    series resonance just below the lowest significant harmonic — around order 3.8 to 4.2.
+
+    Below that order the branch remains capacitive and supplies reactive power normally.
+    Above it the branch is inductive, so it cannot form a parallel resonance with the system
+    at any harmonic present. One component removes the entire failure mode.
+  </Q>
+
+  <Q q="Why are capacitor banks switched rather than permanently connected?">
+    Because their voltage rise, ΔV ≈ Q_C X / V, is helpful under load and harmful without
+    it. At night when load falls, a fixed bank would push the voltage above statutory limits.
+
+    Automatic power factor correction controllers switch steps in and out to hold a target
+    power factor, which handles both the reactive requirement and the voltage limit.
+  </Q>
+
+  <Q q="Why is back-to-back capacitor switching worse than energising a single bank?">
+    The already-energised bank discharges into the uncharged one through only the small
+    busbar inductance between them — a very low impedance path — so inrush can reach a
+    hundred times rated current at several kilohertz.
+
+    Mitigations are inrush limiting reactors in series with each step, or point-on-wave
+    switching that closes contacts when the voltage across them is zero.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  Capacitors are the cheapest reactive support and they fail in three characteristic ways:
+  they hold **lethal charge** after isolation (and partially recover it), they draw enormous
+  **inrush** on switching, and they can **resonate** with system inductance at
+  h = √(S_sc/Q_C) — often the 5th harmonic, which is exactly what rectifier loads produce.
+  A 6–7% detuned reactor removes the third.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEEE Std 1036 — Guide for the application of shunt power capacitors',
+      note: 'Sizing, switching, and the resonance calculation in full.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 60831 — Shunt power capacitors of the self-healing type for AC systems up to 1 kV',
+      note: 'Discharge requirements and residual voltage limits.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEEE Std 519 — Harmonic control in electric power systems',
+      note: 'The limits that a resonant bank will breach, and the TDD basis.',
+    },
+    {
+      kind: 'book',
+      title: 'Electrical Power Systems Quality',
+      by: 'Roger C. Dugan, Mark F. McGranaghan, Surya Santoso and H. Wayne Beaty',
+      note: 'The capacitor switching and resonance chapters are the practical reference on this.',
+    },
+  ]}
+/>

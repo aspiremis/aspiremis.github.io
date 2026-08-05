@@ -170,6 +170,7 @@ export const INSTRUMENT_CATEGORIES = [
   { id: 'measurement', label: 'Measurement', blurb: 'Reading what the circuit is doing' },
   { id: 'source', label: 'Sources & supplies', blurb: 'Where the energy comes from' },
   { id: 'transformer', label: 'Transformers', blurb: 'Changing level, and isolating' },
+  { id: 'network', label: 'Network models', blurb: 'Standing in for something much larger' },
   { id: 'protection', label: 'Protection', blurb: 'Deciding when to disconnect' },
   { id: 'load', label: 'Loads', blurb: 'What the network is built to feed' },
   { id: 'machine', label: 'Machines', blurb: 'Rotating plant' },

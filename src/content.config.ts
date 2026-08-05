@@ -370,10 +370,11 @@ const instruments = defineCollection({
     category: z.enum([
       'measurement',
       'source',
+      'transformer',
+      'network',
       'protection',
       'load',
       'machine',
-      'transformer',
       'switchgear',
       'data',
     ]),

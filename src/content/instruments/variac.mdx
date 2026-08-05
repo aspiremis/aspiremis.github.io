@@ -1,0 +1,244 @@
+---
+title: Variac (Variable Autotransformer)
+shortTitle: Variac
+category: source
+tagline: Continuously variable voltage — and no isolation whatsoever
+description: A variac has one winding with a sliding brush, which is what makes it cheap, efficient and compact. It is also why turning it to zero does not disconnect you from the mains.
+icon: variac
+order: 5
+difficulty: beginner
+estimatedMinutes: 25
+specs:
+  - label: Input
+    value: '240 V single phase, or 415 V three phase'
+  - label: Output
+    value: '0–240 V (often to 270 V)'
+    note: 'Many designs can exceed the input voltage — see below'
+  - label: Rating
+    value: 'Specified in AMPERES, not kVA'
+    note: 'Brush and winding current limited; output kVA therefore falls with voltage'
+  - label: Regulation
+    value: 'Good — typically a few per cent'
+  - label: Waveform
+    value: Unaffected
+    note: 'Unlike a phase-controlled dimmer, which chops it'
+  - label: Isolation
+    value: NONE
+hazards:
+  - Output is NOT isolated from the supply
+  - Output can exceed input voltage on many models
+tags: ['instrument', 'source', 'autotransformer', 'isolation']
+---
+
+Every experiment in your PSAO hardware lab starts with "raise the variac slowly". This is
+what you are turning.
+
+## One winding, not two
+
+An ordinary transformer has two electrically separate windings coupled by a magnetic
+circuit. An **autotransformer** has one winding with a tap, and the variac makes that tap
+movable — a carbon brush sliding along a bared track on the toroidal winding.
+
+The output is a fraction of the winding, so:
+
+$$
+\frac{V_{\text{out}}}{V_{\text{in}}} = \frac{N_{\text{tapped}}}{N_{\text{total}}}
+$$
+
+Sliding the brush changes $N_{\text{tapped}}$ continuously, giving smooth control from zero
+to full.
+
+<Hazard title="A variac does not isolate">
+  This is the whole safety story, and it catches people constantly.
+
+  With one winding, the output is **electrically continuous** with the input. The output
+  neutral *is* the supply neutral. Turning the dial to zero shorts the output to the input
+  neutral — it does not disconnect anything.
+
+  Consequences:
+
+  - Touching the output "live" terminal at any dial setting can put you across the supply.
+  - The output cannot be treated as floating. Referencing an oscilloscope to it will connect
+    the scope's earthed probe ground to a live conductor.
+  - Isolation requires a **two-winding isolation transformer**, and no dial position on a
+    variac substitutes for one.
+
+  If your bench has both, they do different jobs and are in series for a reason.
+</Hazard>
+
+## Why it is efficient
+
+An autotransformer is smaller, cheaper and more efficient than a two-winding transformer of
+the same rating, and the reason is worth understanding.
+
+Only the **difference** between input and output power is transferred magnetically. The
+rest passes conductively through the shared winding. So for a ratio close to 1:1, most of
+the power never goes through the core at all, and the core can be far smaller than the
+throughput suggests.
+
+<Callout type="engineering">
+  This is also the argument for **autotransformers in transmission**: interconnecting 400 kV
+  and 220 kV systems, where the ratio is under 2:1, an autotransformer is dramatically
+  cheaper and lighter than a two-winding unit of the same MVA.
+
+  The trade is exactly the one on your bench, scaled up. There is no galvanic separation
+  between the two systems, so a fault or a disturbance on one side is not blocked from the
+  other, and the earthing arrangements of the two systems become coupled.
+
+  Efficiency and isolation are the two things you are choosing between, and you cannot have
+  both from one winding.
+</Callout>
+
+## The rating is in amperes
+
+A variac's limit is the current its brush and winding can carry, and that limit is the same
+at every dial position. So:
+
+$$
+S_{\text{out}} = V_{\text{out}} \times I_{\text{rated}}
+$$
+
+which means the available **kVA falls in proportion to the output voltage**. A 10 A variac
+gives 2.4 kVA at 240 V and only 1.2 kVA at 120 V.
+
+<Callout type="warning" title="Do not size a variac from kVA alone">
+  A "2 kVA variac" is a 2 kVA variac *at full output*. At half output it will supply 1 kVA,
+  and loading it beyond its current rating at any dial position overheats the brush contact
+  — which is the part that fails.
+
+  Size from the **current** your load will draw.
+</Callout>
+
+## The output can exceed the input
+
+Many variacs wind a little extra beyond the input tap, so the dial runs past 100% — often
+to 110% or 115%, giving up to about 270 V from a 240 V supply.
+
+<Callout type="warning" title="Check where the input tap sits before you turn the dial">
+  This exists so you can compensate for a low supply. It also means an inattentive turn past
+  the marked nominal position applies an overvoltage to whatever you are feeding.
+
+  Look at the scale. If it goes past 240, know that it does before you start turning.
+</Callout>
+
+## Using it well
+
+<Steps title="Every time">
+  <Step n={1} title="Confirm it is at ZERO before energising" hazard="Energising with the dial up applies full voltage instantly to a circuit you may not have finished wiring.">
+    Look at the dial, do not assume. Then confirm which direction increases — it is not
+    always clockwise.
+  </Step>
+
+  <Step n={2} title="Raise slowly, watching the meters" expect="voltage rising smoothly, current rising as expected">
+    Slowly enough to react. A wiring error usually announces itself in the first few volts,
+    and stopping at 20 V costs nothing where stopping at 240 V may cost equipment.
+  </Step>
+
+  <Step n={3} title="Set your working voltage and leave it alone" expect="V_S constant for the whole sweep">
+    Experiment 1 depends on this. Adjusting the variac to correct a sagging voltage means
+    measuring your own reflexes rather than the line.
+  </Step>
+
+  <Step n={4} title="Return to zero before switching off" expect="the dial at zero, every time">
+    So the next person energises into nothing. This is the habit worth being pedantic about.
+  </Step>
+</Steps>
+
+<Callout type="tip" title="Listen to it">
+  A healthy variac is nearly silent. A loud hum usually means it is overloaded or the core
+  is saturating; a crackle or intermittent output means the brush contact is dirty or worn,
+  or the track is pitted.
+
+  Carbon dust accumulating inside is normal and eventually causes tracking. If the output is
+  unstable as you turn the dial, report it rather than working around it.
+</Callout>
+
+## Compared with the alternatives
+
+<Compare
+  headings={['Method', 'Waveform', 'Isolation', 'Note']}
+  rows={[
+    { option: 'Variac', when: 'Clean sinusoid preserved', cost: 'None', recommended: true },
+    { option: 'Isolation transformer + variac', when: 'Clean', cost: 'Yes — the standard bench arrangement' },
+    { option: 'Phase-controlled dimmer', when: 'Chopped — introduces large harmonics', cost: 'None' },
+    { option: 'Tapped transformer', when: 'Clean', cost: 'Yes, but only discrete steps' },
+    { option: 'Electronic AC source', when: 'Programmable, including deliberate distortion', cost: 'Yes — expensive, and the right tool for power quality work' },
+  ]}
+/>
+
+<Callout type="engineering">
+  The dimmer row matters for measurement work.
+
+  A phase-controlled dimmer varies voltage by chopping part of each half cycle away. The RMS
+  falls, but the waveform is now rich in harmonics — which means an average-responding meter
+  reads it wrongly, and any experiment assuming a sinusoid is invalidated.
+
+  A variac shifts the amplitude and leaves the shape alone. For laboratory work where the
+  theory assumes sinusoidal quantities, that distinction is the whole reason it is a variac
+  on the bench and not a cheaper electronic alternative.
+</Callout>
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="What is the difference between an autotransformer and a two-winding transformer?">
+    An autotransformer has a single winding with a tap, so the primary and secondary share
+    turns and are electrically continuous. A two-winding transformer has two separate
+    windings coupled only magnetically, giving galvanic isolation.
+
+    The autotransformer is smaller, cheaper and more efficient because only the difference
+    between input and output power passes through the core — but it provides no isolation
+    whatsoever.
+  </Q>
+
+  <Q q="Why is a variac rated in amperes rather than kVA?">
+    Its limit is the current the brush contact and winding can carry, and that is the same
+    at every dial position. Since S = V × I with I fixed, the available kVA falls in
+    proportion to the output voltage.
+
+    A 10 A variac gives 2.4 kVA at 240 V and 1.2 kVA at 120 V.
+  </Q>
+</Viva>
+
+<Viva band="procedure">
+  <Q q="Is it safe to touch the variac output when the dial is at zero?">
+    No. There is one winding, so the output is electrically continuous with the supply
+    regardless of dial position. At zero the output is shorted to the supply neutral, not
+    disconnected from it.
+
+    Isolation requires a two-winding isolation transformer. No dial position substitutes.
+  </Q>
+
+  <Q q="Why raise the variac slowly rather than switching straight to the working voltage?">
+    So that a wiring error announces itself at a voltage low enough to be harmless. Most
+    faults show up in the first few volts — a meter reading backwards, a current where there
+    should be none, a hum from something that should be silent.
+
+    Stopping at 20 V costs nothing. Discovering the same error at 240 V may cost equipment
+    or worse.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  One winding is what makes a variac efficient and what makes it dangerous: the output is
+  **electrically continuous with the supply**, so zero on the dial is not disconnection.
+  Rated in amperes, so available kVA falls with the setting — and it preserves the waveform,
+  which a phase-controlled dimmer does not.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 61558-2-14 — Safety of transformers: particular requirements for variable transformers',
+    },
+    {
+      kind: 'book',
+      title: 'Electric Machinery',
+      by: 'A. E. Fitzgerald, Charles Kingsley Jr. and Stephen D. Umans',
+      note: 'The autotransformer section derives the conducted-versus-transformed power split properly.',
+    },
+  ]}
+/>
