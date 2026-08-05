@@ -1,775 +1,803 @@
 ---
-title: Overcurrent Protection of a Three-Phase Induction Motor
+title: Overcurrent Protection Scheme for Three-Phase Induction Motors
 course: psao
 part: hardware
 number: 2
-description: A starting motor and a stalled motor draw exactly the same current. Setting a relay that rides through one and trips on the other is the whole problem, and it is solved with time rather than magnitude.
+description: An instantaneous relay set at 450% of full-load current, protecting a squirrel-cage motor against terminal phase faults. The setting has to sit above starting current and below fault current, and the experiment applies real LL and LLG faults to find out whether it does.
 objectives:
-  - Set an IDMT relay so it rides through starting and still protects against overload
-  - Measure a relay's operating characteristic and compare it with the IEC equation
-  - Explain why an instantaneous element must sit above the asymmetric first-cycle peak
+  - Set an instantaneous overcurrent relay accounting for the CT transformation ratio
+  - Determine whether the protection remains stable through motor starting and normal load
+  - Compare relay response to LL and LLG faults under two grid configurations
 instruments:
   - induction-motor-trainer
   - protective-relay
   - current-transformer
-  - clamp-meter
-  - power-analyzer
+  - universal-fault-module
+  - prime-mover-dynamometer
   - digital-multimeter
 relatedLessons:
   - matlab/fault-analysis
-  - matlab/distance-protection
-  - matlab/plotting
+  - matlab/symmetrical-components
 prerequisites: []
 estimatedMinutes: 120
 difficulty: intermediate
-status: prepared
+status: performed
+performedOn: 2026-08-05
 hazards:
-  - Live 415 V three-phase
-  - Rotating shaft
-  - Starting current six times rated
+  - Live three-phase supply
+  - Rotating shaft and timing belt
+  - Deliberate short-circuit faults applied to a live circuit
 simulation:
   - matlab
   - python
-tags: ['psao', 'protection', 'induction-motor', 'idmt', 'overcurrent', 'coordination']
+tags: ['psao', 'protection', 'induction-motor', 'overcurrent', 'ansi-50', 'fault-analysis']
 ---
 
-Here is the problem in one line: **a motor starting normally and a motor stalled and burning
-out draw the same current.**
+**Aim — to study the overcurrent protection scheme for three-phase induction motors.**
 
-Six times full load, both. The relay must ride through the first and trip on the second, and
-the only thing that distinguishes them is how long the current lasts.
+This experiment does something the earlier reading might not lead you to expect. It is
+**not** about protecting the motor from overload. It is about protecting it from a **short
+circuit at its own terminals**, and the relay used is instantaneous with a deliberately
+high setting.
 
-Everything in this experiment follows from that.
+That distinction shapes everything below.
 
-## Why this experiment exists
+## Apparatus
 
-<Callout type="engineering">
-  Motors consume roughly two-thirds of all industrial electricity, and a failed motor
-  usually stops a process rather than just costing a motor.
+<Spec
+  title="As listed on the experiment sheet"
+  rows={[
+    { label: 'Current transformers', value: '2.5 : 5 A', note: 'Three of them — CT4, CT5, CT6' },
+    { label: 'Overcurrent relay', value: 'Three-phase, instantaneous' },
+    { label: 'Motor', value: 'Squirrel-cage induction motor' },
+    { label: 'Prime mover / dynamometer', value: 'Provides the mechanical load' },
+    { label: 'Universal Fault Module', value: 'Applies LL and LLG faults' },
+    { label: 'Protective relaying control station', value: 'Control relays CR1, trip latch and reset' },
+    { label: 'Transmission Grid A', value: 'Carries contactors CR1 and CR2' },
+    { label: 'Interconnection module', value: '' },
+    { label: 'Metering', value: 'AC ammeter 5 A, AC voltmeter 500 V' },
+    { label: 'Other', value: 'Timing belt, connection leads, power supply' },
+  ]}
+/>
 
-  So the protection has two failure modes and both are expensive:
+<Callout type="warning" title="The CT ratio is 2.5 : 5 — a step-UP ratio">
+  Note which way round this goes. **2.5 A in the primary produces 5 A in the secondary**, so
+  the secondary current is **twice** the primary.
 
-  **Tripping on a start** stops production for a fault that never existed. Do it repeatedly
-  and an operator will ask for the setting to be raised — and the setting will be raised, and
-  the motor will then be unprotected. Nuisance tripping does not merely annoy; it *causes*
-  the eventual under-protection.
+  That is unusual for a power-system CT, where secondaries are normally 1 A or 5 A from a
+  much larger primary. On a teaching bench it makes sense: the motor currents are small, and
+  stepping them up gives the relay and ammeters something comfortable to work with.
 
-  **Failing to trip on a stall** destroys the winding in tens of seconds. A stalled motor
-  dissipates six times its rated current in a rotor that has almost no thermal mass and, at
-  zero speed, no fan cooling either.
-
-  The setting sits between those, and the margin is narrower than most people expect.
+  It also means the setting calculation in step 6 goes in the direction opposite to your
+  instinct. Get this backwards and your setting is out by a factor of four.
 </Callout>
 
 ## Theory
 
-### The IDMT characteristic
+Overcurrent protection is applied to three-phase induction motors to protect against
+**phase faults at the motor terminals** — terminal short circuits, terminal flashovers and
+similar. Instantaneous overcurrent relays with a high current setting are normally used,
+because they give fast, reliable and inexpensive protection.
 
-The relay's operating time falls as current rises, following IEC 60255:
-
-$$
-t = \text{TMS} \times \frac{k}{\left(\dfrac{I}{I_s}\right)^{\alpha} - 1}
-$$
-
-with $I_s$ the current setting and TMS the time multiplier. For the standard inverse curve,
-$k = 0.14$ and $\alpha = 0.02$.
-
-<Callout type="warning" title="The −1 makes the setting an asymptote, not a trip point">
-  At $I = I_s$ the denominator is zero and the operating time is infinite.
-
-  So a relay set at 100% of full-load current does **not** operate at full load — it needs a
-  meaningful margin above the setting before the time becomes finite and useful. Which is
-  why settings sit at 110–125% of full-load current rather than at 100%.
-</Callout>
-
-### The two constraints
-
-The setting must satisfy both of these simultaneously:
-
-$$
-t_{\text{relay}}(6 I_{\text{FLC}}) > t_{\text{start}}
-\qquad\text{and}\qquad
-t_{\text{relay}}(6 I_{\text{FLC}}) < t_{\text{locked rotor}}
-$$
-
-Ride through the start; trip before the machine cooks.
+The scheme is the one in Figure 1 of the sheet: line current transformers in each phase,
+feeding a three-phase protective relay of device type **50** (instantaneous overcurrent) or
+**51** (time-delayed).
 
 <Callout type="engineering">
-  **The window can close, and that is a real design outcome rather than a failure.**
+  **Why "high setting" and "instantaneous" go together.**
 
-  A motor driving a high-inertia load — a large fan, a centrifuge, a flywheel — takes longer
-  to accelerate. If the starting time grows until it approaches the locked-rotor withstand
-  time, there is no TMS that satisfies both constraints, because the relay cannot tell the
-  two conditions apart by current alone.
+  A motor's normal starting current is five to seven times full-load current, and it lasts
+  for seconds. Any relay that must not trip during a start therefore has two options: wait
+  long enough that the start finishes first, or be set high enough that the start never
+  reaches it.
 
-  The solutions all involve adding **information the relay does not currently have**:
+  A time-delayed relay takes the first route, and is what you use for **overload**
+  protection — where the current is only slightly above rated and you can afford to wait.
 
-  - A **speed switch** on the shaft. Rotating means starting; not rotating means stalled.
-    This is the direct answer, and the cleanest.
-  - A **thermal replica** relay, which integrates heating rather than watching instantaneous
-    current, and so knows how much thermal capacity remains.
-  - Reduced-voltage starting, which lengthens the start but lowers the current, moving the
-    problem rather than solving it.
+  For a **terminal fault** you cannot afford to wait. The fault current is very large, the
+  damage is immediate, and the whole point of the protection is speed. So you take the
+  second route: set the relay above anything that occurs normally — including starting — and
+  let it operate with no intentional delay.
 
-  Recognising *when* you have run out of window is part of the engineering. It is not a case
-  of choosing a cleverer TMS.
+  Hence 450% of full-load current, and hence *instantaneous*. Those two choices are the same
+  decision seen from two sides.
 </Callout>
 
-### The instantaneous element
+<Callout type="warning" title="This scheme does not protect against overload">
+  Set at 450% of full-load current, the relay is blind to a sustained 150% overload — which
+  will destroy a winding over minutes and never come close to the setting.
 
-A separate **ANSI 50** element trips with no intentional delay, for genuine short circuits.
-It must be set above anything that occurs normally — which means above the starting current,
-with a further allowance.
+  Overload protection is a **separate function**: a thermal overload relay (ANSI 49), or the
+  thermal replica built into a modern motor protection relay, which models winding
+  temperature rather than watching instantaneous current.
+
+  A real motor starter has both. This experiment studies one of them, and stating clearly
+  which one — and what it deliberately does not cover — is a good line for your conclusion.
+</Callout>
+
+### The two constraints on the setting
+
+$$
+I_{\text{start}} \;<\; I_{\text{set}} \;<\; I_{\text{fault, min}}
+$$
+
+Above starting current, so a normal start does not trip it. Below the smallest fault it
+must detect, so a genuine terminal fault does.
+
+At 450% the setting sits just above a typical machine's starting current. **Step 8 of the
+procedure asks you to verify that experimentally** — which is the honest way to treat it,
+because whether it holds depends on your particular motor.
+
+### The setting calculation
+
+The relay is set in **secondary** amperes. With a 2.5 : 5 CT:
+
+$$
+I_{\text{set,secondary}} = 4.5 \times I_{\text{FLC,primary}} \times \frac{5}{2.5}
+= 9 \times I_{\text{FLC,primary}}
+$$
+
+<Callout type="tip" title="Write both numbers side by side">
+  Primary and secondary, for every setting, in your record book. It costs one extra column
+  and it is the single defence against the most common error in this experiment.
+
+  Sanity check: with the CT stepping *up* by two, the secondary setting should come out
+  **larger** than the primary current it represents. If yours came out smaller, you divided
+  where you should have multiplied.
+</Callout>
+
+### LL and LLG faults
+
+The Universal Fault Module applies two fault types, and they differ in one respect that
+matters for protection.
+
+<Compare
+  headings={['Fault', 'What is connected', 'Sequence components present']}
+  rows={[
+    { option: 'LL (line to line)', when: 'Two phases shorted together', cost: 'Positive and negative. NO zero sequence', recommended: false },
+    { option: 'LLG (line-line to ground)', when: 'Two phases shorted together AND to earth', cost: 'Positive, negative AND zero sequence' },
+  ]}
+/>
 
 <Callout type="engineering">
-  **The allowance is for DC offset, and it is the subtlety in this experiment.**
+  For a fault at the same point, the **line-to-line** fault current is:
 
-  When a circuit with inductance is energised, the current cannot start instantaneously at
-  its steady-state value. Depending on the point on the voltage wave at which the contacts
-  close, a decaying **DC component** is superimposed on the AC.
+  $$I_{LL} = \frac{\sqrt{3}}{2}\,I_{3\varphi} \approx 0.866\,I_{3\varphi}$$
 
-  In the worst case — closing at a voltage zero — the first peak approaches **twice** the
-  symmetrical peak. So a motor whose symmetrical starting current is 6× FLC can produce a
-  first-cycle asymmetric peak approaching 12× FLC.
+  so an LL fault is *less* severe than a three-phase fault at the same location — which is
+  why the three-phase fault is normally the one that sizes switchgear.
 
-  An instantaneous element set at 8× would trip on that first peak, on a perfectly normal
-  start, and would do so *intermittently* — because whether it happens depends on where in
-  the cycle the contactor happened to close. An intermittent nuisance trip that cannot be
-  reproduced is among the most frustrating faults in a plant.
+  The **LLG** fault adds a zero-sequence path, so the total fault current is generally
+  higher than LL, and the earth-return component is what an earth-fault element (50N/51N)
+  would see. A phase overcurrent relay watching the three line currents sees both fault
+  types; only the LLG has anything for an earth element.
 
-  Hence the rule of thumb: set the instantaneous element at **1.5 to 2 times the starting
-  current**, or use a relay with a short definite-time delay of one or two cycles that lets
-  the DC component decay before it decides.
+  Your observation table asks for LL and LLG under two grid conditions precisely so you can
+  see whether that difference changes the relay's response.
 </Callout>
 
-<Analogy>
-  Think of pushing a heavy door that sticks.
+## The zone of protection
 
-  The steady force needed to keep it moving is modest. The first shove is much larger, and
-  how much larger depends on exactly how you started — a sharp push gives a bigger spike
-  than a gradual lean.
+Look at Figure 2 of the sheet: **Fault Point 1 and Fault Point 2 are downstream of CT4, CT5
+and CT6**, between the CTs and the motor terminals.
 
-  DC offset is that first shove. It has nothing to do with anything being wrong; it is what
-  energising an inductive circuit looks like, and the size depends on the instant you did it.
-</Analogy>
+<Callout type="engineering">
+  This is not incidental — it is the entire logic of the scheme.
+
+  A relay can only see what its CTs measure. Everything **downstream** of the CTs is inside
+  the protected zone; everything upstream is outside it and invisible.
+
+  Placing the fault points between the CTs and the motor puts the simulated terminal fault
+  **inside** the zone, which is what makes the relay respond at all. A fault on the source
+  side of the CTs would draw current the relay never sees.
+
+  Real substations extend this idea until every part of the network sits inside at least one
+  zone, with zones overlapping at the CTs so nothing falls between them. This bench is that
+  principle with a single zone.
+</Callout>
 
 ## Safety and pre-lab
 
-<Hazard title="A rotating shaft and a six-times overload">
-  **The shaft.** Tie back hair, no loose sleeves, no dangling leads near the coupling.
-  Confirm the guard is in place and everyone is clear before you start the machine.
+<Hazard title="This experiment applies deliberate short circuits to a live circuit">
+  That is unusual and worth pausing on. In every other experiment a fault is something to
+  avoid; here you are creating one on purpose.
 
-  **The motor moves.** An induction motor produces a substantial torque reaction on
-  starting. Confirm it is mechanically secured before energising.
+  **The fault duration switch matters.** Set to 0.05–5 s as the sheet specifies. The module
+  clears the fault automatically after that interval — it is the reason a deliberate short
+  circuit is survivable. Confirm the setting before pressing INITIATE FAULT.
 
-  **Repeated starts.** Each start dumps a large amount of heat into a rotor with very little
-  thermal mass. Two starts from cold and one from hot is the usual limit. This experiment
-  will tempt you to start it repeatedly — space them out, and if the frame becomes hot to
-  the touch, stop and let it cool.
+  **Release the fault after each test.** Steps 9 and 10 both end with "release the fault",
+  and leaving it applied while you set up the next condition is how equipment gets damaged.
 
-  **CT secondaries.** The relay is fed from CTs. Short the secondary before disconnecting
-  the relay from it.
+  **The rotating shaft and timing belt.** The motor is belt-coupled to the dynamometer. Tie
+  back hair, no loose sleeves, and keep hands clear of the belt run — a belt nip is a common
+  laboratory injury and it does not need much speed to be serious.
+
+  **CT secondaries.** Short them before disconnecting anything from the relay.
 </Hazard>
+
+<Callout type="warning" title="Step 5 says set CT4, CT5, CT6 to 'O (open)' — this does NOT mean open-circuiting the secondary">
+  The O position refers to the CT module's **shorting switch**. Setting it to open **removes
+  the short across the secondary**, which puts the relay burden into circuit so current
+  flows through it.
+
+  That is the opposite of the hazard described on the
+  [current transformer page](/lab/instruments/current-transformer). The dangerous condition
+  is a secondary with **no path at all**; here the path is the relay.
+
+  The wording invites exactly the wrong reading, so it is worth being explicit: open shorting
+  switch, closed measuring circuit. If you are ever unsure which a switch does, ask before
+  energising.
+</Callout>
 
 <Checklist
   id="psao-2-prelab"
   title="Pre-lab checklist"
   tone="safety"
   items={[
-    'Read the safety module, the induction motor page and the protective relay page',
-    'Motor nameplate recorded: FLC, rated speed, connection, insulation class',
-    'Synchronous speed and full-load slip computed from the nameplate',
-    'CT ratio recorded, and the relay setting expressed in SECONDARY amperes',
-    'Locked-rotor withstand time obtained from the nameplate or the demonstrator',
-    'Shaft guard in place; everyone clear of the coupling',
-    'Motor mechanically secured',
-    'Emergency stop located and reachable',
-    'Demonstrator has checked the wiring',
+    'Motor nameplate recorded — full-load current is the basis of the whole setting',
+    'CT ratio confirmed as 2.5 : 5, and the direction of the multiplication understood',
+    'Relay setting computed in BOTH primary and secondary amperes before the session',
+    'Universal Fault Module timings set: TD1 = 1 s, SST1 = 3 s, SST2 = 10 s',
+    'Fault duration switch set to 0.05–5 s',
+    'INITIATE FAULT button confirmed in the released position',
+    'Timing belt guard in place; everyone clear of the belt and shaft',
+    'Dynamometer set to DYNamometer mode, MANual load control, knob at MINimum, display on TORQUE',
+    'Transmission Grid A switch S1 open',
+    'Demonstrator has checked the wiring before any supply is applied',
   ]}
 />
-
-<Callout type="warning" title="Relay settings are in SECONDARY amperes">
-  A relay set to 5 A with a 50/5 CT is protecting at **50 A** primary.
-
-  Every setting you calculate in primary terms must be divided by the CT ratio before you
-  dial it in, and every reading the relay reports must be multiplied back. Getting this
-  backwards by a factor of ten is the most common error in this experiment, and it produces
-  a relay that either never operates or trips on load.
-
-  Write both numbers side by side in your record — primary and secondary — for every
-  setting.
-</Callout>
 
 ## The circuit
 
 <Figure
   kind="diagram"
   label="Figure 1"
-  caption="Single line diagram: supply, contactor, CTs, IDMT relay with trip output, and the induction motor."
-  needs="Draw the SLD from your panel — supply, isolator, contactor with its trip coil, the CTs and their shorting links, the relay, and the motor. Mark which relay terminals are the trip contacts and what they are wired to, because you will need to know that before injecting anything."
+  caption="Power circuit: three-phase source, Transmission Grid A with contactors CR1 and CR2, line CTs, fault points, and the squirrel-cage motor belt-coupled to the dynamometer."
+  needs="Redraw Fig. 2 from the sheet with your bench's actual terminal numbers marked. Show clearly where Fault Points 1 and 2 sit relative to CT4/CT5/CT6 — that placement is what defines the protected zone."
+/>
+
+<Figure
+  kind="diagram"
+  label="Figure 2"
+  caption="Control circuit: relay inputs A1–A4, trip output to B4/B5, and the CR1 latch with its reset in the protective relaying control station."
+  needs="Redraw Fig. 3 from the sheet. Trace the trip path with a finger and label it: relay output → CR1 coil → CR1 contacts in Transmission Grid A → motor disconnected. Knowing that path is what lets you diagnose a relay that picks up but does not trip."
 />
 
 <Figure
   kind="photo"
-  label="Figure 2"
-  caption="The relay front panel, showing the plug setting and time multiplier as configured."
-  needs="Photograph the relay with your settings visible. On an electromechanical relay this is the plug setting bridge and the TMS dial; on a numerical relay, the settings display. This is the record that makes your trip-time measurements interpretable."
+  label="Figure 3"
+  caption="The bench as wired, with the relay setting visible."
+  needs="Photograph the wired bench and a close-up of the relay set-point dial. The set-point photo is the record that makes every observation interpretable afterwards."
 />
+
+<Callout type="tip" title="Trace the trip path before you energise">
+  Relay output (B4/B5) → CR1 coil in the control station → CR1 contacts in Transmission
+  Grid A → the three-phase supply to the motor is broken.
+
+  CR1 **latches**, which is why there is a RESET button. A latching trip is deliberate: it
+  means the motor stays disconnected until a person has looked at why, rather than
+  re-energising into a fault.
+
+  Knowing this path is what lets you distinguish "the relay did not detect the fault" from
+  "the relay detected it but the trip circuit did not complete" — two very different
+  findings that look identical from the LED alone.
+</Callout>
 
 ## Procedure
 
-<Steps title="Part 1 — Characterise the motor">
-  <Step n={1} title="Record the nameplate and compute the derived values" expect="FLC, synchronous speed, and full-load slip written down before anything is energised">
-    Every setting in this experiment is a multiple of the full-load current. Get it from the
-    plate, not from a measurement.
+<Steps title="Setup">
+  <Step n={1} title="Set the Universal Fault Module timings" expect="TD1 = 1 s, SST1 = 3 s, SST2 = 10 s">
+    These control when and for how long the fault is applied.
   </Step>
 
-  <Step n={2} title="Run the motor unloaded and record the no-load current" expect="roughly 30–50% of FLC — magnetising current dominates at no load">
-    A useful sanity check on your metering before you rely on it.
+  <Step n={2} title="Connect the prime mover LOW POWER INPUT to the 24 V AC output and turn it on">
+    This is the dynamometer's own supply, separate from the motor's three-phase supply.
   </Step>
 
-  <Step n={3} title="Start the motor and capture the starting current" hazard="Stand clear of the shaft. Confirm everyone else is clear before you close the contactor." expect="5–7 × FLC, holding until the machine is nearly at speed, then falling sharply">
-    A clamp meter with a peak-hold or inrush function is the practical instrument here. A
-    recording analyser is better if you have one.
+  <Step n={3} title="Connect the equipment as shown in Figures 2 and 3 of the sheet" hazard="Have your demonstrator check the wiring before any supply is applied.">
+    Power circuit first, then the CT secondaries into the relay, then the control circuit.
+  </Step>
 
-    Record both the **magnitude** and the **duration** — the duration is what the relay
-    setting has to accommodate.
+  <Step n={4} title="Make the module settings" expect="every switch in the stated position before anything is energised">
+    **Prime mover / dynamometer** — MODE: DYNamometer; LOAD CONTROL MODE: MANual; MANUAL
+    LOAD CONTROL knob: MINimum; DISPLAY: TORQUE.
+
+    **Transmission Grid A** — switch S1 to O (open).
+
+    **Universal Fault Module** — INITIATE FAULT button released; FAULT DURATION switch
+    0.05–5 s.
+  </Step>
+
+  <Step n={5} title="Set CT4, CT5 and CT6 to the O (open) position" expect="the CT secondaries now feeding the relay rather than being shorted">
+    See the note above — this opens the **shorting switch**, putting the relay into circuit.
+  </Step>
+
+  <Step n={6} title="Set the relay current set-point to approximately 450% of the motor's nominal full-load current" expect="a secondary-referred value, computed from the CT ratio">
+    Take the CT transformation ratio into account. Record both the primary and secondary
+    figures.
+  </Step>
+</Steps>
+
+<Steps title="Measurement">
+  <Step n={7} title="Turn on the DC power supply; on Transmission Grid A set S2 to O to open contactor CR2" expect="the grid configuration with CR2 open — record what you observe">
+    Write down what changes when CR2 opens. This is your baseline configuration for
+    steps 8 and 9.
+  </Step>
+
+  <Step n={8} title="Turn on the AC supply, observe the motor currents, and load to 1 N·m" hazard="Stand clear of the belt and shaft before energising." expect="starting current well above steady current, and the tripping LED staying dark">
+    Set MANUAL LOAD CONTROL until the dynamometer reads **1 N·m**. Turn the supply off, then
+    repeat the start while watching the tripping indicator.
+
+    The sheet's question: **is the overcurrent protection system stable?** In other words,
+    does it ride through a normal start and normal load without operating.
+  </Step>
+
+  <Step n={9} title="Press INITIATE FAULT and observe currents and the tripping indicator" hazard="A deliberate short circuit. Confirm the fault duration switch is set before pressing." expect="fault current far above the setting, and the LED operating">
+    Record the currents and the LED state, write your conclusion, then **release the fault**.
+
+    Do this for both fault types the module offers — LLG and LL.
+  </Step>
+
+  <Step n={10} title="Set S2 to I to close contactor CR2, then repeat the fault tests" expect="different fault current magnitudes from step 9 — record how they differ">
+    Initiate the fault, observe currents and the indicator, write the conclusion, release the
+    fault. Again for both LLG and LL.
+  </Step>
+
+  <Step n={11} title="Turn off the AC supply, then the DC supply">
+    Then isolate, and short the CT secondaries before disconnecting anything.
   </Step>
 </Steps>
 
-<Steps title="Part 2 — Set and test the relay">
-  <Step n={4} title="Calculate the current setting" expect="110–125% of full-load current, expressed in secondary amperes">
-    Above maximum load so it does not operate on normal running; below the minimum fault
-    current so it can see a genuine fault.
-  </Step>
+<Callout type="warning" title="What does CR2 actually change? Ask your demonstrator.">
+  CR2 is a contactor inside Transmission Grid A, and opening or closing it alters the circuit
+  between the source and the fault point — which changes the fault current the relay sees.
 
-  <Step n={5} title="Choose a TMS that satisfies both constraints" expect="an operating time at 6× FLC that exceeds your measured starting time but falls short of the locked-rotor withstand">
-    Compute it from the IEC equation before you dial it in. Guessing and adjusting wastes
-    the session.
-  </Step>
+  I have not seen your module's internal schematic, so I am **not** going to assert what it
+  switches. The honest approach, and the more useful one: record the fault currents in both
+  states, compare them, and infer the effect from your own measurements. Then ask your
+  demonstrator to confirm.
 
-  <Step n={6} title="Verify the pickup with the test set" expect="the relay just starting to operate at your setting, within its stated tolerance">
-    Inject slowly increasing current and note where it picks up. This checks the setting is
-    what you think it is.
-  </Step>
-
-  <Step n={7} title="Measure operating time at several multiples" expect="times following the IDMT curve — long at 2×, short at 10×">
-    Inject at 2, 3, 5, 7 and 10 times the setting and record the operating time at each.
-    Take each point at least twice.
-
-    Note explicitly whether you are timing the **relay contact** or the **breaker**. They
-    differ by 60–100 ms.
-  </Step>
-
-  <Step n={8} title="Repeat at a different TMS" expect="the same curve shape scaled by the TMS ratio">
-    Two TMS values is what demonstrates that TMS is a clean multiplier rather than a shape
-    change.
-  </Step>
-
-  <Step n={9} title="Test that the relay rides through a real start" expect="the motor starting normally with no trip">
-    The point of the whole exercise. If it trips, your TMS is too low — and finding that
-    here rather than in a plant is exactly why the experiment exists.
-  </Step>
-
-  <Step n={10} title="Shut down safely">
-    Stop the motor, isolate, short the CT secondaries before disconnecting anything.
-  </Step>
-</Steps>
+  If the fault current is **higher** with CR2 closed, CR2 is reducing the impedance between
+  source and fault — a stronger source. If **lower**, it is inserting impedance. Your
+  numbers will tell you which, and that inference is a better answer than a repeated claim.
+</Callout>
 
 ## Expected outcomes
 
 <Expect
-  quantity="Starting current"
-  trend="5–7 times full-load current, sustained until the motor is near full speed"
-  magnitude="duration from about 1 s unloaded to 10 s or more on a high-inertia load"
+  quantity="Motor current during starting and at 1 N·m load"
+  trend="a large starting transient, settling to a much smaller steady value"
+  magnitude="starting several times full-load current; steady current well below the 450% setting"
 >
   At standstill the slip is 1, the rotor sees full supply frequency, and the machine is
-  electrically a short-circuited transformer limited only by leakage impedance.
+  electrically a short-circuited transformer limited only by leakage impedance. Hence the
+  large starting current.
 
-  The current does **not** taper smoothly — it stays high until roughly 80–90% of
-  synchronous speed and then falls sharply. If your measurement shows a gradual decay from
-  the first instant, check whether your instrument is averaging over a window long enough to
-  smear the transient.
+  At 1 N·m the machine is lightly loaded, so the steady current should sit close to no-load
+  current — magnetising current dominating — and comfortably below a setting placed at 450%
+  of *full-load* current.
 
-  A clamp meter without an inrush function will under-read this substantially, because its
-  update rate is slower than the event.
+  A meter that averages over a long window will under-read the starting transient
+  substantially. If your starting figure looks implausibly close to the steady one, suspect
+  the instrument before the machine.
 </Expect>
 
 <Expect
-  quantity="Relay operating time versus current"
-  trend="falls steeply with current, close to a straight line on log-log axes"
-  magnitude="should match t = TMS × 0.14 / ((I/Is)^0.02 − 1) within the relay's stated tolerance"
+  quantity="Whether the protection is stable through starting"
+  trend="expected not to trip — but this is the question the sheet asks you to answer"
+  magnitude="depends on whether your motor's starting current stays below 450% of FLC"
 >
-  Plot your measured points against the IEC equation on **log-log axes**. An inverse curve
-  is nearly a straight line there, so any systematic deviation is immediately visible in a
-  way it is not on linear axes.
+  A setting of 450% is placed just above a typical machine's starting current, so the
+  expected answer is that the protection **is** stable.
 
-  Expect closer agreement at high multiples than at low ones. Near the setting the
-  denominator is small and the operating time is very sensitive to the exact current — so a
-  1% error in injected current becomes a large error in time. That sensitivity is a property
-  of the curve, not of your technique, and saying so is a better discussion point than
-  apologising for scatter.
+  If it does trip, that is a legitimate and informative result, not a failure. It means this
+  particular motor's starting current exceeded 450% of its full-load current, and the
+  correct engineering response is to raise the setting — while checking it still sits below
+  the minimum fault current. Report the measured starting current alongside the setting and
+  the conclusion follows directly from the two numbers.
 
-  On an **electromechanical** relay expect more scatter than on a numerical one: friction,
-  the disc's starting position and mechanical overshoot all contribute.
+  Either outcome answers the sheet's question. What matters is that the answer comes from
+  your measurement rather than from an expectation.
 </Expect>
 
 <Expect
-  quantity="Effect of changing TMS"
-  trend="the whole curve scales by the TMS ratio, with its shape unchanged"
-  magnitude="doubling TMS should double every operating time"
+  quantity="Fault current on initiating LL and LLG faults"
+  trend="far above both the load current and the relay setting, with the tripping LED operating"
+  magnitude="LL fault current approximately 0.866 of a three-phase fault at the same point; LLG generally higher than LL"
 >
-  This is worth verifying explicitly because it justifies the coordination method. If TMS
-  changed the curve *shape*, grading two relays would require re-deriving everything at
-  every current; because it is a clean multiplier, you can shift one curve relative to
-  another and the margin holds across the range.
+  The fault points sit inside the protected zone — downstream of the CTs — so the relay sees
+  the full fault current and should operate essentially immediately.
 
-  On an induction disc relay the reason is mechanical: TMS changes how far the disc must
-  travel before the contacts meet, not how fast it travels.
+  Watch which **phases** carry the current. An LL fault involves two phases; the third
+  should show a much smaller current. That asymmetry is the clearest confirmation that the
+  fault type is what you think it is, and it is worth recording all three phase currents
+  rather than just the largest.
+
+  The LLG fault adds a zero-sequence path. Whether that raises the phase currents noticeably
+  on your bench depends on the earthing arrangement, which is worth asking about.
 </Expect>
 
 <Expect
-  quantity="The motor start, with the relay in service"
-  trend="no trip"
-  magnitude="the relay should see 6× FLC for the starting duration and not operate"
+  quantity="Effect of CR2 state on fault current"
+  trend="the fault current differs between CR2 open and CR2 closed"
+  magnitude="the direction and size of the difference is what your measurement establishes"
 >
-  The result the experiment is actually for.
+  Comparing the two states is the point of running each fault twice.
 
-  If it trips, compare your measured starting duration against the relay's operating time at
-  the measured starting current. The gap tells you exactly how much TMS you needed — which
-  is a far better outcome than a setting that happened to work first time.
+  The engineering question underneath it: **does the relay still detect the fault in the
+  weaker configuration?** A setting comfortably below the fault current in a strong source
+  may sit uncomfortably close to it when the source is weakened, and a protection scheme
+  that works only under the most favourable system condition is not a protection scheme.
 
-  Report a trip honestly if it happens. It is a legitimate result, and the calculation that
-  explains it is the substance of the discussion.
+  This is exactly why real coordination studies are run at **minimum** fault level as well as
+  maximum. If your two measurements bracket a meaningful range, that point is the strongest
+  thing you can put in your conclusion.
 </Expect>
 
 ## Observations
 
 <ObservationTable
-  title="2.1 — Motor characterisation"
-  index={{ label: 'Condition', values: ['No load', 'Starting (peak)', 'Starting (duration)', 'Full load'] }}
+  title="2.1 — Relay setting"
+  rows={3}
   columns={[
-    { label: 'I_R', unit: 'A' },
-    { label: 'I_Y', unit: 'A' },
-    { label: 'I_B', unit: 'A' },
-    { label: 'V', unit: 'V' },
-    { label: 'P', unit: 'W' },
-    { label: 'Speed', unit: 'rpm' },
-    { label: 'I / I_FLC', unit: '—', derived: true },
-  ]}
-  caption="Record all three phase currents — unbalance between them is itself information."
-/>
-
-<ObservationTable
-  title="2.2 — Relay operating time, TMS = ___"
-  index={{ label: 'Multiple of Is', values: ['1.5×', '2×', '3×', '5×', '7×', '10×'] }}
-  columns={[
-    { label: 'I injected', unit: 'A' },
-    { label: 't measured (1)', unit: 's' },
-    { label: 't measured (2)', unit: 's' },
-    { label: 't mean', unit: 's', derived: true },
-    { label: 't from IEC eqn', unit: 's', derived: true },
-    { label: 'Error', unit: '%', derived: true },
-  ]}
-/>
-
-<ObservationTable
-  title="2.3 — Relay operating time, TMS = ___"
-  index={{ label: 'Multiple of Is', values: ['1.5×', '2×', '3×', '5×', '7×', '10×'] }}
-  columns={[
-    { label: 'I injected', unit: 'A' },
-    { label: 't measured (1)', unit: 's' },
-    { label: 't measured (2)', unit: 's' },
-    { label: 't mean', unit: 's', derived: true },
-    { label: 't from IEC eqn', unit: 's', derived: true },
-    { label: 'Ratio to 2.2', unit: '—', derived: true },
-  ]}
-  caption="The last column should equal the ratio of the two TMS values, at every current."
-/>
-
-<ObservationTable
-  title="2.4 — Settings record"
-  rows={4}
-  columns={[
-    { label: 'Parameter', unit: '' },
-    { label: 'Primary value', unit: 'A or s' },
+    { label: 'Quantity', unit: '' },
+    { label: 'Value', unit: 'A' },
     { label: 'CT ratio', unit: '—' },
-    { label: 'Secondary value', unit: 'A or s' },
-    { label: 'Justification', unit: '' },
+    { label: 'Secondary equivalent', unit: 'A', derived: true },
+    { label: 'Notes', unit: '' },
   ]}
-  caption="Primary and secondary side by side, for every setting. This is the table that prevents the CT-ratio error."
+  caption="Motor full-load current, 450% of it, and the set-point actually dialled in. Primary and secondary side by side."
 />
 
-## Calculations and analysis
+<ObservationTable
+  title="2.2 — Currents and tripping indicator"
+  index={{
+    label: 'Operating condition',
+    values: [
+      'Normal',
+      'CR2 open — LLG',
+      'CR2 open — LL',
+      'CR2 close — LLG',
+      'CR2 close — LL',
+    ],
+  }}
+  columns={[
+    { label: 'I₁ start', unit: 'A' },
+    { label: 'I₂ start', unit: 'A' },
+    { label: 'I₃ start', unit: 'A' },
+    { label: 'I₁ steady', unit: 'A' },
+    { label: 'I₂ steady', unit: 'A' },
+    { label: 'I₃ steady', unit: 'A' },
+    { label: 'LED', unit: '—' },
+  ]}
+  caption="The table from the experiment sheet. Record all three phase currents — the asymmetry between them identifies the fault type."
+/>
 
-1. Express every measured current as a multiple of full-load current.
-2. Compute the theoretical operating time at each injected current from the IEC equation.
-3. Plot measured against theoretical on **log-log axes**, both TMS values on one figure.
-4. Mark on the same axes: the starting current and duration as a single point, and the
-   locked-rotor withstand time.
-5. State whether your setting satisfies both constraints, with numbers.
+<Callout type="tip" title="Record the torque and voltage too, even though the sheet does not ask">
+  The sheet's table has three columns. Add two of your own: the **dynamometer torque** and
+  the **supply voltage** at each condition.
 
-<Callout type="tip" title="The plot that makes the whole experiment legible">
-  One figure, log-log, containing:
+  Both cost nothing to write down and both explain anomalies later. If a steady current looks
+  high, the torque tells you whether the load drifted; if a fault current looks low, the
+  voltage tells you whether the supply sagged.
 
-  - the relay curve at your chosen TMS,
-  - a marker at (starting current, starting duration) — which must sit **below** the curve,
-  - a marker at (starting current, locked-rotor withstand) — which must sit **above** it,
-  - your measured points.
+  Blank columns in a record book cannot be filled in afterwards.
+</Callout>
 
-  If the start marker is below the curve and the withstand marker is above it, your setting
-  works, and the figure says so at a glance. This is exactly the figure a protection engineer
-  produces, and it is worth building once properly.
+## Calculations and conclusions
+
+The sheet asks you to **comment on the performance of overcurrent protection in the
+induction motor**. A conclusion that earns marks addresses these in order:
+
+1. **Was the scheme stable?** State the measured starting current, the steady current at
+   1 N·m, and the setting — then say whether the relay held, and why those three numbers
+   made that outcome inevitable.
+2. **Did it detect every fault?** LL and LLG, in both CR2 states. Four tests, four answers.
+3. **How much margin was there?** Fault current divided by setting, for the *worst* case
+   you measured. A scheme that trips is not the same as a scheme with adequate margin.
+4. **What does it not protect against?** Set at 450% of full load, it is blind to sustained
+   overload, to single-phasing on a lightly loaded machine, and to locked rotor if the
+   stall current sits below the setting. Naming these is what shows you understand the scheme
+   rather than just the reading.
+5. **What would you change?** With numbers. If your margin at minimum fault level was thin,
+   say what setting you would use instead and why it still clears starting.
+
+<Callout type="warning" title="Do not write 'the protection worked satisfactorily' and stop">
+  It is the sentence every marker has read a hundred times, and it says nothing.
+
+  "The relay operated on all four fault tests. The smallest margin was 3.2× the setting, on
+  the LL fault with CR2 open, which is the weakest source condition tested — adequate, but it
+  is the case that would bind if the source were weaker still." That is a conclusion.
 </Callout>
 
 ## Simulation
 
-<CodeFile name="idmt_setting.m">
+Two short scripts. Use them to check your setting **before** the session, and to compare
+against your measurements afterwards.
+
+<CodeFile name="oc_setting_check.m">
 ```matlab
-function idmt_setting()
-% Motor overcurrent setting check.
+function oc_setting_check()
+% Instantaneous overcurrent setting check for a motor terminal fault.
 %
-% REPLACE the motor and relay values with YOUR measurements before use.
-% Everything here is a prediction, not a measurement.
+% REPLACE these with YOUR nameplate and measured values.
+% Everything here is a prediction until you substitute measurements.
 
-I_flc      = 7.5;    % A, from the nameplate
-I_start    = 6.0;    % multiples of FLC, MEASURED
-t_start    = 4.0;    % s, MEASURED
-t_stall    = 15.0;   % s, locked-rotor withstand (cold)
+I_flc      = 0.5;    % A, motor full-load current from the nameplate
+ct_primary = 2.5;    % CT ratio, primary
+ct_second  = 5.0;    % CT ratio, secondary  -> steps UP by 2
 
-Is  = 1.25 * I_flc;  % current setting: 125% of full load
-TMS = 0.15;
+setting_pct = 450;   % as specified by the experiment sheet
 
-k = 0.14; alpha = 0.02;          % IEC standard inverse
-t = @(I) TMS * k ./ ((I ./ Is).^alpha - 1);
+% --- The setting, in both references ---
+I_set_primary   = setting_pct/100 * I_flc;
+I_set_secondary = I_set_primary * ct_second / ct_primary;
 
-I_sweep = linspace(1.05*Is, 20*I_flc, 500);
+fprintf('Setting: %.2f A primary  =  %.2f A secondary\n', ...
+        I_set_primary, I_set_secondary);
 
-figure; loglog(I_sweep/I_flc, t(I_sweep), 'LineWidth', 1.8); hold on; grid on
+% Sanity check: a step-up CT must give a LARGER secondary figure
+assert(I_set_secondary > I_set_primary, ...
+    'A 2.5:5 CT steps up. Secondary must exceed primary — check the ratio.');
 
-% The two constraints, as points
-plot(I_start, t_start,  'go', 'MarkerFaceColor', 'g', 'DisplayName', 'Start (must be BELOW)')
-plot(I_start, t_stall,  'rx', 'MarkerSize', 10, 'LineWidth', 2, ...
-     'DisplayName', 'Locked rotor withstand (must be ABOVE)')
+% --- Constraint 1: must sit ABOVE starting current ---
+I_start_measured = 2.1;                       % A, MEASURED in step 8
+start_multiple   = I_start_measured / I_flc;
+fprintf('Starting current: %.2f A = %.0f%% of FLC\n', ...
+        I_start_measured, start_multiple*100);
 
-xlabel('Current (multiples of full load)')
-ylabel('Time (s)')
-title(sprintf('IDMT setting check — Is = %.1f A, TMS = %.2f', Is, TMS))
-legend('Relay curve', 'Start', 'Withstand', 'Location', 'southwest')
+if I_start_measured > I_set_primary
+    fprintf(['  !! Starting current EXCEEDS the setting — expect a trip on start.\n' ...
+             '     Raise the setting, then re-check constraint 2.\n']);
+else
+    fprintf('  Stable through starting, margin %.0f%%\n', ...
+            (I_set_primary/I_start_measured - 1)*100);
+end
 
-% Verify both constraints explicitly rather than trusting the picture
-t_at_start = t(I_start * I_flc);
-fprintf('Relay operates in %.2f s at starting current\n', t_at_start);
+% --- Constraint 2: must sit BELOW the minimum fault current ---
+I_fault_min = 4.0;                            % A, MEASURED — weakest case
+fprintf('Minimum measured fault current: %.2f A = %.1fx setting\n', ...
+        I_fault_min, I_fault_min/I_set_primary);
 
-assert(t_at_start > t_start, ...
-    'FAILS: relay would trip during starting (%.2f s < %.2f s)', t_at_start, t_start);
-assert(t_at_start < t_stall, ...
-    'FAILS: relay too slow for a stall (%.2f s > %.2f s)', t_at_start, t_stall);
-fprintf('Both constraints satisfied.\n');
+assert(I_fault_min > I_set_primary, ...
+    'Setting is above the minimum fault current — the relay would NOT detect it.');
 end
 ```
 </CodeFile>
 
-<CodeFile name="motor_thermal.py">
+<CodeFile name="fault_currents.py">
 ```python
-"""First-order thermal replica of a motor, and what a stall does to it.
+"""Relative severity of LL and LLG faults, from symmetrical components.
 
-Shows why the protection window exists: a start and a stall look identical
-in current, and completely different in accumulated heat.
+Gives the ratios to expect between fault types at the same point, which is
+what your observation table lets you check.
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 
-def thermal_state(current_pu, dt, tau=600.0, theta0=0.0):
-    """Integrate dθ/dt = I² − θ/τ over a current profile.
+def fault_currents(Z1, Z2=None, Z0=None, E=1.0):
+    """Fault current magnitude for each fault type, in per unit.
 
     Args:
-        current_pu: Current in multiples of full-load, sampled at dt.
-        dt: Time step, seconds.
-        tau: Thermal time constant, seconds.
-        theta0: Initial thermal state, per unit (0 = cold, 1 = at limit).
+        Z1: Positive-sequence impedance to the fault (complex).
+        Z2: Negative-sequence; defaults to Z1.
+        Z0: Zero-sequence; defaults to 3*Z1, a rough typical value.
+        E:  Prefault voltage, per unit.
 
     Returns:
-        Thermal state at each sample, in per unit of the trip threshold.
+        dict of fault type -> |fault current| in per unit.
     """
-    theta = np.empty(len(current_pu))
-    th = theta0
-    for i, i_pu in enumerate(current_pu):
-        th += (i_pu**2 - th / tau) * dt
-        theta[i] = th
-    return theta
+    Z2 = Z1 if Z2 is None else Z2
+    Z0 = 3 * Z1 if Z0 is None else Z0
+
+    three_phase = abs(E / Z1)
+    line_line = abs(np.sqrt(3) * E / (Z1 + Z2))
+
+    # Double line to ground: the faulted phase currents come from the
+    # sequence network with Z2 and Z0 in parallel behind Z1.
+    Z_par = Z2 * Z0 / (Z2 + Z0)
+    I1 = E / (Z1 + Z_par)
+    I2 = -I1 * Z0 / (Z2 + Z0)
+    I0 = -I1 * Z2 / (Z2 + Z0)
+
+    a = np.exp(2j * np.pi / 3)
+    Ib = I0 + a**2 * I1 + a * I2
+    Ic = I0 + a * I1 + a**2 * I2
+
+    return {
+        'three_phase': three_phase,
+        'line_line': line_line,
+        'line_line_ground': max(abs(Ib), abs(Ic)),
+        'ground_return': abs(3 * I0),
+    }
 
 
 if __name__ == '__main__':
-    dt = 0.01
-    flc, start, t_start = 1.0, 6.0, 4.0
+    Z1 = 0.1j                       # replace with your system impedance
+    f = fault_currents(Z1)
 
-    # A normal start, then running at full load
-    normal = np.r_[np.full(int(t_start / dt), start),
-                   np.full(int(60 / dt), flc)]
+    for name, value in f.items():
+        print(f'{name:>18}: {value:6.2f} pu')
 
-    # The same start that never ends — a stall
-    stalled = np.full(int(64 / dt), start)
+    # The standard result: an LL fault is about 86.6% of a three-phase fault
+    assert np.isclose(f['line_line'] / f['three_phase'], np.sqrt(3) / 2, rtol=1e-6), \
+        'LL/3ph ratio should be sqrt(3)/2 for Z1 == Z2'
 
-    t = np.arange(len(normal)) * dt
-
-    fig, ax = plt.subplots(figsize=(6.5, 4))
-    ax.plot(t, thermal_state(normal, dt), lw=1.8, label='Normal start, then run')
-    ax.plot(t, thermal_state(stalled, dt), lw=1.8, label='Stalled at 6× FLC')
-    ax.axhline(1.0, ls='--', c='r', lw=1.2, label='Trip threshold')
-
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Thermal state (pu)')
-    ax.set_title('Why a thermal replica separates a start from a stall')
-    ax.legend()
-    ax.grid(alpha=0.3)
-    fig.tight_layout()
-    plt.show()
-
-    # The two are identical for the first t_start seconds, by construction
-    n = int(t_start / dt)
-    assert np.allclose(thermal_state(normal, dt)[:n],
-                       thermal_state(stalled, dt)[:n]), \
-        'start and stall must be indistinguishable during the start'
+    print(f"\nLL / 3-phase = {f['line_line']/f['three_phase']:.3f}  (expect 0.866)")
+    print(f"LLG / LL     = {f['line_line_ground']/f['line_line']:.3f}")
 ```
 </CodeFile>
 
-<Callout type="tip" title="What the assert in the Python version is for">
-  It states the premise of the whole experiment as a testable claim: for the first few
-  seconds, a start and a stall are **identical** — same current, same accumulated heat, no
-  way to tell them apart.
+<Callout type="tip" title="What the assert is checking">
+  That the LL fault current comes out at √3/2 — about 86.6% — of the three-phase fault, which
+  holds whenever the positive and negative sequence impedances are equal.
 
-  The curves only diverge afterwards, which is exactly why the protection must be built on
-  time rather than magnitude. Encoding that as an assertion rather than a sentence is worth
-  doing, because it fails loudly if the model is ever changed in a way that breaks the
-  premise.
+  It is a closed-form result you can verify by hand, so it turns the script from something
+  you hope is right into something you have checked. If it fails, the sequence algebra is
+  wrong and the LLG figure beside it cannot be trusted either.
 </Callout>
 
-## Where this shows up in practice
+## Wider context
 
-**Every industrial motor starter** has this setting in it. A refinery has thousands of
-motors, each with a relay whose curve was chosen against that motor's starting time and
-withstand curve.
+The scheme in this experiment is one function out of several that a real motor starter
+carries. Worth knowing what the others are, and why this one alone is not enough.
 
-**Motor protection relays** now integrate the thermal model directly, along with negative
-sequence (ANSI 46) for single-phasing, undercurrent (37) for loss of load — a pump running
-dry — and start-inhibit logic that refuses another start until the modelled temperature has
-fallen.
-
-**Arc flash studies** depend on these settings. The incident energy at a switchboard is
-proportional to the clearing time, so a relay set slowly for coordination reasons directly
-increases the PPE category someone must wear to work on that board. Protection settings are
-a personnel safety issue, not only an equipment one.
+<Compare
+  headings={['Function', 'ANSI', 'Protects against', 'In this experiment?']}
+  rows={[
+    { option: 'Instantaneous overcurrent', when: '50', cost: 'Terminal short circuits and flashovers', recommended: true },
+    { option: 'Time overcurrent', when: '51', cost: 'Faults further out, with coordination' },
+    { option: 'Thermal overload', when: '49', cost: 'Sustained overload — the slow winding killer', recommended: false },
+    { option: 'Negative sequence', when: '46', cost: 'Single-phasing and supply unbalance' },
+    { option: 'Undercurrent', when: '37', cost: 'Loss of load — a pump running dry' },
+    { option: 'Earth fault', when: '50N / 51N', cost: 'Insulation failure to the frame' },
+  ]}
+/>
 
 <Callout type="engineering">
-  That last point is worth carrying with you, because it is a connection students rarely
-  make.
+  **Single-phasing is the gap most worth understanding**, because it is invisible to the
+  scheme you just tested.
 
-  Coordination pushes upstream settings **slower** — each grading margin adds delay. Arc
-  flash energy is roughly proportional to clearing time. So better coordination produces
-  higher incident energy at the upstream board, and the person working there needs heavier
-  arc-rated clothing as a direct consequence of a setting chosen for selectivity.
+  Lose one phase and the motor keeps running on two. The remaining phase currents rise — but
+  on a lightly loaded machine they may still sit far below a setting placed at 450% of full
+  load, so nothing operates.
 
-  Modern practice manages this with a **maintenance mode** switch: temporarily reducing the
-  instantaneous setting while someone is working on the board, accepting worse selectivity
-  in exchange for faster clearing. Selectivity and safety genuinely trade against each
-  other, and this is where.
+  Meanwhile the rotor is being destroyed. Losing a phase creates a large **negative-sequence**
+  component, and an induction motor's negative-sequence impedance is roughly its
+  **locked-rotor** impedance — about a sixth of positive sequence — so a modest
+  negative-sequence voltage drives a large current.
+
+  That current's field rotates *backwards* relative to the rotor, which therefore sees it at
+  nearly **twice supply frequency**, where skin effect raises the rotor bar resistance
+  considerably. The heating per ampere is roughly five to six times that of normal current.
+
+  So the machine cooks while the ammeters look unremarkable and the relay stays quiet. This
+  is why ANSI 46 exists as a separate function, and it is a strong point for your conclusion
+  about what this scheme does not cover.
 </Callout>
-
-## Extending this
-
-<Exercise n={1} kind="practice" title="Add the downstream relay and grade the pair">
-  Turn a single setting into a coordination study.
-
-  <Solution>
-    ```matlab
-    function coordination_check()
-    % Two relays in series: motor feeder and incomer.
-    k = 0.14; alpha = 0.02;
-    t = @(I, Is, TMS) TMS * k ./ ((I ./ Is).^alpha - 1);
-
-    Is_down = 9.4;   TMS_down = 0.15;   % motor relay
-    Is_up   = 25.0;  TMS_up   = 0.30;   % incomer
-
-    I = logspace(log10(30), log10(600), 400);
-
-    figure; loglog(I, t(I, Is_down, TMS_down), 'LineWidth', 1.8); hold on; grid on
-    loglog(I, t(I, Is_up, TMS_up), 'LineWidth', 1.8)
-
-    % Grading margin across the whole range, not at one point
-    margin = t(I, Is_up, TMS_up) - t(I, Is_down, TMS_down);
-    fprintf('Minimum grading margin: %.3f s at %.0f A\n', min(margin), I(margin == min(margin)));
-
-    assert(min(margin) > 0.25, 'Grading margin falls below 0.25 s');
-    legend('Motor relay', 'Incomer', 'Location', 'southwest')
-    end
-    ```
-
-    The essential move is checking the margin **across the whole current range** rather than
-    at one convenient point. The two curves converge as current rises, so a pair that grades
-    comfortably at 3× may lose selectivity entirely at 20×, which is precisely where a real
-    fault sits.
-
-    That is why `min(margin)` is the quantity to assert on. Verifying coordination at a
-    single current is the standard way people convince themselves of something untrue.
-  </Solution>
-</Exercise>
-
-<Exercise n={2} kind="practice" title="Observe single-phasing safely">
-  If your bench and demonstrator permit it, remove one phase from a lightly loaded motor and
-  measure what happens.
-
-  <Solution>
-    Only with explicit permission and supervision — and briefly, because the point is that it
-    damages the machine.
-
-    What to measure:
-
-    ```python
-    import numpy as np
-
-    def sequence_components(Ia, Ib, Ic):
-        """Symmetrical components from three phasor currents."""
-        a = np.exp(2j * np.pi / 3)
-        A = np.array([[1, 1,      1],
-                      [1, a,      a**2],
-                      [1, a**2,   a]]) / 3
-        I0, I1, I2 = A @ np.array([Ia, Ib, Ic])
-        return {'zero': I0, 'positive': I1, 'negative': I2,
-                'unbalance_pct': abs(I2) / abs(I1) * 100}
-    ```
-
-    What you should find: the two remaining phase currents rise substantially — often by
-    around √3 — and the negative-sequence component becomes large.
-
-    The important observation is the comparison against the relay setting. On a lightly
-    loaded motor the increased line current may still sit **within** the overcurrent
-    setting, so the relay does not operate — while the rotor is being heated five to six
-    times harder per ampere than by normal current, because the negative-sequence field
-    rotates backwards and the rotor sees it at nearly twice supply frequency.
-
-    Measuring the negative-sequence percentage and showing it exceeds a typical 46-element
-    setting while the overcurrent element stays quiet is the cleanest possible demonstration
-    of why that separate function exists.
-  </Solution>
-</Exercise>
 
 ## Viva preparation
 
 <Viva band="definition">
-  <Q q="What does IDMT stand for, and what do Is and TMS do?">
-    Inverse Definite Minimum Time. Operating time falls as current rises, approaching a
-    definite minimum at very high currents.
-
-    Is is the current setting — the threshold the relay compares against, set above maximum
-    load and below minimum fault current. TMS is the time multiplier, which scales the whole
-    curve without changing its shape. On an induction disc relay it changes how far the disc
-    must travel before the contacts meet.
+  <Q q="What is the aim of this experiment?">
+    To study the overcurrent protection scheme for three-phase induction motors —
+    specifically, protection against phase faults at the motor terminals, such as terminal
+    short circuits and flashovers, using an instantaneous overcurrent relay with a high
+    current setting.
   </Q>
 
-  <Q q="Why is the relay set at 125% of full-load current rather than 100%?">
-    Because of the −1 in the denominator of the IDMT equation: at exactly Is the operating
-    time is infinite, so the setting is an asymptote rather than a trip point.
+  <Q q="What is the difference between ANSI device 50 and 51?">
+    50 is instantaneous overcurrent — it operates with no intentional time delay. 51 is
+    time-delayed, typically with an inverse-time characteristic where operating time falls as
+    current rises.
 
-    A relay set at 100% would take an unusably long time to operate on a small overload. A
-    margin above full load is needed before the operating time becomes finite and useful.
+    This experiment uses an instantaneous relay because a terminal fault must be cleared
+    immediately, and the high setting is what keeps it clear of starting current.
+  </Q>
+
+  <Q q="Why is the relay set at 450% of full-load current?">
+    It must sit above anything that occurs normally — including the starting current, which
+    is several times full-load current and lasts for seconds — and below the minimum fault
+    current it has to detect.
+
+    450% places it just above a typical machine's starting current. Because the relay is
+    instantaneous, it cannot wait for the start to finish, so being set above the start is
+    the only option available.
   </Q>
 </Viva>
 
 <Viva band="procedure">
-  <Q q="How did you choose your TMS?">
-    From two constraints. The operating time at starting current must exceed the measured
-    starting duration, so the relay rides through a normal start; and it must be less than
-    the locked-rotor withstand time, so a stall is cleared before the winding is damaged.
+  <Q q="How did you calculate the relay set-point?">
+    The relay is set in secondary amperes, so the primary figure has to be referred through
+    the CT ratio.
 
-    I computed the operating time from the IEC equation at my measured starting current and
-    checked both inequalities before dialling anything in.
+    With a 2.5 : 5 CT the secondary current is twice the primary, so the secondary set-point
+    is 4.5 × full-load current × (5/2.5) = 9 × full-load current. I recorded both the primary
+    and secondary values.
   </Q>
 
-  <Q q="Why plot the results on log-log axes?">
-    Because an inverse-time curve is close to a straight line on log-log axes, so a
-    systematic deviation from the characteristic is immediately visible. On linear axes the
-    curve is so steep at low multiples that everything else is compressed into the corner.
+  <Q q="Step 5 says set the CTs to the open position. Does that not create the open-secondary hazard?">
+    No — the O position refers to the CT module's shorting switch. Opening it removes the
+    short across the secondary and puts the relay burden into circuit.
 
-    It is also the standard presentation for coordination studies, where several curves are
-    compared at once.
+    The dangerous condition is a secondary with no path at all, where nothing opposes the
+    primary MMF, the core saturates and a very high voltage appears across the terminals.
+    Here the path is the relay.
+  </Q>
+
+  <Q q="Why does the trip latch, and what is the RESET button for?">
+    So the motor stays disconnected until a person has established why it tripped, rather
+    than re-energising into an unresolved fault.
+
+    The relay output energises CR1, which seals in through its own contact; CR1's contacts in
+    Transmission Grid A break the supply to the motor. RESET drops the latch out.
   </Q>
 </Viva>
 
 <Viva band="analysis">
-  <Q q="A starting motor and a stalled motor draw the same current. How does the relay distinguish them?">
-    By duration alone. The magnitudes are identical, so the relay rides through six times
-    full load for longer than the starting time and trips before the locked-rotor withstand
-    time expires.
+  <Q q="Why are the fault points placed downstream of the CTs?">
+    Because a relay can only see what its CTs measure. Everything downstream of the CTs is
+    inside the protected zone; everything upstream is invisible to it.
 
-    If the starting time approaches the withstand time — on a high-inertia load — no TMS
-    satisfies both, and the relay needs information it does not have from current alone: a
-    speed switch on the shaft, or a thermal replica that integrates heating.
+    Placing the fault points between the CTs and the motor terminals puts the simulated
+    terminal fault inside the zone, which is the condition the scheme is designed to detect.
   </Q>
 
-  <Q q="Why must the instantaneous element be set well above the starting current?">
-    Because of DC offset. Energising an inductive circuit produces a decaying DC component
-    whose size depends on the point on the voltage wave at which the contacts close, and in
-    the worst case the first peak approaches twice the symmetrical peak.
+  <Q q="How does an LL fault differ from an LLG fault?">
+    An LL fault shorts two phases together and contains positive and negative sequence
+    components but no zero sequence. An LLG fault also connects to earth, adding a
+    zero-sequence path.
 
-    So a symmetrical starting current of 6× FLC can produce a first-cycle peak near 12×. An
-    element set at 8× would trip intermittently on normal starts, depending on switching
-    instant — which is a particularly difficult fault to diagnose. Set it at 1.5 to 2 times
-    the starting current, or use a short definite-time delay of a cycle or two.
+    For a fault at the same point, LL current is about √3/2 — 86.6% — of the three-phase
+    fault current. LLG is generally higher than LL, and only LLG produces the earth-return
+    current an earth-fault element would see.
   </Q>
 
-  <Q q="Your measured operating times scatter more at low multiples than at high ones. Why?">
-    Because near the setting the denominator (I/Is)^α − 1 is small, so the operating time is
-    very sensitive to the exact current — a 1% error in injected current produces a large
-    change in time.
+  <Q q="Why repeat the fault tests with CR2 in both states?">
+    Because CR2 changes the circuit between the source and the fault, and therefore the fault
+    current the relay sees.
 
-    That sensitivity is a property of the characteristic, not of the measurement technique.
-    On an electromechanical relay, friction and disc overshoot add further scatter.
-  </Q>
-</Viva>
-
-<Viva band="application">
-  <Q q="How do protection settings affect personnel safety?">
-    Arc flash incident energy is roughly proportional to fault clearing time. Coordination
-    requires upstream relays to be slower, so better selectivity directly increases the
-    incident energy at the upstream board — and therefore the arc-rated PPE someone must
-    wear to work on it.
-
-    Modern practice uses a maintenance mode switch that temporarily lowers the instantaneous
-    setting while someone works on the board, trading selectivity for faster clearing.
+    A setting comfortably below the fault current in one configuration may sit close to it in
+    a weaker one. Real coordination studies are checked at minimum fault level as well as
+    maximum, because a scheme that only works under the most favourable system condition is
+    not a protection scheme.
   </Q>
 
-  <Q q="What protection functions does a modern motor relay provide beyond overcurrent?">
-    Thermal replica (49), which integrates heating rather than watching instantaneous
-    current; negative sequence (46) for single-phasing and unbalance; undercurrent (37) for
-    loss of load, such as a pump running dry; instantaneous overcurrent (50) for short
-    circuits; earth fault (50N/51N); and start-inhibit logic that refuses another start until
-    the modelled temperature has fallen.
+  <Q q="What does this scheme NOT protect the motor against?">
+    Sustained overload, which at 150% of full load never approaches a 450% setting but will
+    destroy a winding over minutes — that needs a thermal overload relay, ANSI 49.
+
+    Single-phasing, where on a lightly loaded machine the line currents may stay well below
+    the setting while negative-sequence current heats the rotor five to six times harder per
+    ampere than normal current — that needs ANSI 46.
+
+    And locked rotor, if the stall current happens to sit below the setting.
   </Q>
 </Viva>
 
-## Common mistakes and troubleshooting
+## Troubleshooting
 
 <Compare
   headings={['Symptom', 'Likely cause', 'Check']}
   rows={[
-    { option: 'Relay trips every time the motor starts', when: 'TMS too low, or instantaneous element too low', cost: 'Compute operating time at measured starting current; check the 50 element against DC offset' },
-    { option: 'Relay never operates at all', when: 'Setting entered in primary amperes on a secondary-referenced relay', cost: 'The settings table — primary and secondary side by side' },
-    { option: 'Measured times all a fixed amount longer than theory', when: 'You are timing the breaker, not the relay contact', cost: 'Whether the 60–100 ms breaker time is included' },
-    { option: 'Times scatter badly at low multiples', when: 'Expected — the curve is very sensitive near the setting', cost: 'Whether injected current is stable and accurately known' },
-    { option: 'Starting current reads far below 6× FLC', when: 'Instrument averaging over too long a window', cost: 'Use a clamp with inrush capture, or a recording analyser' },
-    { option: 'Phase currents unequal at steady load', when: 'Supply unbalance, or a developing winding fault', cost: 'Supply voltages first, then the negative-sequence component' },
+    { option: 'Relay trips on every start', when: 'Starting current exceeds 450% of FLC, or the setting was referred through the CT the wrong way', cost: 'Measured starting current against the setting; the primary/secondary calculation' },
+    { option: 'Relay never operates, even on a fault', when: 'Setting far too high — CT ratio applied in the wrong direction', cost: 'Whether the secondary figure came out LARGER than the primary, as a step-up CT requires' },
+    { option: 'No current reading at all', when: 'CT shorting switches still closed', cost: 'CT4, CT5, CT6 in the O position' },
+    { option: 'Relay picks up but the motor is not disconnected', when: 'Trip circuit incomplete', cost: 'Trace relay output → CR1 coil → CR1 contacts; check the DC supply' },
+    { option: 'Trip cannot be cleared', when: 'CR1 is latched by design', cost: 'Press RESET on the control station' },
+    { option: 'Fault does not clear itself', when: 'Fault duration switch or INITIATE button', cost: 'Duration switch at 0.05–5 s; release the INITIATE FAULT button' },
+    { option: 'All three phase currents equal during an LL fault', when: 'Probably not the fault type you think', cost: 'Which fault the module applied; an LL fault should leave one phase much lower' },
   ]}
 />
 
 <KeyIdea>
-  A starting motor and a stalled motor draw the **same current**, so the setting is chosen
-  entirely by time: slower than the start, faster than the locked-rotor withstand. When
-  those two close on each other, no TMS works and the relay needs information current cannot
-  give it. And the instantaneous element sits at 1.5–2× starting current because DC offset
-  can nearly double the first-cycle peak.
+  This scheme protects against a **terminal short circuit**, not against overload — which is
+  why the relay is instantaneous and set as high as 450% of full-load current. Those two
+  choices are the same decision: a relay that cannot wait for a start to finish must instead
+  sit above it. And the fault points are downstream of the CTs because a relay only protects
+  what its CTs can see.
 </KeyIdea>
 
 ## References
@@ -778,34 +806,31 @@ a personnel safety issue, not only an equipment one.
   items={[
     {
       kind: 'standard',
-      title: 'IEC 60255-151 — Measuring relays: functional requirements for over/under current protection',
-      note: 'The source of the IDMT curve constants used throughout this experiment.',
-    },
-    {
-      kind: 'standard',
-      title: 'IEEE Std 620 — Guide for the presentation of thermal limit curves for squirrel cage induction machines',
-      note: 'Cold and hot withstand curves, and how to read a manufacturer’s thermal limit plot.',
+      title: 'IEEE Std C37.2 — Device function numbers and contact designations',
+      note: 'Where 50, 51, 46, 49 and the rest are defined.',
     },
     {
       kind: 'standard',
       title: 'IEEE Std 3004.8 — Recommended practice for motor protection in industrial and commercial power systems',
+      note: 'How instantaneous and thermal functions are combined in a real motor starter.',
     },
     {
       kind: 'book',
       title: 'Network Protection and Automation Guide',
       by: 'Alstom / GE Grid Solutions',
-      note: 'Freely available. The motor protection and overcurrent coordination chapters are directly relevant.',
+      note: 'Freely available. The motor protection chapter, and the fault calculation chapter for LL and LLG.',
     },
     {
       kind: 'book',
       title: 'Power System Protection and Switchgear',
       by: 'Badri Ram and D. N. Vishwakarma',
-      note: 'The standard Indian text; IDMT relay theory and induction disc construction.',
+      note: 'The standard Indian text; overcurrent relay theory and motor protection.',
     },
     {
-      kind: 'standard',
-      title: 'IEEE Std 1584 — Guide for performing arc-flash hazard calculations',
-      note: 'Where the clearing-time-to-incident-energy relationship is quantified.',
+      kind: 'book',
+      title: 'Power System Analysis',
+      by: 'John J. Grainger and William D. Stevenson Jr.',
+      note: 'Chapters 11–12 for symmetrical components and the LL / LLG fault derivations.',
     },
   ]}
 />
