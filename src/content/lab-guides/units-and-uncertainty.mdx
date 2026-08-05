@@ -1,0 +1,372 @@
+---
+title: Units, Per Unit and Uncertainty
+section: before
+order: 4
+level: 0
+description: Why power systems abandon volts and amperes for per unit, how many digits of a measurement are real, and how to propagate uncertainty through a calculation without pretending to precision you do not have.
+objectives:
+  - Convert between actual quantities and per unit, and change base correctly
+  - Report a measurement to the number of digits it actually justifies
+  - Propagate uncertainty through the calculations your experiments require
+estimatedMinutes: 35
+tags: ['units', 'per-unit', 'uncertainty', 'measurement']
+---
+
+Two ideas that every experiment in your lab depends on, and that most students carry
+around half-formed: the per-unit system, and how many of the digits on a display are real.
+
+## Per unit
+
+Power systems have transformers in them. Which means the same power flows at 11 kV on one
+side and 415 V on the other, with currents differing by the same ratio, and impedances by
+its square.
+
+Track all of that in actual units and every calculation carries a transformer ratio.
+Per unit removes them.
+
+Choose a base for two quantities — conventionally apparent power and voltage — and every
+other base follows:
+
+$$
+S_{\text{base}}, \quad V_{\text{base}} \quad \Rightarrow \quad
+I_{\text{base}} = \frac{S_{\text{base}}}{\sqrt{3}\,V_{\text{base}}}, \quad
+Z_{\text{base}} = \frac{V_{\text{base}}^2}{S_{\text{base}}}
+$$
+
+using line-to-line voltage and three-phase power, which is the standard convention.
+
+Then any quantity in per unit is itself divided by its base:
+
+$$
+V_{\text{pu}} = \frac{V_{\text{actual}}}{V_{\text{base}}}, \qquad
+Z_{\text{pu}} = \frac{Z_{\text{actual}}}{Z_{\text{base}}}
+$$
+
+<Callout type="engineering">
+  **The payoff: choose the voltage bases in the ratio of the transformer turns, and the
+  transformer disappears from the diagram.**
+
+  A transformer's per-unit impedance is the same seen from either side. So a network with
+  five voltage levels becomes a single circuit with no ratios in it — which is why every
+  load flow, every fault study and every stability program works internally in per unit.
+
+  Three further conveniences fall out:
+
+  - Voltages are near **1.0 pu** everywhere, so an error is obvious at a glance. Seeing
+    0.94 pu immediately reads as low; seeing 390 V requires you to remember the base.
+  - Transformer impedance is already quoted in per cent on the nameplate — which is per
+    unit × 100.
+  - Machine impedances of similar design have similar per-unit values regardless of size,
+    so a figure can be sanity-checked against experience.
+</Callout>
+
+### Changing base
+
+Manufacturer data comes on the equipment's own base. To combine it with the rest of your
+network you must convert:
+
+$$
+Z_{\text{pu,new}} = Z_{\text{pu,old}} \times
+\frac{S_{\text{base,new}}}{S_{\text{base,old}}} \times
+\left(\frac{V_{\text{base,old}}}{V_{\text{base,new}}}\right)^{2}
+$$
+
+<Callout type="warning" title="Base conversion is where per-unit errors live">
+  Note the asymmetry: power scales **linearly**, voltage scales as the **square**. Getting
+  either exponent wrong gives an answer that is plausible and wrong.
+
+  The check that catches it: convert back to actual ohms both ways. Actual impedance does
+  not depend on your choice of base, so if the two routes disagree, the conversion is wrong.
+</Callout>
+
+<Exercise n={1} kind="practice" title="Work one through">
+  A transformer is rated 100 MVA, 11/132 kV, with 10% impedance on its own base. Express its
+  impedance on a 500 MVA, 132 kV system base.
+
+  <Solution>
+    The voltage bases already match on the 132 kV side, so only the power base changes:
+
+    $$
+    Z_{\text{pu,new}} = 0.10 \times \frac{500}{100} \times \left(\frac{132}{132}\right)^2 = 0.50\ \text{pu}
+    $$
+
+    Check it in ohms, both ways.
+
+    On the transformer's own base:
+
+    $$
+    Z_{\text{base,old}} = \frac{132000^2}{100\times10^6} = 174.2\ \Omega
+    \quad\Rightarrow\quad Z = 0.10 \times 174.2 = 17.4\ \Omega
+    $$
+
+    On the system base:
+
+    $$
+    Z_{\text{base,new}} = \frac{132000^2}{500\times10^6} = 34.85\ \Omega
+    \quad\Rightarrow\quad Z = 0.50 \times 34.85 = 17.4\ \Omega
+    $$
+
+    Same ohms. That agreement is the whole check — the physical impedance cannot depend on
+    which base you chose to describe it in, so two routes to the same number confirms the
+    conversion.
+
+    Note also what the answer means: 0.50 pu is a **large** impedance on the system base.
+    The transformer is small relative to the system, so it dominates the impedance between
+    those two points. Per unit made that immediately visible in a way that 17.4 Ω did not.
+  </Solution>
+</Exercise>
+
+## How many digits are real
+
+Your meter shows `230.47`. How many of those five digits should appear in your report?
+
+<Callout type="warning" title="Resolution is not accuracy">
+  **Resolution** is the smallest change the display can show. **Accuracy** is how close the
+  reading is to the truth. They are routinely different by an order of magnitude.
+
+  A meter specified at ±(0.5% + 3 counts), reading 230.47 V on a 600 V range:
+
+  - 0.5% of 230.47 = 1.15 V
+  - 3 counts at 0.01 V resolution = 0.03 V
+  - Total uncertainty ≈ **±1.2 V**
+
+  So the true value is somewhere between 229.3 and 231.7. The last two digits displayed are
+  meaningless as a statement about the voltage, even though the meter is genuinely
+  responding to them.
+
+  Report **230 ± 1 V**. Recording all five digits in your raw observations is fine and
+  correct; carrying all five into a result is a claim you cannot support.
+</Callout>
+
+### Significant figures
+
+The rules, briefly:
+
+- **Multiplication and division**: the result carries as many significant figures as the
+  *least* precise input.
+- **Addition and subtraction**: the result carries as many *decimal places* as the least
+  precise input.
+- Keep extra digits through intermediate steps; round only at the end.
+
+$$
+P = VI = 230 \times 4.7 = 1081 \rightarrow \mathbf{1.1 \times 10^3\ \text{W}}
+$$
+
+Two significant figures in, two out. Writing 1081 W claims a precision the 4.7 A never had.
+
+<Callout type="engineering">
+  **Subtraction of similar numbers is where precision goes to die**, and your Experiment 1
+  is built on exactly this operation.
+
+  Voltage regulation needs $\Delta V = V_S - V_R$. Suppose both are measured to ±1 V:
+
+  - $V_S = 230 \pm 1$
+  - $V_R = 225 \pm 1$
+  - $\Delta V = 5 \pm 2$ V
+
+  The inputs were good to 0.4%. The difference is good to **40%** — a hundredfold loss of
+  precision, from one subtraction.
+
+  This is *catastrophic cancellation*, and it is the same phenomenon the Learning Hub's
+  floating-point lesson covers in numerical terms. Here it is physical, and the practical
+  responses are: use the most accurate range available, use the same meter for both
+  readings so systematic errors partly cancel, and take the difference at the largest load
+  you safely can, where ΔV is largest relative to its uncertainty.
+</Callout>
+
+## Propagating uncertainty
+
+When a result is computed from measurements, the uncertainties combine. Two rules cover
+nearly everything you will do.
+
+**For sums and differences**, absolute uncertainties add in quadrature:
+
+$$
+q = a \pm b \quad\Rightarrow\quad \delta q = \sqrt{(\delta a)^2 + (\delta b)^2}
+$$
+
+**For products and quotients**, *relative* uncertainties add in quadrature:
+
+$$
+q = ab \ \text{or}\ \frac{a}{b} \quad\Rightarrow\quad
+\frac{\delta q}{|q|} = \sqrt{\left(\frac{\delta a}{a}\right)^2 + \left(\frac{\delta b}{b}\right)^2}
+$$
+
+**For a power**, the relative uncertainty is multiplied by the exponent:
+
+$$
+q = a^n \quad\Rightarrow\quad \frac{\delta q}{|q|} = |n|\,\frac{\delta a}{|a|}
+$$
+
+<Exercise n={2} kind="practice" title="Uncertainty in a power measurement">
+  You measure V = 230 ± 1 V and I = 4.70 ± 0.05 A. Report the apparent power with its
+  uncertainty.
+
+  <Solution>
+    $$
+    S = VI = 230 \times 4.70 = 1081\ \text{VA}
+    $$
+
+    Relative uncertainties:
+
+    $$
+    \frac{\delta V}{V} = \frac{1}{230} = 0.435\%, \qquad
+    \frac{\delta I}{I} = \frac{0.05}{4.70} = 1.064\%
+    $$
+
+    Combined in quadrature:
+
+    $$
+    \frac{\delta S}{S} = \sqrt{0.00435^2 + 0.01064^2} = 0.0115 = 1.15\%
+    $$
+
+    $$
+    \delta S = 0.0115 \times 1081 = 12.4\ \text{VA}
+    $$
+
+    Report **S = 1081 ± 12 VA**, or more honestly **1.08 ± 0.01 kVA**.
+
+    Two things worth extracting.
+
+    **The current dominates.** Its 1.06% swamps the voltage's 0.44%, and in quadrature the
+    smaller contribution nearly vanishes — 0.44% adds only 0.09 percentage points to the
+    total. If you want a better result, improve the *current* measurement; improving the
+    voltage buys almost nothing.
+
+    That is the practical value of doing this calculation: it tells you **where to spend
+    effort**. Chasing precision in the term that does not dominate is wasted work.
+  </Solution>
+</Exercise>
+
+<Callout type="tip" title="Why quadrature rather than simple addition">
+  Adding uncertainties directly assumes every error conspires in the same direction at the
+  same moment — the worst case, and an unlikely one.
+
+  Independent random errors partly cancel, and the statistically correct combination is the
+  root of the sum of squares. Simple addition gives an over-cautious bound; quadrature gives
+  the realistic one.
+
+  This only holds for **independent** errors. If both measurements come from the same
+  mis-calibrated meter, the errors are correlated, they do not cancel, and quadrature
+  understates the true uncertainty. Systematic errors have to be found and removed, not
+  averaged away.
+</Callout>
+
+## Systematic and random error
+
+<Compare
+  headings={['Type', 'Behaviour', 'Fix']}
+  rows={[
+    { option: 'Random', when: 'Scatters both ways; different each reading', cost: 'Average several readings — error falls as 1/√n', recommended: false },
+    { option: 'Systematic', when: 'Same direction every time', cost: 'Averaging does NOT help. Calibrate, or measure the offset and subtract it' },
+    { option: 'Gross / blunder', when: 'A misread range, a wrong entry, a transposed digit', cost: 'Sanity-check at the bench; repeat any reading that looks impossible' },
+  ]}
+/>
+
+<Callout type="warning" title="Averaging cannot rescue a systematic error">
+  A meter reading 2% high reads 2% high on every one of a hundred readings. Averaging them
+  gives a beautifully precise, confidently wrong answer — and a small standard deviation
+  that makes it *look* reliable.
+
+  This is why calibration certificates exist, and why a result quoted with tight error bars
+  from an uncalibrated instrument is worth less than an honest one with wide bars.
+</Callout>
+
+## Units
+
+SI, and the prefixes you need without thinking:
+
+| p | n | µ | m | k | M | G |
+|---|---|---|---|---|---|---|
+| 10⁻¹² | 10⁻⁹ | 10⁻⁶ | 10⁻³ | 10³ | 10⁶ | 10⁹ |
+
+And the three power quantities, which must never be interchanged:
+
+<Compare
+  headings={['Quantity', 'Unit', 'Meaning']}
+  rows={[
+    { option: 'Real power P', when: 'W', cost: 'Does actual work; what the energy meter bills' },
+    { option: 'Reactive power Q', when: 'var', cost: 'Sloshes back and forth; sustains magnetic and electric fields' },
+    { option: 'Apparent power S', when: 'VA', cost: 'The vector sum; what conductors and transformers are sized for' },
+  ]}
+/>
+
+<Callout type="warning" title="Never write kW when you mean kVA">
+  They differ by the power factor, and in a report they are different claims.
+
+  A transformer rated 100 kVA supplying a 0.8 power factor load delivers 80 kW. Writing
+  "100 kW transformer" is wrong, and an examiner will notice.
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why does power systems analysis use per unit?',
+      options: [
+        'The numbers are smaller',
+        'Choosing voltage bases in the transformer turns ratio makes transformers vanish from the circuit — and per-unit impedance is the same from either side',
+        'It is more accurate',
+        'It avoids complex numbers',
+      ],
+      answer: 1,
+      explain:
+        'A network with five voltage levels collapses to one circuit with no ratios in it. That is why every load flow and fault program works internally in per unit — and voltages near 1.0 make errors obvious at a glance.',
+    },
+    {
+      q: 'You measure 230 ± 1 V and 225 ± 1 V. What is the uncertainty in their difference?',
+      options: [
+        '±1 V, unchanged',
+        'About ±1.4 V in quadrature — so ΔV = 5 ± 1.4, meaning inputs good to 0.4% give a difference good to about 28%',
+        '±0.5 V',
+        'Zero',
+      ],
+      answer: 1,
+      explain:
+        'Catastrophic cancellation. Subtracting similar numbers destroys precision, and Experiment 1 is built on exactly this operation — which is why you use the same meter for both readings and take the difference at the largest load you safely can.',
+    },
+    {
+      q: 'Your meter reads 2% high. What does averaging 100 readings achieve?',
+      options: [
+        'It removes the error',
+        'Nothing — it is systematic, so it biases every reading identically. You get a precise, confidently wrong answer',
+        'It halves the error',
+        'It converts it to random error',
+      ],
+      answer: 1,
+      explain:
+        'Averaging reduces random error as 1/√n and does nothing at all to systematic error. Worse, the small standard deviation makes the wrong answer look reliable — which is why calibration matters more than repetition.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Per unit exists to make transformers disappear — pick voltage bases in the turns ratio and
+  the whole network becomes one circuit. And a meter's **resolution is not its accuracy**:
+  work out how many digits the specification actually supports, remember that subtracting
+  similar numbers destroys most of them, and check whether the uncertainty you are chasing
+  is even the one that dominates.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'book',
+      title: 'An Introduction to Error Analysis',
+      by: 'John R. Taylor',
+      note: 'The standard text on uncertainty, and genuinely readable. Chapters 3 and 4 cover everything on this page properly.',
+    },
+    {
+      kind: 'standard',
+      title: 'JCGM 100 — Guide to the Expression of Uncertainty in Measurement (GUM)',
+      note: 'The formal international treatment. Dense, but it is what metrology laboratories actually follow.',
+    },
+    {
+      kind: 'book',
+      title: 'Power System Analysis',
+      by: 'John J. Grainger and William D. Stevenson Jr.',
+      note: 'Chapter 2 for per unit, including three-phase base selection and base changing.',
+    },
+  ]}
+/>

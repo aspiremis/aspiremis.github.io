@@ -1,0 +1,238 @@
+---
+title: What an Electrical Laboratory Actually Is
+section: before
+order: 1
+level: 0
+description: Nobody explains what happens in a laboratory session, so here it is — the kinds of electrical lab, how a session runs from arrival to sign-off, and what the equipment on a bench is for.
+objectives:
+  - Recognise the main types of electrical laboratory and what each is for
+  - Describe how a session runs, and what is expected of you at each stage
+  - Identify the standard parts of a laboratory bench
+estimatedMinutes: 25
+tags: ['orientation', 'lab-types']
+---
+
+Every lab manual starts at the experiment. None of them explain what a laboratory session
+*is* — so if you have never been in one, you arrive already behind.
+
+This page is the part nobody writes down.
+
+## What a laboratory is for
+
+It is not for confirming what the lecture said. That is a common misreading, and it leads
+students to treat a disagreeing measurement as a mistake to be hidden rather than a result
+to be explained.
+
+A laboratory exists to teach three things that cannot be taught on paper:
+
+**That the model is an approximation.** Your transmission line has resistance the textbook
+example ignored, your meter has a burden voltage, your supply sags under load. Learning
+*where* theory and hardware part company is most of what an engineer knows that a
+physicist does not.
+
+**Manual competence.** Wiring a three-phase circuit correctly, recognising a CT connected
+backwards, knowing what a bearing that is about to fail sounds like. None of this transfers
+from reading.
+
+**Judgement about measurement.** How much to trust a number, when a reading is telling you
+something and when it is telling you your instrument is wrong.
+
+<Callout type="engineering">
+  A disagreement between measurement and theory is a **result**, not a failure.
+
+  The instinct — nearly universal, and worth killing early — is to nudge the numbers toward
+  what the formula predicted. Do not. The gap is where the learning is, and a report that
+  explains a 12% discrepancy honestly is worth far more than one that reports 0.5% because
+  the numbers were helped.
+
+  Examiners have seen a great deal of adjusted data. They are much better at recognising it
+  than students expect, and it is the one thing that turns a viva hostile.
+</Callout>
+
+## The kinds of electrical laboratory
+
+You will meet several over your M.Tech. They differ in what they are trying to teach and in
+how they can hurt you.
+
+<Compare
+  headings={['Laboratory', 'What you do there', 'Principal hazard']}
+  rows={[
+    { option: 'Power Systems', when: 'Line models, load flow, voltage regulation, compensation — your PSAO lab', cost: 'Live 415 V three-phase; stored charge in capacitor banks', recommended: true },
+    { option: 'Electrical Machines', when: 'Motors and generators — characteristics, losses, efficiency, starting', cost: 'Rotating shafts; high starting currents; inductive flyback' },
+    { option: 'Protection', when: 'Relay testing, coordination, fault injection, tripping schemes', cost: 'Open-circuited CT secondaries — lethal voltages from a "small" device' },
+    { option: 'Power Electronics', when: 'Converters, inverters, drives, switching waveforms', cost: 'DC capacitor banks; earth loops through oscilloscope probes' },
+    { option: 'High Voltage', when: 'Breakdown, insulation testing, impulse generation', cost: 'Tens or hundreds of kV; entry interlocks are not a formality' },
+    { option: 'Control Systems', when: 'Feedback, stability, response measurement', cost: 'Comparatively low, which is why it is often the first lab' },
+  ]}
+/>
+
+<Hazard title="The open-circuited CT is the one that surprises people">
+  A current transformer whose secondary is left open-circuited while primary current flows
+  develops an extremely high voltage across the open terminals — potentially several
+  kilovolts from a device sitting on a bench in a protection lab.
+
+  The reason is that a CT is a current source. With the secondary shorted through a meter
+  or relay burden, the secondary ampere-turns oppose the primary and the core flux stays
+  low. Open the secondary and nothing opposes the primary magnetomotive force, the core
+  saturates hard, and the enormous rate of change of flux at each zero crossing induces a
+  large voltage spike.
+
+  **Never open a CT secondary while the primary is energised.** Short it first. This is why
+  CT terminal blocks have shorting links, and it is the most common way people are hurt in
+  a protection laboratory.
+</Hazard>
+
+## How a session runs
+
+The shape is broadly the same everywhere.
+
+<Steps title="A typical three-hour session">
+  <Step n={1} title="Before you arrive — the pre-lab" expect="you already know what the meters should read, and roughly why">
+    Read the experiment. Work through the theory. Predict the result.
+
+    This is the part that determines whether the session is useful. Arriving without having
+    read the experiment means spending the session copying the procedure and understanding
+    nothing — and it is the single most common way students waste a laboratory.
+
+    That is exactly what these Academy pages are for.
+  </Step>
+
+  <Step n={2} title="Arrival and briefing">
+    The demonstrator explains the experiment, points out the hazards, and often asks
+    questions to check you have prepared. This is an informal viva, and it counts.
+  </Step>
+
+  <Step n={3} title="Wiring" hazard="Do not energise until your demonstrator has checked the circuit.">
+    Build the circuit from the diagram. Expect this to take longer than you think the first
+    few times — half the session is normal at the start.
+
+    Work systematically: one loop at a time, tracing the diagram with a finger.
+  </Step>
+
+  <Step n={4} title="Checking" expect="a demonstrator's signature or verbal approval before any supply is applied">
+    Someone experienced looks at your circuit before it is energised. Every time, including
+    when you are confident.
+  </Step>
+
+  <Step n={5} title="Measurement" expect="raw readings written down as you go, in ink">
+    Take readings in a planned order, record them immediately, and record the raw values
+    rather than something you calculated in your head.
+
+    Do a rough sanity check as you go. Noticing that a value is impossible *while the bench
+    is still wired* saves the entire session.
+  </Step>
+
+  <Step n={6} title="Shut down and sign off">
+    Load to minimum, variac to zero, isolate, discharge, verify. Then get your raw
+    observations **signed by the demonstrator before you leave the room**.
+  </Step>
+
+  <Step n={7} title="After — calculations, plots, report">
+    Written up in your own time, submitted at the next session. The viva follows.
+  </Step>
+</Steps>
+
+<Callout type="tip" title="Sanity-check at the bench, not at home">
+  The most valuable five minutes of any session is the five spent looking at your numbers
+  before you dismantle the circuit.
+
+  A voltage that rose when it should have fallen, a power factor above 1, a current that did
+  not change when you changed the load — every one of these is trivially fixable while the
+  bench is still wired, and unfixable a week later when you are writing up.
+
+  Ask of each number: *is this even possible?*
+</Callout>
+
+## What is on a bench
+
+<Compare
+  headings={['Item', 'What it does', 'The thing to know']}
+  rows={[
+    { option: 'Supply and isolator', when: 'Brings three-phase or single-phase to the bench', cost: 'Know where it is before you start; this is your emergency isolation' },
+    { option: 'Variac (autotransformer)', when: 'Continuously variable output voltage', cost: 'NOT isolated from the supply — the output shares the supply neutral' },
+    { option: 'Isolation transformer', when: 'Galvanic separation from the supply', cost: 'This is what makes a floating measurement safe' },
+    { option: 'Load bank', when: 'Switchable R, L and C load steps', cost: 'Capacitor steps store charge after switch-off' },
+    { option: 'Trainer panel', when: 'A scaled model — a line, a machine, a protection scheme', cost: 'Read the nameplate; the model values are not the real line values' },
+    { option: 'Metering', when: 'Voltmeters, ammeters, wattmeter or power analyser', cost: 'Check the range and the CT ratio before recording anything' },
+    { option: 'Patch leads', when: 'Connections between everything', cost: 'Shrouded plugs exist so you cannot touch a live pin — use them, do not improvise' },
+  ]}
+/>
+
+<Callout type="warning" title="A variac does not isolate">
+  This catches people constantly.
+
+  An autotransformer has **one** winding with a sliding tap, so the output is
+  electrically continuous with the input. Turning it to zero does not disconnect you from
+  the mains, and the output neutral is the supply neutral.
+
+  A two-winding **isolation transformer** is what provides galvanic separation. If your
+  bench has both, they are doing different jobs and neither substitutes for the other.
+</Callout>
+
+## What is expected of you
+
+- **Prepare before you arrive.** Everything else follows from this.
+- **Ask when you are unsure.** Nobody thinks less of a student who asks which terminal is
+  which. They think a great deal less of one who guesses and lets the smoke out.
+- **Record honestly.** Including the readings that look wrong. Especially those.
+- **Do not touch what is not yours.** Another group may be energised and measuring.
+- **Leave the bench as you found it.** The next group inherits your mess or your care.
+
+<Callout type="engineering">
+  A note on demonstrators, because students routinely under-use them.
+
+  They are usually PhD students who have run this experiment dozens of times and know
+  exactly which terminal on the panel is unreliable and which meter drifts. That knowledge
+  is not written anywhere and is genuinely valuable.
+
+  Ask them *why*, not just *how*. "Why is the CT connected that way round?" gets you a real
+  explanation and, incidentally, marks you as someone who prepared.
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      q: 'Your measurement disagrees with theory by 12%. What should you do?',
+      options: [
+        'Adjust the readings to match',
+        'Report it honestly and explain the discrepancy — the gap is where the learning is',
+        'Repeat until it agrees',
+        'Leave it out of the report',
+      ],
+      answer: 1,
+      explain:
+        'A report explaining a 12% gap honestly is worth far more than one reporting 0.5% because the numbers were helped. Examiners recognise adjusted data more readily than students expect.',
+    },
+    {
+      q: 'Why must a CT secondary never be open-circuited while the primary is energised?',
+      options: [
+        'The CT will lose calibration',
+        'Nothing opposes the primary MMF, the core saturates, and a very high voltage appears across the open terminals',
+        'The primary current will rise dangerously',
+        'It will trip the protection',
+      ],
+      answer: 1,
+      explain:
+        'A CT is a current source. With a burden connected, secondary ampere-turns oppose the primary and core flux stays low. Open it and the flux swings hard, inducing kilovolts. Short the secondary before disconnecting anything.',
+    },
+    {
+      q: 'What is the difference between a variac and an isolation transformer?',
+      options: [
+        'None, they are two names for the same thing',
+        'A variac is an autotransformer with one winding — it varies voltage but does NOT isolate. An isolation transformer has two windings and provides galvanic separation',
+        'A variac is for DC',
+        'An isolation transformer varies the voltage',
+      ],
+      answer: 1,
+      explain:
+        'The variac output is electrically continuous with the supply and shares its neutral. Turning it to zero does not disconnect you from the mains — a genuinely dangerous assumption.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A laboratory teaches where the model and the hardware part company — so a measurement
+  that disagrees with theory is the **result**, not a failure. Prepare before you arrive,
+  sanity-check your numbers while the bench is still wired, and remember that a variac does
+  not isolate you from the mains.
+</KeyIdea>

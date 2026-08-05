@@ -1,0 +1,367 @@
+---
+title: What Electricity Does to the Body
+section: safety
+order: 1
+level: 0
+description: Current kills, not voltage — and the numbers are far smaller than most people expect. What actually happens at each threshold, why the path matters more than the magnitude, and why 50 Hz is close to the worst possible frequency.
+objectives:
+  - State the current thresholds for perception, let-go and fibrillation
+  - Explain why the current path through the body matters more than the magnitude
+  - Recognise the three distinct hazards — shock, arc flash and arc blast
+estimatedMinutes: 30
+tags: ['safety', 'hazards', 'first-aid']
+---
+
+Nobody is killed by volts. People are killed by **current**, and by a smaller current than
+almost anyone expects.
+
+The figure that ought to stay with you is this: the current that will kill you is roughly
+**one twentieth** of what it takes to light a 10 W bulb.
+
+## The numbers
+
+These are the thresholds from IEC 60479, for 50 Hz alternating current passing hand to
+hand through an adult. They vary between people, and the boundaries are soft — but the
+orders of magnitude do not move.
+
+<Compare
+  headings={['Current', 'What happens', 'Can you let go?']}
+  rows={[
+    { option: '0.5–1 mA', when: 'Barely perceptible tingle', cost: 'Yes' },
+    { option: '1–5 mA', when: 'Definite sensation, uncomfortable', cost: 'Yes' },
+    { option: '5–10 mA', when: 'Painful. Involuntary muscle reaction — the startle is itself a hazard near moving parts', cost: 'Usually' },
+    { option: '10–20 mA', when: 'The LET-GO threshold. Muscles contract and you cannot release your grip', cost: 'No' },
+    { option: '20–50 mA', when: 'Respiratory muscles seize. Breathing stops while current flows', cost: 'No' },
+    { option: '50–100 mA+', when: 'Ventricular fibrillation becomes likely. This is what kills', cost: 'No' },
+    { option: 'Several amperes', when: 'Cardiac arrest, severe internal burns along the current path', cost: 'No' },
+  ]}
+/>
+
+<Callout type="warning" title="The let-go threshold is the one to memorise">
+  Below about 10 mA you can pull away. Above it your flexor muscles — the ones that close
+  your hand — contract harder than the extensors that open it, so **your grip tightens on
+  the conductor**.
+
+  You are then held in the circuit, and what would have been a startle becomes a fatal
+  exposure a few seconds later. This is why the single most useful habit in a laboratory
+  is never to *grip* anything you have not proved dead. Approach with the back of a hand,
+  not the palm.
+</Callout>
+
+## Why 230 V is not survivable by luck
+
+Ohm's law, with the body as the resistance.
+
+$$
+I = \frac{V}{R_{\text{body}}}
+$$
+
+Body resistance is not a constant — it depends almost entirely on skin condition:
+
+| Condition | Hand-to-hand resistance |
+|---|---|
+| Dry, intact skin | 10 000 – 100 000 Ω |
+| Damp skin | ~1 000 Ω |
+| Wet, or broken skin | 500 – 1 000 Ω |
+| Internal tissue alone | 300 – 500 Ω |
+
+Now compute. At **230 V**, with damp hands at 1 000 Ω:
+
+$$
+I = \frac{230}{1000} = 230\ \text{mA}
+$$
+
+That is more than four times the fibrillation threshold.
+
+Even with dry skin at 10 000 Ω you get 23 mA — past let-go, into respiratory arrest
+territory. And **the skin's resistance collapses within milliseconds of the current
+starting**, because the outer layer breaks down. So the dry-skin figure describes only the
+first instant; what follows is the wet-skin case.
+
+<Callout type="engineering">
+  This is why the lab benches have **residual current devices** set at 30 mA.
+
+  An RCD compares the current going out with the current coming back. If they differ by
+  more than 30 mA, some current is returning by another path — through you, through a
+  fault to earth — and it trips in under 40 ms.
+
+  Note what it is doing: 30 mA is *above* the let-go threshold and *below* the fibrillation
+  threshold, and 40 ms is short enough that the heart is unlikely to be caught in its
+  vulnerable phase. The device is not preventing a shock. It is arranging for the shock to
+  end before it becomes lethal.
+
+  A fuse or MCB will not do this. A 16 A MCB sees 230 mA through your body as an entirely
+  normal load and never operates.
+</Callout>
+
+## Path matters more than magnitude
+
+The same current can be harmless or fatal depending on where it flows.
+
+<Analogy>
+  Think of the body as a resistive network with one critically sensitive component in the
+  middle of it.
+
+  Current that flows **finger to finger on one hand** takes a short path through tissue
+  that does not much care. Current that flows **left hand to right hand**, or **hand to
+  opposite foot**, passes directly through the chest — and therefore through the heart.
+
+  The magnitude is identical. The consequence is not.
+</Analogy>
+
+This produces the oldest rule in electrical work, and it is worth adopting as a physical
+habit rather than a piece of knowledge:
+
+<Hazard title="Keep one hand behind your back, or in a pocket">
+  When you must work near anything that might be live, use **one hand only**.
+
+  With one hand, a shock path runs hand-to-foot — bad, but it may miss the heart. With two
+  hands on the equipment, the path runs arm to arm, straight across the chest.
+
+  This costs you nothing and it is the difference between an injury and a fatality. Adopt
+  it now, while you are learning, so that it is automatic by the time you are working on
+  something that matters.
+</Hazard>
+
+## Why 50 Hz is close to the worst case
+
+Mains frequency is, unluckily, near the most dangerous frequency for the human heart.
+
+The heart has a **vulnerable period** in each beat — a window during repolarisation when an
+external stimulus can trigger fibrillation. At 50 Hz the current reverses every 10 ms, so
+within a single heartbeat there are dozens of opportunities to catch that window.
+
+<Compare
+  headings={['Frequency', 'Relative danger', 'Why']}
+  rows={[
+    { option: 'DC', when: 'Lower fibrillation risk at the same current', cost: 'Causes a single sustained contraction; let-go threshold is roughly 2–4× higher' },
+    { option: '50–60 Hz', when: 'Highest risk', cost: 'Repeated stimulation across the heart’s vulnerable period', recommended: false },
+    { option: '1 kHz+', when: 'Falling risk of fibrillation', cost: 'Too fast to stimulate the heart, but burns become the dominant injury' },
+    { option: 'Radio frequency', when: 'No fibrillation risk', cost: 'Deep tissue heating instead — a different and serious injury' },
+  ]}
+/>
+
+<Callout type="warning" title="DC is not safe, it is differently dangerous">
+  DC produces one strong contraction at make and another at break rather than a sustained
+  tetanic grip, so the let-go threshold is higher.
+
+  But DC cannot be interrupted by a zero crossing, so a DC arc — once struck — sustains
+  itself far more readily than an AC arc. This is exactly why DC switchgear is physically
+  larger than AC switchgear at the same rating, and why battery banks and PV strings are
+  taken very seriously.
+</Callout>
+
+## Three hazards, not one
+
+Shock is the one everyone thinks of. It is not the only one, and on a distribution-level
+bench it may not be the most dangerous.
+
+### Arc flash
+
+A short circuit through air produces an arc. The arc column reaches roughly **20 000 K** —
+about three times the surface of the sun — in a few milliseconds.
+
+It does not need to touch you. The radiated heat alone causes severe burns at a distance,
+and clothing that melts rather than chars makes the injury far worse. This is why synthetic
+fabrics are banned in laboratories and why arc-rated clothing exists.
+
+### Arc blast
+
+The same arc vaporises copper. Copper expands roughly **67 000 times** on vaporising, and
+that expansion is a pressure wave.
+
+The blast throws people across rooms, ruptures eardrums, and turns switchgear panels and
+molten metal into projectiles. Injuries from arc blast are frequently mechanical rather
+than electrical.
+
+### Secondary injury
+
+The most common laboratory injury from electricity is not the shock. It is what the
+**startle** causes — jerking a hand back into a rotating shaft, falling off a stool,
+dropping a tool into an energised panel.
+
+<Callout type="engineering">
+  Rank these by what actually happens on a teaching bench.
+
+  At 230 V single phase, shock is the primary risk. At **415 V three phase with real fault
+  current behind it** — which is what feeds a PSAO bench — arc flash becomes at least as
+  serious, because the available fault energy is now enough to sustain a substantial arc.
+
+  This is the physical meaning of the CAT rating on your multimeter. It is not about the
+  voltage. It is about how much energy the supply can pour into a fault at that point in
+  the installation.
+</Callout>
+
+## Stored energy: the hazard after switch-off
+
+Switching off does not de-energise a capacitor.
+
+$$
+W = \tfrac{1}{2}CV^2
+$$
+
+A 100 µF capacitor charged to 400 V holds:
+
+$$
+W = \tfrac{1}{2} \times 100\times10^{-6} \times 400^2 = 8\ \text{J}
+$$
+
+Eight joules sounds trivial. Delivered through the chest in a few milliseconds it is
+comparable to what a defibrillator uses deliberately — which tells you it is entirely
+capable of stopping a heart rather than restarting one.
+
+<Hazard title="Capacitors in Experiments 1, 3 and 5">
+  Your capacitive load bank and any line-model shunt capacitance hold charge after
+  isolation. Discharge resistors take time and **can fail open without any visible sign**.
+
+  The procedure is not negotiable:
+
+  1. Isolate, and lock off if you can.
+  2. Wait for the stated discharge time.
+  3. **Measure** across the terminals with a meter you have proved on a known source.
+  4. Only then touch anything.
+
+  An indicator lamp going out is not proof. A lamp draws current; it can be dark while the
+  capacitor still holds hundreds of volts through a failed connection.
+</Hazard>
+
+## If someone is being shocked
+
+<Steps title="In order, and the first step is the one people get wrong">
+  <Step n={1} title="DO NOT TOUCH THEM" hazard="If they are still in contact with a live conductor, touching them puts you in the circuit too. Two casualties help nobody.">
+    Your instinct will be to pull them away. Override it.
+  </Step>
+
+  <Step n={2} title="Cut the supply" expect="the emergency stop is the fastest route — you should already know where it is">
+    Hit the emergency stop, or open the isolator. This is why you locate the E-stop
+    *before* you start work, every session.
+  </Step>
+
+  <Step n={3} title="If you cannot cut the supply, use an insulator">
+    Push them clear with something dry and non-conducting — a wooden broom handle, a
+    plastic chair. Never anything metal or damp, and never your hands.
+  </Step>
+
+  <Step n={4} title="Call for help immediately">
+    Shout for the demonstrator. Send someone specific for medical help — point at a person
+    and tell them to go, because a general appeal to a room produces nobody moving.
+  </Step>
+
+  <Step n={5} title="Check breathing; begin CPR if trained">
+    Electrical shock kills by stopping the heart. CPR keeps blood moving until a
+    defibrillator arrives, and it is the single intervention that changes the outcome.
+  </Step>
+
+  <Step n={6} title="Insist on medical attention even if they seem fine">
+    Cardiac arrhythmias can develop hours after an electrical shock, and internal burns
+    along the current path are invisible from outside. "I feel fine" is not a diagnosis.
+  </Step>
+</Steps>
+
+<Callout type="tip" title="Learn where these are on your first day">
+  Not when you need them.
+
+  - The **emergency stop** for your bench, and the master for the room
+  - The **main isolator** for the laboratory
+  - The **first aid kit** and who the trained first aider is
+  - The **fire extinguisher** rated for electrical fires — CO₂ or dry powder, **never
+    water**
+  - The **exit route**, and the alternative one
+
+  Walk to each of them once. Physically. Knowing where something is on a plan is different
+  from knowing where it is in a room you are panicking in.
+</Callout>
+
+## Self-check
+
+<Checklist
+  id="hazards-understanding"
+  title="Before your first session, confirm you can answer each of these"
+  tone="safety"
+  items={[
+    'The let-go threshold, and what happens above it',
+    'Roughly what current 230 V drives through damp skin, and how that compares to the fibrillation threshold',
+    'Why an RCD trips at 30 mA and an MCB does not protect you at all',
+    'Why one-handed working matters more than any other single habit',
+    'The three distinct hazards: shock, arc flash, arc blast',
+    'Why a capacitor is dangerous after the supply is off, and how to prove it is safe',
+    'The first thing to do if you find someone being shocked — and why it is not to pull them away',
+  ]}
+/>
+
+<Quiz
+  questions={[
+    {
+      q: 'Which is more dangerous — 230 V through dry skin or 50 V through wet skin?',
+      options: [
+        'Always the 230 V, because voltage is what kills',
+        'It depends on the resulting current, and skin resistance collapses within milliseconds anyway — so treat both as dangerous',
+        'Always the 50 V, because wet skin conducts better',
+        'Neither, both are below the danger threshold',
+      ],
+      answer: 1,
+      explain:
+        'Current is what harms you, and body resistance is not a fixed number. Dry-skin resistance describes only the first instant of contact — the outer layer breaks down and what follows is the wet-skin case.',
+    },
+    {
+      q: 'Why does an MCB not protect you from electrocution?',
+      options: [
+        'It does, that is what it is for',
+        'It operates on overcurrent — typically several amperes — and a lethal 230 mA through your body looks like a perfectly normal load to it',
+        'It is too slow',
+        'It only works on DC',
+      ],
+      answer: 1,
+      explain:
+        'An MCB protects the cable from fire. An RCD protects the person, by detecting the imbalance between outgoing and returning current — which is exactly what a current flowing through you creates.',
+    },
+    {
+      q: 'You find a colleague gripping a live conductor. What do you do first?',
+      options: [
+        'Pull them away immediately',
+        'Cut the supply — touching them while they are in contact puts you in the circuit too',
+        'Call for help and wait',
+        'Throw water to break the contact',
+      ],
+      answer: 1,
+      explain:
+        'The instinct to grab them is exactly what produces a second casualty. Kill the supply first — which is why you locate the emergency stop before starting work, every time.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  **10 mA and you cannot let go. 50 mA and your heart may fibrillate.** At 230 V through
+  damp skin that is 230 mA — so the margin is not a factor of two, it is a factor of five in
+  the wrong direction.
+
+  Work one-handed, prove things dead before touching them, and know where the emergency
+  stop is before you need it.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 60479-1 — Effects of current on human beings and livestock',
+      note: 'The source of every threshold on this page, with the time-current zones plotted properly.',
+    },
+    {
+      kind: 'standard',
+      title: 'IS 732 — Code of Practice for Electrical Wiring Installations',
+      note: 'The Indian installation code; earthing and protection requirements.',
+    },
+    {
+      kind: 'standard',
+      title: 'NFPA 70E — Standard for Electrical Safety in the Workplace',
+      note: 'Where arc flash boundaries and incident energy calculations are formalised.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEEE Std 1584 — Guide for Performing Arc-Flash Hazard Calculations',
+      note: 'How the incident energy at a working distance is actually computed.',
+    },
+  ]}
+/>

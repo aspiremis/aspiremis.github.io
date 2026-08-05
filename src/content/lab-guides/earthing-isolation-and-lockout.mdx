@@ -1,0 +1,319 @@
+---
+title: Earthing, Isolation and Proving Dead
+section: safety
+order: 2
+level: 0
+description: Earthing, neutral and bonding are three different things that all end up at the same place. What each is for, how to isolate a circuit properly, and the proving-dead procedure that has three steps rather than one.
+objectives:
+  - Distinguish earthing, bonding and the neutral, and say what each protects
+  - Perform a safe isolation and prove a circuit dead
+  - Explain why lock-out/tag-out exists and what it prevents
+estimatedMinutes: 30
+tags: ['safety', 'earthing', 'isolation', 'loto']
+---
+
+Three conductors in your laboratory end up connected to the ground, and they do completely
+different jobs. Confusing them is how people get hurt by circuits they believed were safe.
+
+## Earth, neutral and bonding
+
+<Compare
+  headings={['Conductor', 'Job', 'Carries current when?']}
+  rows={[
+    { option: 'Neutral', when: 'Return path for load current', cost: 'ALWAYS — it is a live conductor', recommended: false },
+    { option: 'Protective earth (PE)', when: 'Fault path, so protection can operate', cost: 'Only during a fault' },
+    { option: 'Equipotential bonding', when: 'Holds exposed metalwork at the same potential', cost: 'Only during a fault' },
+    { option: 'Functional earth', when: 'Reference for measurement or screening', cost: 'Small leakage only' },
+  ]}
+/>
+
+<Hazard title="The neutral is a live conductor">
+  This is the single most dangerous misconception in electrical work.
+
+  The neutral is bonded to earth **at the supply transformer**, not at your bench. By the
+  time it reaches you it has carried load current through the impedance of the whole return
+  path, so it sits at some voltage above local earth. On an unbalanced three-phase system
+  with a broken neutral, it can sit at close to **phase voltage**.
+
+  Treat the neutral exactly as you treat a phase conductor: prove it dead before touching
+  it. "It's only the neutral" has killed people.
+</Hazard>
+
+### Why earthing exists at all
+
+The purpose of a protective earth is not, as most people assume, to "drain electricity
+away". It is to **guarantee that a fault produces enough current to operate the
+protection**.
+
+Consider a motor whose winding insulation fails and energises its metal frame.
+
+- **Without an earth connection**, the frame sits at phase voltage. Nothing operates,
+  because no current flows. The machine appears entirely normal and functions perfectly —
+  until someone touches it, at which point *they* become the fault path.
+- **With a low-impedance earth connection**, the fault current is large — hundreds of
+  amperes — and the fuse or MCB clears it in milliseconds. The frame is dead before anyone
+  arrives.
+
+<Callout type="engineering">
+  The consequence is that **a high-resistance earth is worse than useless**, and this is
+  genuinely counter-intuitive.
+
+  If the earth path has, say, 100 Ω of resistance, then a phase-to-frame fault drives about
+  2.3 A. That is not enough to operate a 16 A MCB — so the fault persists indefinitely —
+  and meanwhile the frame sits at a substantial voltage above true earth, with a live path
+  now permanently connected to it.
+
+  You have created exactly the hazard the earth was supposed to remove, and disguised it.
+  This is why earth continuity is tested rather than assumed, and why loop impedance
+  matters as much as the presence of a wire.
+</Callout>
+
+<Analogy>
+  Earthing is a **fire alarm**, not a fire extinguisher.
+
+  Its job is not to make the fault harmless. Its job is to make the fault **loud enough
+  that the protection notices** and disconnects. A quiet fault is the dangerous one.
+</Analogy>
+
+## Safe isolation
+
+Isolation is not "I turned it off". It is a procedure with a defined end state: the circuit
+is disconnected, it cannot be reconnected without your knowledge, and you have **proved**
+it is dead.
+
+<Steps title="The isolation procedure">
+  <Step n={1} title="Identify" expect="certainty about which isolator feeds your bench, not a reasonable guess">
+    Establish exactly which circuit you are isolating and which device isolates it. Trace
+    it if you are not certain.
+
+    Mislabelled distribution boards are common. The label is a hypothesis; the test proves
+    it.
+  </Step>
+
+  <Step n={2} title="Isolate" hazard="Switching off at the equipment is not isolation. Use the isolator, not the on/off switch.">
+    Open the isolator or withdraw the fuse. An equipment switch may break only one pole and
+    leaves the circuit connected.
+  </Step>
+
+  <Step n={3} title="Secure" expect="a physical barrier to someone else re-energising it">
+    Lock off if a lock is available. Tag it with your name, the date, and why. If neither
+    is possible, do not leave the isolator unattended.
+  </Step>
+
+  <Step n={4} title="Prove dead — three steps, not one" hazard="A meter that reads zero because it is broken is indistinguishable from a dead circuit.">
+    This is the step people shorten, and it is the one that matters:
+
+    1. Test the meter on a **known live source** — a proving unit or a socket you know is live.
+    2. Test the circuit — **all** conductors, including the neutral, and every combination:
+       phase to phase, phase to neutral, phase to earth, neutral to earth.
+    3. Test the meter on the **known live source again**, to confirm it did not fail between
+       the first two steps.
+
+    Skipping step 3 is the classic error. A meter with a failing lead can pass step 1, fail
+    silently, and read zero on a live circuit in step 2.
+  </Step>
+
+  <Step n={5} title="Discharge stored energy" hazard="Capacitors hold charge after isolation. Measure, do not assume.">
+    Wait the stated time, then measure across every capacitor bank. An extinguished
+    indicator lamp is not proof of discharge.
+  </Step>
+
+  <Step n={6} title="Only now, work">
+    And if you leave the area and return, prove it dead again. You do not know what happened
+    while you were gone.
+  </Step>
+</Steps>
+
+<Callout type="warning" title="The three-step prove is not bureaucracy">
+  It exists because meters fail in a way that looks exactly like a safe result.
+
+  A flat battery, a broken lead, a blown internal fuse, the wrong function selected — every
+  one of these produces a reading of zero on a live circuit, and every one of them looks
+  identical to success.
+
+  A zero reading is only evidence when you have independently established that the meter
+  can read non-zero, immediately before and immediately after.
+</Callout>
+
+## Lock-out / tag-out
+
+LOTO exists because of one specific accident that keeps happening: **someone else turns it
+back on.**
+
+A colleague finds an isolator open, sees no reason for it, assumes it was left that way by
+mistake, and closes it. Meanwhile you have your hands inside the equipment.
+
+<Compare
+  headings={['Control', 'What it does', 'Strength']}
+  rows={[
+    { option: 'Lock', when: 'Physically prevents operation', cost: 'Strong — the isolator cannot be closed', recommended: true },
+    { option: 'Tag', when: 'Informs whoever finds it', cost: 'Weak — relies on the person reading and obeying it' },
+    { option: 'Both', when: 'Prevents AND explains', cost: 'The standard practice' },
+    { option: 'Neither', when: 'Nothing', cost: 'Only acceptable if the isolator stays in your sight' },
+  ]}
+/>
+
+The principles, in the order they matter:
+
+- **One lock per person.** Everyone working on the equipment applies their own lock. It
+  stays locked until the last person removes theirs.
+- **Only you remove your lock.** Not your supervisor, not the person who needs the machine.
+  If a lock must be cut, that is a formal process with authorisation, not a decision made
+  in the moment.
+- **The tag says who and why.** A tag reading "DO NOT OPERATE" with no name is nearly
+  useless — nobody knows who to ask.
+
+<Callout type="engineering">
+  In a teaching laboratory you may not have padlocks, and the honest substitute is
+  **procedural**: tell your demonstrator what you have isolated, tag it with your name, and
+  do not leave the isolator out of your sight while you are working.
+
+  In industry this is not optional. Every serious utility and plant operates a permit-to-work
+  system, where isolation is documented, the isolator is locked, and a written permit
+  transfers responsibility for the equipment to the person working on it. You will meet this
+  the first day of any internship, and the reasoning is exactly what is on this page.
+</Callout>
+
+## Earthing systems you will meet
+
+The letters describe how the supply and the installation are earthed. You will see them on
+drawings and in the wiring regulations.
+
+<Compare
+  headings={['System', 'Meaning', 'Where']}
+  rows={[
+    { option: 'TN-S', when: 'Separate neutral and earth conductors throughout', cost: 'Common in older UK-style installations; cleanest for measurement' },
+    { option: 'TN-C-S (PME)', when: 'Combined then separated at the origin', cost: 'Very common; the earth is derived from the supply neutral' },
+    { option: 'TT', when: 'Installation has its own local earth electrode', cost: 'Rural supplies; relies on an RCD because loop impedance is high' },
+    { option: 'IT', when: 'Supply is unearthed or earthed via high impedance', cost: 'Hospitals, some industrial processes — a first fault does not disconnect supply' },
+  ]}
+/>
+
+<Callout type="tip" title="IT systems are the interesting one">
+  In an IT system the supply is deliberately not earthed, so a **single** phase-to-earth
+  fault causes almost no current and the supply keeps running. An insulation monitoring
+  device raises an alarm instead.
+
+  The reason is continuity of supply where an unexpected disconnection is itself dangerous
+  — an operating theatre, a continuous process plant. The trade is that you must find and
+  fix the first fault before a second one arrives, because two faults on different phases
+  becomes a short circuit with no protection having yet operated.
+</Callout>
+
+## Common mistakes
+
+<Callout type="warning" title="Treating the neutral as safe">
+  It is a live conductor. Prove it dead like any other.
+</Callout>
+
+<Callout type="warning" title="Switching off at the equipment instead of isolating">
+  An equipment switch may break one pole and is not designed for isolation duty.
+</Callout>
+
+<Callout type="warning" title="Trusting the label on the distribution board">
+  Labels are frequently wrong after years of modifications. Prove it.
+</Callout>
+
+<Callout type="warning" title="Proving dead with an untested meter">
+  Test on a known source before and after. A broken meter reads zero.
+</Callout>
+
+<Callout type="warning" title="Assuming discharge resistors worked">
+  They fail open silently. Measure across the terminals.
+</Callout>
+
+<Callout type="warning" title="Leaving an isolator open and unattended without a tag">
+  Someone will close it, reasonably, because nothing told them not to.
+</Callout>
+
+## Self-check
+
+<Checklist
+  id="isolation-understanding"
+  title="Confirm before your first session"
+  tone="safety"
+  items={[
+    'You can explain why an earth conductor makes a fault louder rather than harmless',
+    'You know why a high-resistance earth is worse than no earth at all',
+    'You can list the three steps of proving dead, and say why the third exists',
+    'You know that the neutral must be proved dead like any phase',
+    'You know which isolator feeds your bench, and have physically located it',
+    'You know who to tell before you isolate anything',
+  ]}
+/>
+
+<Quiz
+  questions={[
+    {
+      q: 'What is the purpose of a protective earth conductor?',
+      options: [
+        'To drain dangerous electricity harmlessly into the ground',
+        'To provide a low-impedance fault path so that enough current flows to operate the protection',
+        'To carry return current from the load',
+        'To reduce electrical noise',
+      ],
+      answer: 1,
+      explain:
+        'It makes the fault loud, not harmless. Without it a fault to a metal frame produces no current, operates nothing, and leaves the frame live until a person completes the circuit.',
+    },
+    {
+      q: 'Why does proving dead have three steps rather than one?',
+      options: [
+        'Regulations require it',
+        'Because a broken meter reads zero on a live circuit, so a zero reading means nothing until you have shown the meter still works',
+        'To test all three phases',
+        'The third step is optional',
+      ],
+      answer: 1,
+      explain:
+        'Test on a known source, test the circuit, test the known source again. A meter with a failing lead can pass the first test and fail silently before the second — the third catches exactly that.',
+    },
+    {
+      q: 'A colleague finds your isolator open with no tag. What is likely to happen?',
+      options: [
+        'They will leave it alone',
+        'They may reasonably assume it was left open by mistake and close it — which is precisely what LOTO exists to prevent',
+        'Nothing, isolators cannot be closed accidentally',
+        'The RCD will prevent it',
+      ],
+      answer: 1,
+      explain:
+        'Nothing told them otherwise, and closing an apparently stray open isolator is a reasonable action. This is why a tag must carry a name and a reason, and why a lock beats a tag.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Earthing does not make a fault safe — it makes it **large enough for the protection to
+  operate**, which is why a high-resistance earth is worse than none. The neutral is a live
+  conductor. And a circuit is dead only when you have proved your meter works, tested every
+  conductor, and proved your meter works again.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IS 3043 — Code of Practice for Earthing',
+      note: 'The Indian earthing standard: electrode design, soil resistivity, and testing.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 60364-4-41 — Protection against electric shock',
+      note: 'Where the TN/TT/IT system definitions and disconnection times come from.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEEE Std 80 — Guide for Safety in AC Substation Grounding',
+      note: 'Step and touch potential, and why substation earthing is a mesh rather than a rod.',
+    },
+    {
+      kind: 'book',
+      title: 'Earthing: Your Questions Answered',
+      by: 'Institution of Engineering and Technology',
+      note: 'Practical, and unusually clear on the earth-versus-neutral confusion.',
+    },
+  ]}
+/>

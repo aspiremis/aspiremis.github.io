@@ -1,0 +1,334 @@
+---
+title: Nameplates and Ratings
+section: before
+order: 3
+level: 0
+description: Every machine carries a plate stating exactly what it can do and for how long. How to read one, what insulation class and duty type actually promise, and why a rating is a thermal statement rather than a limit switch.
+objectives:
+  - Read a motor or transformer nameplate and extract every operational limit from it
+  - Explain what insulation class, duty type and IP rating each promise
+  - Recognise that a rating is a thermal statement, not a hard cut-off
+estimatedMinutes: 30
+tags: ['nameplate', 'ratings', 'machines']
+---
+
+The nameplate is the manufacturer's contract with you. It says: operate it this way and it
+will last twenty years; operate it otherwise and you are on your own.
+
+Almost every experiment in your PSAO lab needs a number from one, and every one of them
+begins with "record the nameplate values". Here is what those numbers mean.
+
+## A three-phase induction motor plate
+
+Experiment 2 uses one. A typical plate:
+
+<Spec
+  title="Typical induction motor nameplate"
+  rows={[
+    { label: 'Rated output', value: '3.7 kW / 5 HP', note: 'MECHANICAL power at the shaft, not electrical input' },
+    { label: 'Voltage', value: '415 V', note: 'Line-to-line' },
+    { label: 'Current', value: '7.5 A', note: 'Full-load line current' },
+    { label: 'Frequency', value: '50 Hz' },
+    { label: 'Speed', value: '1440 rpm', note: 'Full-load speed — synchronous is 1500, so slip is 4%' },
+    { label: 'Connection', value: 'Delta' },
+    { label: 'Power factor', value: '0.85' },
+    { label: 'Efficiency', value: '88%' },
+    { label: 'Insulation class', value: 'F' },
+    { label: 'Temperature rise', value: 'B' },
+    { label: 'Duty', value: 'S1' },
+    { label: 'Enclosure', value: 'IP55' },
+    { label: 'Ambient', value: '40 °C' },
+  ]}
+/>
+
+Several of these are commonly misread.
+
+<Callout type="warning" title="Rated output is mechanical, not electrical">
+  3.7 kW is what appears **at the shaft**. The electrical input is larger, by the
+  efficiency:
+
+  Input = 3.7 / 0.88 ≈ **4.2 kW**
+
+  And the apparent power is larger again, by the power factor:
+
+  S = 4.2 / 0.85 ≈ **4.9 kVA**
+
+  Check that against the plate: √3 × 415 × 7.5 = 5.4 kVA. Close, and the difference tells
+  you the quoted power factor and efficiency are the full-load figures rounded.
+
+  Students routinely size a supply from the kW figure and find it inadequate. The number to
+  size from is the **current**.
+</Callout>
+
+<Callout type="engineering">
+  **Speed tells you slip, and slip tells you everything.**
+
+  Synchronous speed for a 50 Hz four-pole machine is:
+
+  N_s = 120f / P = 120 × 50 / 4 = 1500 rpm
+
+  The plate says 1440 rpm at full load, so:
+
+  s = (1500 − 1440) / 1500 = 0.04, i.e. **4% slip**
+
+  From slip you get rotor frequency (2 Hz), rotor copper loss (4% of air-gap power), and
+  the operating point on the torque-slip curve. A single number on a plate carries all of
+  that — which is why "record the nameplate" is not busywork.
+</Callout>
+
+## Insulation class and temperature rise
+
+Two separate letters that get confused constantly.
+
+**Insulation class** is what the insulation can withstand. **Temperature rise** is what the
+machine is designed to actually reach.
+
+<Compare
+  headings={['Class', 'Maximum hot-spot temperature', 'Material']}
+  rows={[
+    { option: 'A', when: '105 °C', cost: 'Cotton, paper, natural fibres — obsolete' },
+    { option: 'E', when: '120 °C', cost: 'Enamelled wire' },
+    { option: 'B', when: '130 °C', cost: 'Mica, glass fibre with organic binder' },
+    { option: 'F', when: '155 °C', cost: 'Mica and glass with synthetic binder — the modern standard', recommended: true },
+    { option: 'H', when: '180 °C', cost: 'Silicone, imide films' },
+  ]}
+/>
+
+A plate reading **class F insulation, class B rise** means the insulation tolerates 155 °C
+but the machine is designed to reach only 130 °C at rated load.
+
+<Callout type="engineering">
+  That 25 °C gap is deliberate, and it is worth understanding what it buys.
+
+  Insulation ageing follows roughly the **Montsinger rule**: every 10 °C of extra
+  temperature halves the insulation life. So a class F machine designed for class B rise is
+  running about 25 °C cooler than its insulation can take — worth roughly a factor of five
+  in expected life.
+
+  It also gives you headroom. That margin is what absorbs a hot day, a slightly high
+  ambient, or an overload. A machine specified with no margin has none of that.
+
+  The same rule is why transformer loading guides let you overload deliberately for short
+  periods: thermal mass means the winding takes time to heat, so a two-hour overload does
+  not consume the life a permanent one would.
+</Callout>
+
+## Duty type
+
+The **S** number states how the machine is expected to be used, and it changes the rating
+substantially.
+
+<Compare
+  headings={['Duty', 'Meaning', 'Consequence']}
+  rows={[
+    { option: 'S1', when: 'Continuous — runs at rated load indefinitely', cost: 'Reaches thermal equilibrium; the usual case', recommended: true },
+    { option: 'S2', when: 'Short-time — runs for a stated period from cold', cost: 'Higher rating allowed, because it never reaches equilibrium' },
+    { option: 'S3', when: 'Intermittent periodic, with a stated duty cycle', cost: 'Rating depends on the cyclic duration factor' },
+    { option: 'S4', when: 'Intermittent with significant starting', cost: 'Starting losses dominate; frequent starts limit the rating' },
+    { option: 'S6', when: 'Continuous operation with intermittent load', cost: 'Never switched off, but loaded cyclically' },
+  ]}
+/>
+
+<Callout type="warning" title="A duty rating is not interchangeable">
+  A motor rated **S2 30 min** at 5 kW cannot deliver 5 kW continuously. It is allowed the
+  higher figure precisely *because* it will be switched off before it reaches thermal
+  equilibrium.
+
+  Run it continuously at its S2 rating and the winding keeps heating past the point the
+  design allowed for. It will not trip. It will simply age fast and fail early, and the
+  failure will look like a manufacturing defect rather than a misapplication.
+</Callout>
+
+## IP rating
+
+Two digits, each answering a different question.
+
+**First digit — solids:**
+
+| | |
+|---|---|
+| 0 | No protection |
+| 2 | Fingers (>12 mm) |
+| 4 | Wires, small tools (>1 mm) |
+| 5 | Dust protected — some ingress, but not enough to interfere |
+| 6 | Dust tight |
+
+**Second digit — liquids:**
+
+| | |
+|---|---|
+| 0 | No protection |
+| 3 | Spraying water up to 60° from vertical |
+| 4 | Splashing from any direction |
+| 5 | Water jets |
+| 6 | Powerful water jets |
+| 7 | Temporary immersion |
+
+So **IP55** is dust protected and resistant to water jets — the standard for an industrial
+motor. **IP20** is finger-safe and offers nothing against water, which is why an IP20 panel
+belongs indoors in a dry room.
+
+## Transformer nameplates
+
+Experiments 1 and 3 use line models, and the trainer will carry a plate. The fields differ
+from a machine's:
+
+<Spec
+  title="Typical transformer nameplate fields"
+  rows={[
+    { label: 'Rated power', value: 'kVA or MVA', note: 'APPARENT power — a transformer is limited by current and voltage, not by power factor' },
+    { label: 'Voltage ratio', value: '11000 / 415 V', note: 'No-load ratio; on-load output is lower by the regulation' },
+    { label: 'Vector group', value: 'Dyn11', note: 'Determines paralleling compatibility' },
+    { label: 'Impedance voltage', value: '5%', note: 'The single most consequential number — see below' },
+    { label: 'Tap range', value: '±5% in 2.5% steps' },
+    { label: 'Cooling', value: 'ONAN', note: 'Oil Natural, Air Natural' },
+    { label: 'Type of duty', value: 'Continuous' },
+  ]}
+/>
+
+<Callout type="engineering">
+  **Percentage impedance is the field to understand.**
+
+  It is the fraction of rated voltage that, applied to one winding with the other
+  short-circuited, drives rated current. A 5% impedance means 5% of rated voltage produces
+  100% of rated current.
+
+  Two consequences follow immediately.
+
+  **Fault current.** With the source assumed stiff, the short-circuit current is roughly
+  rated current divided by the per-unit impedance — so 5% impedance gives about **20×**
+  rated current into a terminal fault. That number sizes the switchgear.
+
+  **Voltage regulation.** A low-impedance transformer has better regulation but higher fault
+  current; a high-impedance one has worse regulation but limits faults. The choice is a
+  genuine engineering trade-off, and it is why you cannot simply specify "as low as
+  possible".
+</Callout>
+
+<Callout type="tip" title="Rated power in kVA, not kW — and this is deliberate">
+  A transformer's limits are **thermal**, set by winding current (copper loss) and core flux
+  (iron loss). Neither depends on the load's power factor.
+
+  A 100 kVA transformer delivers 100 kVA whether the load is at unity or at 0.5 lagging. At
+  unity that is 100 kW; at 0.5 it is 50 kW. The transformer does not care — the same current
+  flows and the same heat is produced.
+
+  Motors are rated in kW because their limit is what the shaft can deliver. Transformers are
+  rated in kVA because theirs is what the winding can carry.
+</Callout>
+
+## A rating is thermal, not a cut-off
+
+The most useful thing to understand about any rating: it is a statement about **heat over
+time**, not a switch.
+
+A motor at 110% load does not stop. It runs, produces slightly more torque, and heats
+faster than its cooling can remove — so the winding temperature climbs past the design
+value and insulation life shortens. Nothing announces this. The machine simply fails
+earlier than it should have.
+
+This is why thermal overload relays have **inverse time** characteristics: a small overload
+is tolerated for a long time, a large one for a short time, mirroring the actual heating.
+It is exactly the logic behind Experiment 2's overcurrent protection.
+
+<Analogy>
+  A rating is a speed limit, not a wall.
+
+  Exceeding it does not stop you. It raises the probability and the consequence of failure,
+  progressively and invisibly, and the bill arrives much later.
+</Analogy>
+
+## Recording nameplates
+
+<Checklist
+  id="nameplate-record"
+  title="At the start of every experiment"
+  items={[
+    'Photograph the nameplate — faster than transcribing and it cannot be misread later',
+    'Transcribe the values you need into your record book anyway',
+    'Note the equipment identifier, so you can tell which unit you used',
+    'Compute the derived values now: synchronous speed, slip, rated kVA, base impedance',
+    'Flag anything that looks inconsistent and ask your demonstrator',
+  ]}
+/>
+
+<Callout type="tip" title="Compute the derived values at the bench">
+  Synchronous speed, slip, rated kVA, base impedance for per unit — work these out while you
+  are still standing at the machine.
+
+  If one of them is impossible, you have misread the plate, and you can look again. A week
+  later you cannot.
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      q: 'A motor nameplate says 3.7 kW. What is the electrical input at full load, given 88% efficiency and 0.85 power factor?',
+      options: [
+        '3.7 kW and 3.7 kVA',
+        'About 4.2 kW and about 4.9 kVA — the plate rating is mechanical shaft power',
+        '3.26 kW',
+        'It cannot be determined',
+      ],
+      answer: 1,
+      explain:
+        'Input = 3.7/0.88 ≈ 4.2 kW, and S = 4.2/0.85 ≈ 4.9 kVA. Sizing a supply from the kW figure is a common and expensive mistake — size from the rated current.',
+    },
+    {
+      q: 'A plate reads "Class F insulation, Class B rise". What does that mean?',
+      options: [
+        'A labelling error',
+        'The insulation withstands 155 °C but the machine is designed to reach only 130 °C — a deliberate margin worth roughly 5× in insulation life',
+        'It can be operated at either temperature',
+        'Class B is the ambient',
+      ],
+      answer: 1,
+      explain:
+        'By the Montsinger rule every 10 °C halves insulation life, so running 25 °C below the insulation limit multiplies expected life several-fold — and provides headroom for hot days and overloads.',
+    },
+    {
+      q: 'Why are transformers rated in kVA rather than kW?',
+      options: [
+        'Convention',
+        'Their limits are thermal — set by winding current and core flux — and neither depends on the load power factor',
+        'Because they handle reactive power only',
+        'Because kW would be too small a number',
+      ],
+      answer: 1,
+      explain:
+        'The same current produces the same heat whether the load is at unity or 0.5 lagging. Motors are rated in kW because their limit is shaft power; transformers in kVA because theirs is winding current.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A nameplate rating is a **thermal statement**, not a cut-off — exceeding it shortens life
+  invisibly rather than stopping anything. Motor kW is shaft power, so size supplies from
+  the current; transformer kVA is apparent power because heat does not care about power
+  factor; and percentage impedance sets both the regulation and the fault current.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 60034-1 — Rotating electrical machines: rating and performance',
+      note: 'Where the duty types S1–S10 and the temperature rise limits are defined.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 60076-1 — Power transformers: general',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 60529 — Degrees of protection provided by enclosures (IP code)',
+    },
+    {
+      kind: 'standard',
+      title: 'IS 325 — Three-phase induction motors',
+      note: 'The Indian standard; nameplate marking requirements and tolerances.',
+    },
+  ]}
+/>

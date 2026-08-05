@@ -17,6 +17,7 @@ import Figure from '../../../components/lab/Figure.astro';
 import Steps from '../../../components/lab/Steps.astro';
 import Step from '../../../components/lab/Step.astro';
 import Checklist from '../../../components/lab/Checklist.astro';
+import Spec from '../../../components/lab/Spec.astro';
 import Viva from '../../../components/lab/Viva.astro';
 import Q from '../../../components/lab/Q.astro';
 import Deck from '../../../components/lab/Deck.astro';
@@ -34,10 +35,12 @@ interface Props {
 }
 
 export const getStaticPaths: GetStaticPaths = async () => {
-  // 'before' runs ahead of 'safety' in reading order, and both sort by `order`
-  // within their section — so the prev/next chain walks the whole foundation.
-  const [before, safety] = await Promise.all([getGuides('before'), getGuides('safety')]);
-  const ordered = [...before, ...safety];
+  // Safety comes first, matching how the index presents it — you read the
+  // hazards before you read about what a laboratory session looks like. Both
+  // sections sort by `order` within themselves, so the prev/next chain walks
+  // the whole foundation in the intended sequence.
+  const [safety, before] = await Promise.all([getGuides('safety'), getGuides('before')]);
+  const ordered = [...safety, ...before];
 
   return ordered.map((guide, i) => ({
     params: { guide: guide.id },
@@ -65,6 +68,7 @@ const components = {
   Steps,
   Step,
   Checklist,
+  Spec,
   Viva,
   Q,
   Deck,

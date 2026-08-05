@@ -1,0 +1,288 @@
+---
+title: Reading Circuit Diagrams
+section: before
+order: 2
+level: 0
+description: A single line diagram, a schematic and a wiring diagram show the same circuit and answer different questions. Which to read when, the symbols you need, and why IEC and ANSI disagree about what a resistor looks like.
+objectives:
+  - Distinguish single line, schematic and wiring diagrams and know which answers which question
+  - Read the standard IEC symbols used on a power systems bench
+  - Translate a diagram into a wiring order you can follow at the bench
+estimatedMinutes: 30
+tags: ['diagrams', 'symbols', 'sld']
+---
+
+The first page of every experiment is a diagram, and it is usually a different *kind* of
+diagram from the one you need to wire the circuit.
+
+Knowing which is which saves a lot of confusion.
+
+## Three diagrams, three questions
+
+<Compare
+  headings={['Diagram', 'Answers', 'Hides']}
+  rows={[
+    { option: 'Single line (SLD)', when: 'How does power flow through the system?', cost: 'Collapses three phases into one line; no wiring detail', recommended: true },
+    { option: 'Three-line', when: 'How is each phase connected, and where are the CTs and PTs?', cost: 'Physical layout; terminal numbers' },
+    { option: 'Schematic / circuit', when: 'What is the electrical relationship between components?', cost: 'Physical position — components are placed for clarity, not location' },
+    { option: 'Wiring / connection', when: 'Which terminal connects to which terminal?', cost: 'Function — it is a build instruction, not an explanation' },
+  ]}
+/>
+
+<Analogy>
+  Think of describing a journey.
+
+  The **single line diagram** is the underground map: topologically correct, geographically
+  a lie, and exactly what you want for understanding where you can get to.
+
+  The **schematic** is a road map: relationships accurate, scale approximate.
+
+  The **wiring diagram** is turn-by-turn directions: useless for understanding the city,
+  perfect for actually driving.
+
+  Your experiment sheet gives you the first two. To wire the bench you have to construct the
+  third yourself, from the panel in front of you — which is why the Figure placeholders on
+  the experiment pages ask you to draw the SLD with *your* panel's terminal numbers on it.
+</Analogy>
+
+## The single line diagram
+
+Power systems are three-phase and mostly balanced, so drawing three identical lines
+everywhere adds nothing. The SLD collapses them to one.
+
+The core symbols:
+
+<Compare
+  headings={['Element', 'Drawn as', 'Note']}
+  rows={[
+    { option: 'Busbar', when: 'A heavy horizontal line', cost: 'A node — everything on it is at the same voltage' },
+    { option: 'Transmission line', when: 'A plain line between buses', cost: 'Impedance is annotated, not drawn' },
+    { option: 'Two-winding transformer', when: 'Two interlocking circles', cost: 'The vector group (Dyn11) sits beside it' },
+    { option: 'Circuit breaker', when: 'A square on the line', cost: 'Filled or open indicates state on an operational diagram' },
+    { option: 'Isolator / disconnector', when: 'A hinged break in the line', cost: 'Cannot break load current — this distinction matters' },
+    { option: 'Generator', when: 'A circle with G', cost: 'Sometimes with a ~ inside' },
+    { option: 'Load', when: 'An arrow leaving the bus', cost: 'Annotated with P and Q' },
+    { option: 'Earth', when: 'Stacked decreasing horizontal lines', cost: 'A triangle sometimes means chassis rather than earth' },
+  ]}
+/>
+
+<Callout type="engineering">
+  **A circuit breaker and an isolator are not interchangeable, and confusing them is
+  dangerous.**
+
+  A *circuit breaker* is designed to make and break **load and fault current**. It has arc
+  chutes, a fast mechanism, and an interrupting rating.
+
+  An *isolator* (disconnector) provides a visible, verifiable air gap for safety. It is
+  **not** designed to break current at all. Opening one under load draws an arc it cannot
+  extinguish.
+
+  The operating sequence is therefore fixed: **open the breaker first, then the isolator.**
+  Closing runs the other way: isolator first, then breaker. Substations interlock this
+  mechanically because getting it wrong destroys equipment and injures people.
+</Callout>
+
+## IEC and ANSI disagree
+
+You will meet both. Indian practice follows **IEC 60617**; much American literature and a
+lot of software uses **ANSI/IEEE**.
+
+<Compare
+  headings={['Component', 'IEC (Indian practice)', 'ANSI (American)']}
+  rows={[
+    { option: 'Resistor', when: 'Plain rectangle', cost: 'Zigzag', recommended: true },
+    { option: 'Inductor', when: 'Series of filled semicircles', cost: 'Coil of loops' },
+    { option: 'Fuse', when: 'Rectangle with a line through it', cost: 'An S-shape or a broken line' },
+    { option: 'Earth', when: 'Three decreasing horizontal lines', cost: 'Same' },
+    { option: 'Switch (NO contact)', when: 'A break with a hinged bar', cost: 'Similar, but drawn differently in ladder logic' },
+  ]}
+/>
+
+<Callout type="tip" title="The resistor is the giveaway">
+  Rectangle means you are reading an IEC drawing. Zigzag means ANSI.
+
+  Establish which convention a drawing uses before you read anything else on it — because
+  several symbols are similar enough between the two that a misread is possible, and
+  drawings very rarely say which standard they follow.
+</Callout>
+
+## ANSI device numbers
+
+Protection drawings label devices with numbers rather than names, from ANSI/IEEE C37.2. The
+convention is universal and you will be expected to recognise the common ones — including
+in Experiment 4.
+
+<Deck title="The ones you need for PSAO">
+  <Flashcard front="27" tag="ANSI device">
+    **Undervoltage relay.** Operates when voltage falls below a set threshold. Experiment
+    4(b).
+  </Flashcard>
+
+  <Flashcard front="59" tag="ANSI device">
+    **Overvoltage relay.** Operates above a set threshold. The other half of Experiment
+    4(b), and increasingly important on feeders with distributed solar.
+  </Flashcard>
+
+  <Flashcard front="81" tag="ANSI device">
+    **Frequency relay** — 81U under, 81O over. Experiment 4(a). Underfrequency load shedding
+    is the last automatic defence against a system-wide collapse.
+  </Flashcard>
+
+  <Flashcard front="50 and 51" tag="ANSI device">
+    **50** is instantaneous overcurrent, **51** is time-delayed (inverse-time) overcurrent.
+    Together they are the backbone of Experiment 2. The suffix N — 50N, 51N — means earth
+    fault.
+  </Flashcard>
+
+  <Flashcard front="87" tag="ANSI device">
+    **Differential protection.** Compares current in and current out; any difference means
+    a fault inside the protected zone. Used on transformers, generators and busbars.
+  </Flashcard>
+
+  <Flashcard front="21" tag="ANSI device">
+    **Distance relay.** Measures impedance to infer how far away a fault is. The subject of
+    a MATLAB Hub lesson, and the standard protection for transmission lines.
+  </Flashcard>
+</Deck>
+
+## Transformer vector groups
+
+Beside every transformer on an SLD sits something like **Dyn11**. It is not decoration.
+
+- **D** — primary delta connected (uppercase = HV winding)
+- **y** — secondary star/wye connected (lowercase = LV winding)
+- **n** — secondary neutral is brought out
+- **11** — the LV phasor lags the HV by 11 × 30° = 330°, i.e. leads by 30°
+
+<Callout type="engineering">
+  The clock number is what determines whether two transformers can be **paralleled**.
+
+  Connect a Dyn11 and a Dyn1 in parallel and there is a 60° phase difference between their
+  secondaries. That difference appears across the interconnection and drives an enormous
+  circulating current — a short circuit, in effect, through two healthy transformers.
+
+  Vector group is checked before paralleling, every time. It is also why the number appears
+  on the nameplate and on the drawing rather than being left to be worked out.
+</Callout>
+
+## From diagram to wired bench
+
+The gap between "I understand the circuit" and "I have wired it" is where sessions get
+lost. A method that works:
+
+<Steps title="Wiring systematically">
+  <Step n={1} title="Identify the main power path first" expect="a single traceable route from supply to load">
+    Supply → protection → variac → line model → load. Get that loop complete before
+    anything else.
+  </Step>
+
+  <Step n={2} title="Add the return path">
+    Neutral or the other phases. On three-phase, complete all three before moving on.
+  </Step>
+
+  <Step n={3} title="Insert the series instruments" hazard="An ammeter goes in series. Connected in parallel it is a short circuit.">
+    Ammeters and current coils break into the path. This means physically opening a
+    connection and inserting the meter.
+  </Step>
+
+  <Step n={4} title="Add the parallel instruments" expect="voltmeters across, not in line">
+    Voltmeters and voltage coils go across the points whose difference you want.
+  </Step>
+
+  <Step n={5} title="Trace the whole circuit against the diagram with a finger" expect="every line on the diagram accounted for by a physical lead">
+    Out loud if you can. Say what each lead does as you touch it.
+
+    This catches more errors than any other single habit, because it forces you to look at
+    what is actually there rather than what you intended to build.
+  </Step>
+
+  <Step n={6} title="Have it checked, then energise">
+    Every time.
+  </Step>
+</Steps>
+
+<Callout type="tip" title="Colour your leads by function">
+  Red or brown for phase, black or blue for neutral, green-yellow for earth, and a distinct
+  colour for measurement connections.
+
+  On a bench with twenty identical leads this is the difference between a circuit you can
+  debug in thirty seconds and one you have to dismantle. It also matches installation
+  practice, so the habit transfers.
+</Callout>
+
+<Callout type="warning" title="Draw the wiring diagram yourself">
+  The experiment sheet gives you a schematic. Your panel has terminal numbers.
+
+  Spend five minutes redrawing the schematic with **your panel's actual terminal numbers**
+  written on it, before you touch a lead. You will wire it faster, you will debug it faster,
+  and you have just produced the figure your report needs.
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      q: 'What does a single line diagram deliberately hide?',
+      options: [
+        'The direction of power flow',
+        'That the system is three-phase — the three conductors are collapsed to one line',
+        'The location of transformers',
+        'Voltage levels',
+      ],
+      answer: 1,
+      explain:
+        'A balanced three-phase system carries no extra information in drawing all three, so the SLD collapses them. When you need per-phase detail — CT and PT connections, for instance — you need a three-line diagram.',
+    },
+    {
+      q: 'Why must a circuit breaker be opened before its isolator?',
+      options: [
+        'It is faster',
+        'An isolator is not designed to break current at all — opening one under load draws an arc it cannot extinguish',
+        'The breaker resets the isolator',
+        'It does not matter which order',
+      ],
+      answer: 1,
+      explain:
+        'A breaker interrupts load and fault current; an isolator provides a visible safety gap. Substations interlock the sequence mechanically because getting it wrong destroys equipment.',
+    },
+    {
+      q: 'What does Dyn11 tell you?',
+      options: [
+        'The transformer rating',
+        'Delta HV, star LV with neutral brought out, and a 30° phase relationship — which determines whether it can be paralleled with another transformer',
+        'The insulation class',
+        'The number of turns',
+      ],
+      answer: 1,
+      explain:
+        'Paralleling a Dyn11 with a Dyn1 puts 60° across the interconnection and drives an enormous circulating current. Vector group is checked before paralleling, every time.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  A single line diagram answers *how does power flow*; a wiring diagram answers *which
+  terminal goes where*. Your experiment sheet gives you the first, so **draw the second
+  yourself with your panel's terminal numbers** before touching a lead — then trace every
+  connection against the diagram out loud before energising.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 60617 — Graphical symbols for diagrams',
+      note: 'The symbol library Indian practice follows. Worth browsing once so the shapes become familiar.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEEE Std C37.2 — Device function numbers and contact designations',
+      note: 'The full ANSI device number list — 27, 50, 51, 59, 81, 87 and about a hundred more.',
+    },
+    {
+      kind: 'standard',
+      title: 'IS 12032 — Graphical symbols for diagrams in power generation and distribution',
+    },
+  ]}
+/>

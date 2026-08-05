@@ -1,0 +1,292 @@
+---
+title: PPE, Conduct and Emergencies
+section: safety
+order: 3
+level: 0
+description: What to wear and why each item is there, the behaviours that cause most laboratory incidents, and what to do in the first thirty seconds of an emergency.
+objectives:
+  - Dress correctly for an electrical laboratory and explain each requirement
+  - Recognise the behaviours that produce most laboratory incidents
+  - Respond correctly to shock, fire and injury in the first thirty seconds
+estimatedMinutes: 25
+tags: ['safety', 'ppe', 'emergency', 'conduct']
+---
+
+Personal protective equipment is the **last** line of defence, not the first. If PPE is
+what stands between you and injury, several earlier controls have already failed.
+
+The order of controls, strongest first: eliminate the hazard, substitute something safer,
+engineer a barrier, use procedure, and only then PPE. A laboratory that relies on gloves
+where it should have used an isolator has designed its safety backwards.
+
+That said — the earlier controls do fail, and this is what you wear when they do.
+
+## What to wear
+
+<Compare
+  headings={['Item', 'Why', 'The failure it prevents']}
+  rows={[
+    { option: 'Natural fibres — cotton', when: 'Chars rather than melts', cost: 'Synthetics melt onto skin in an arc flash, greatly worsening burns', recommended: true },
+    { option: 'Long sleeves and full-length trousers', when: 'Covers skin', cost: 'Radiant heat and molten metal spatter' },
+    { option: 'Closed shoes with insulating soles', when: 'Breaks the path to earth', cost: 'Hand-to-foot current path; dropped tools' },
+    { option: 'Safety glasses', when: 'Impact and light', cost: 'Arc flash, exploding components, spatter' },
+    { option: 'No rings, watches, chains, bracelets', when: 'Metal is a conductor and a heat sink', cost: 'A ring bridging two terminals becomes a shorted turn and heats red hot' },
+    { option: 'Long hair tied back', when: 'Keeps it out of machines', cost: 'Rotating shafts — Experiment 2 has an induction motor' },
+  ]}
+/>
+
+<Hazard title="Remove your rings before you enter">
+  A metal ring across two terminals is a near-perfect short circuit — very low resistance,
+  and welded to your finger.
+
+  The current is enormous, the ring reaches red heat in under a second, and it cannot be
+  removed because your finger swells immediately. Ring injuries in electrical work are
+  characteristically severe and frequently end in amputation.
+
+  This applies to watches, metal-strapped fitness bands, bracelets and necklaces. Take them
+  off before you enter, not when you remember.
+</Hazard>
+
+<Callout type="engineering">
+  The synthetic fabric rule is not fussiness about dress code.
+
+  Cotton exposed to an arc **chars** — it burns, but it stays on you as a layer and can be
+  cut away afterwards. Polyester **melts** at around 250 °C, well below arc temperatures,
+  and the molten polymer adheres to skin and continues transferring heat after the arc has
+  gone.
+
+  Burn units treat these as two different classes of injury. It is the single cheapest
+  safety decision you will make: wear cotton.
+</Callout>
+
+### On rubber gloves
+
+You will see insulating gloves in photographs of electrical work. In a teaching laboratory
+they are usually **not** the right answer, and it is worth understanding why.
+
+Insulating gloves are rated by class, must be inspected and air-tested before every use,
+require leather overgloves to protect them from puncture, and must be within their test
+interval — typically six months. A glove that has been in a drawer for two years, that
+nobody has tested, gives you confidence without protection, which is worse than no glove at
+all.
+
+The correct control for a teaching bench is **isolation** — prove it dead and work on
+something that cannot hurt you. Gloves are for live working, and you should not be doing
+live working.
+
+## The behaviours that cause incidents
+
+Very few laboratory injuries come from someone not knowing a rule. Almost all come from
+knowing it and skipping it, usually under time pressure.
+
+<Compare
+  headings={['Behaviour', 'Why it happens', 'What it causes']}
+  rows={[
+    { option: 'Energising before the wiring is checked', when: 'Running short of session time', cost: 'The single most common cause of a bench fault', recommended: false },
+    { option: 'Working alone', when: 'Finishing off after everyone left', cost: 'Nobody to cut the supply if you are held in a circuit' },
+    { option: 'Two hands on the equipment', when: 'It is more convenient', cost: 'Arm-to-arm current path, straight through the heart' },
+    { option: 'Rushing at the end of a session', when: 'The next group is waiting', cost: 'Skipped discharge, skipped isolation, live leads left connected' },
+    { option: 'Reaching behind an energised panel', when: 'A lead came loose', cost: 'Contact you cannot see and did not intend' },
+    { option: 'Assuming a circuit is dead because you turned it off', when: 'It seems obvious', cost: 'Wrong isolator, stored charge, a second supply' },
+  ]}
+/>
+
+<Callout type="warning" title="Time pressure is the common factor">
+  Look down that list: most of it is what a careful person does when the session is ending
+  and the work is not finished.
+
+  The correct response is to **stop and leave it unfinished**. An incomplete experiment
+  costs you a repeat session. A rushed one can cost considerably more, and no demonstrator
+  has ever been angry with a student for running out of time safely.
+</Callout>
+
+## Laboratory conduct
+
+The rules that are not about electricity:
+
+- **No food or drink.** A spilled drink on an energised bench is a conductive path across
+  everything. It is also how equipment dies.
+- **Bags and coats away from the bench.** Trip hazards, and they get caught on leads.
+- **One group per bench.** Crowding means someone is working on something they cannot see.
+- **Do not touch another group's setup.** They may have it energised and be measuring.
+- **Report damage immediately** — a cracked lead, a loose terminal, a missing cover. Do not
+  quietly swap it for a good one and leave the broken one in the rack for the next group.
+- **Leave the bench as you found it.** Leads coiled, load banks at minimum, variac at zero,
+  supply off.
+
+<Callout type="tip" title="The variac-at-zero habit">
+  Always return the variac to zero before switching off, and always confirm it is at zero
+  before switching on.
+
+  The failure it prevents: the next person energises the bench expecting nothing to happen
+  and gets full voltage instantly, into a circuit they have not finished wiring. It costs
+  you two seconds. Do it every time, including the times you are certain you already did.
+</Callout>
+
+## Emergencies
+
+### Electric shock
+
+Covered fully in [the hazards page](/lab/foundations/electrical-hazards), and worth
+repeating because the first action is counter-intuitive:
+
+**Do not touch them. Cut the supply first.** Then call for help, then check breathing, then
+CPR if you are trained. Medical attention afterwards regardless of how fine they seem —
+arrhythmias can develop hours later.
+
+### Electrical fire
+
+<Steps title="In order">
+  <Step n={1} title="Cut the supply if it is safe to reach the isolator" expect="the fire may stop being an electrical fire once de-energised">
+    An energised fire is a different problem from an ordinary one. Removing the supply
+    removes both the ignition source and the shock hazard to anyone fighting it.
+  </Step>
+
+  <Step n={2} title="Raise the alarm" hazard="Do not spend time fighting a fire before anyone else knows about it.">
+    Alarm first, then decide whether to fight it.
+  </Step>
+
+  <Step n={3} title="Use CO₂ or dry powder — NEVER water" hazard="Water conducts. A water extinguisher on an energised fire puts you in the circuit.">
+    CO₂ is preferred on electrical equipment: it displaces oxygen, leaves no residue, and
+    does not damage what it is not burning.
+  </Step>
+
+  <Step n={4} title="If it is not immediately controllable, leave">
+    Burning insulation produces genuinely toxic smoke — PVC releases hydrogen chloride.
+    Do not stay in the room to keep trying.
+  </Step>
+</Steps>
+
+### Burns
+
+Cool with running water for at least twenty minutes. Do not apply ice, creams or anything
+else. Do not remove clothing stuck to the burn.
+
+**Electrical burns are deceptive**: the visible entry and exit wounds can be small while
+the tissue damage along the current path between them is extensive. Any electrical burn
+needs medical assessment regardless of how it looks.
+
+### Injury from machinery
+
+Experiment 2 uses an induction motor with a rotating shaft. Stop the machine first — the
+emergency stop, not the supply switch — before attempting anything else.
+
+<Callout type="tip" title="Point at a specific person">
+  "Someone call for help" produces a room full of people each assuming someone else is
+  going.
+
+  Point at one individual and give them a specific instruction: *"You — get the
+  demonstrator, now."* This is standard first-aid practice for exactly this reason, and it
+  works.
+</Callout>
+
+## Before every session
+
+<Checklist
+  id="session-start"
+  title="Session start"
+  tone="safety"
+  items={[
+    'Rings, watch and any metal jewellery removed',
+    'Cotton clothing, sleeves down, closed shoes',
+    'Long hair tied back — Experiment 2 has a rotating shaft',
+    'Bag and coat stowed away from the bench',
+    'Emergency stop located and reachable from where I will stand',
+    'Fire extinguisher located, and it is CO₂ or dry powder',
+    'I am not working alone',
+    'Bench inspected: no cracked leads, no loose terminals, no missing covers',
+    'Variac at zero, load bank at minimum, all capacitor steps off',
+  ]}
+/>
+
+<Checklist
+  id="session-end"
+  title="Session end"
+  tone="safety"
+  items={[
+    'Load reduced to minimum, variac returned to zero',
+    'Supply isolated',
+    'Capacitors discharged, and verified with a meter rather than assumed',
+    'Leads disconnected and coiled',
+    'Any damaged equipment reported, not quietly returned to the rack',
+    'Observations recorded and signed by the demonstrator before I leave',
+  ]}
+/>
+
+<Callout type="warning" title="Get your observations signed before you leave">
+  Not a safety point, but it belongs on the same checklist because it has the same failure
+  mode — remembering when it is too late.
+
+  Most laboratories require the demonstrator to sign your raw observations at the bench.
+  Unsigned readings can be rejected, and you cannot recreate them afterwards.
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why are synthetic fabrics banned in electrical laboratories?',
+      options: [
+        'They generate static',
+        'They melt at arc temperatures and adhere to skin, greatly worsening burns — cotton chars instead',
+        'They are flammable',
+        'They interfere with instruments',
+      ],
+      answer: 1,
+      explain:
+        'Polyester melts near 250 °C, far below arc temperature, and the molten polymer keeps transferring heat after the arc is gone. Burn units treat char and melt injuries as different classes.',
+    },
+    {
+      q: 'Should you wear insulating rubber gloves for a teaching laboratory experiment?',
+      options: [
+        'Yes, always',
+        'Usually not — the correct control is isolation. Untested, uninspected gloves give confidence without protection',
+        'Only for three-phase work',
+        'Only if the demonstrator says so',
+      ],
+      answer: 1,
+      explain:
+        'Insulating gloves need class rating, air testing before each use, leather overgloves and a current test date. They are for live working, and you should not be doing live working.',
+    },
+    {
+      q: 'What is the correct extinguisher for an electrical fire?',
+      options: [
+        'Water',
+        'CO₂ or dry powder — water conducts and would put you in the circuit',
+        'Foam',
+        'Any of them',
+      ],
+      answer: 1,
+      explain:
+        'CO₂ is preferred on electrical equipment: it displaces oxygen, leaves no residue and does not damage what it is not burning. Cut the supply first if you can reach the isolator safely.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  PPE is the **last** control, not the first — if it is what saves you, isolation already
+  failed. Remove metal jewellery, wear cotton, and recognise that nearly every laboratory
+  incident happens to someone who knew the rule and skipped it because the session was
+  ending. Stopping with the work unfinished is always the right call.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'standard',
+      title: 'IEC 61482 — Protective clothing against the thermal hazards of an electric arc',
+      note: 'How arc-rated clothing is tested and classified.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 60903 — Live working: gloves of insulating material',
+      note: 'Class ratings, test intervals and the inspection procedure gloves actually require.',
+    },
+    {
+      kind: 'standard',
+      title: 'NFPA 70E — Standard for Electrical Safety in the Workplace',
+      note: 'The PPE category tables, and the hierarchy-of-controls argument in full.',
+    },
+  ]}
+/>

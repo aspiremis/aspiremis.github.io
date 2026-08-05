@@ -1,0 +1,339 @@
+---
+title: Records, Reports and the Viva
+section: before
+order: 5
+level: 0
+description: How to record observations so they survive scrutiny, what each section of a lab report is actually for, and what an examiner is really testing in a viva.
+objectives:
+  - Keep a laboratory record that would stand up to an audit
+  - Write each section of a report knowing what it is for
+  - Prepare for a viva by anticipating the question behind the question
+estimatedMinutes: 30
+tags: ['reports', 'viva', 'records', 'assessment']
+---
+
+Your measurements are worth exactly as much as your record of them. A perfect experiment
+with an unreadable record book is a wasted afternoon.
+
+## The record book
+
+The convention is not arbitrary — every rule exists because of a specific way records fail.
+
+<Compare
+  headings={['Rule', 'Why']}
+  rows={[
+    { option: 'Write in ink, never pencil', when: 'Pencil can be altered later, so a pencil record proves nothing about when it was written', recommended: true },
+    { option: 'Never erase or use correction fluid', when: 'An obliterated entry looks like concealment. Cross out with one line so the original stays legible' },
+    { option: 'Record raw readings, not calculated ones', when: 'Raw data can be recalculated. A calculation cannot be un-done if the formula was wrong' },
+    { option: 'Write it down at the bench, immediately', when: 'Memory for numbers is far worse than people believe, and it fails silently' },
+    { option: 'Date and sign every page', when: 'Establishes when the work was done — the basis of the whole record' },
+    { option: 'Record the equipment identifier', when: 'Lets you check the calibration record, and tells you which unit produced an anomaly' },
+    { option: 'Never write on loose paper', when: 'It gets lost. Every time' },
+  ]}
+/>
+
+<Callout type="warning" title="Record raw readings, not what you calculated in your head">
+  If you write down 4.2% regulation instead of the two voltages, and you later realise the
+  formula should have used the measured $V_S$ rather than the nominal one, you cannot fix
+  it. The information is gone.
+
+  Write down what the meter showed. Every derived quantity can be recomputed from raw
+  readings; raw readings cannot be recovered from a derived quantity.
+</Callout>
+
+<Callout type="engineering">
+  This convention comes from research and industrial practice, where it carries real weight.
+
+  A bound, paginated, ink-written, dated and countersigned notebook is legal evidence — in
+  patent disputes, in accident investigations, in regulatory audits. Pharmaceutical and
+  aerospace laboratories run on exactly these rules, and pages are numbered specifically so
+  a removed page is detectable.
+
+  You are learning the discipline at low stakes so that it is automatic when the stakes are
+  higher. It will also matter for your thesis: a supervisor asking "when did you take this
+  measurement?" wants an answer with a date on it.
+</Callout>
+
+### What to record beyond the numbers
+
+- The **conditions**: ambient temperature, supply voltage, anything that might explain an
+  anomaly later.
+- **Anything unexpected**, even if you cannot explain it. A note reading *"reading unstable
+  above step 4, possibly a loose lead"* is worth a great deal in a week's time.
+- **What you changed** between readings, in the order you changed it.
+- **Which meter** you used for which quantity, if there is more than one.
+
+<Callout type="tip" title="Get it signed before you leave the room">
+  Most laboratories require the demonstrator to sign your raw observations at the bench.
+
+  Unsigned readings can be rejected, and there is no way to recreate them once the bench is
+  dismantled and rewired for another group. Make it the last item on your shutdown
+  checklist.
+</Callout>
+
+## The report
+
+Every section answers one question. Knowing which question stops you writing the wrong
+thing in it.
+
+<Steps title="Report structure">
+  <Step n={1} title="Aim" expect="one or two sentences, specific enough to be checkable">
+    *What were you trying to find out?*
+
+    "To study voltage regulation" is too vague. "To determine the voltage regulation of a
+    simplified transmission line model under resistive, inductive and capacitive loading,
+    and to compare the result with the approximate drop formula" is an aim you can be held
+    to.
+  </Step>
+
+  <Step n={2} title="Apparatus" expect="enough for someone to assemble the same bench">
+    *What did you use?*
+
+    List with ranges, ratings and identifiers. "Voltmeter" is useless; "Digital multimeter,
+    true RMS, 0–600 V AC, ±(1.0% + 5 counts), ID DMM-04" lets a reader judge your
+    uncertainties.
+  </Step>
+
+  <Step n={3} title="Theory" expect="the derivation, not a copied textbook chapter">
+    *What should happen, and why?*
+
+    Derive the relationships you will use. Keep it to what the experiment needs — a
+    reproduced chapter shows you can copy, a focused derivation shows you understood.
+  </Step>
+
+  <Step n={4} title="Procedure" expect="past tense, what you actually did">
+    *What did you do?*
+
+    Including any departure from the sheet. If you stopped a sweep early because you reached
+    rated current, that belongs here — it is a fact about the experiment, not a confession.
+  </Step>
+
+  <Step n={5} title="Observations" expect="raw data, tabulated, with units in the headers">
+    *What did you measure?*
+
+    Raw readings only. No calculated columns here — those go in the next section, so a
+    reader can separate measurement from inference.
+  </Step>
+
+  <Step n={6} title="Calculations" expect="one worked example in full, then a table">
+    *How did you get from readings to results?*
+
+    Work through **one** row completely, showing the substitution, then tabulate the rest.
+    This lets a marker verify your method without wading through forty repetitions, and it
+    is where you show the uncertainty propagation.
+  </Step>
+
+  <Step n={7} title="Results and graphs" expect="axes labelled with quantity AND unit, and a caption that states the finding">
+    *What did you find?*
+
+    Plot measured points as markers, theory as a line. Never join measured points with a
+    smooth curve — the line implies you measured the space between them.
+  </Step>
+
+  <Step n={8} title="Discussion" expect="the section that actually carries the marks">
+    *What does it mean, and why did it not match perfectly?*
+
+    See below.
+  </Step>
+
+  <Step n={9} title="Conclusion" expect="the aim, answered">
+    *So what?*
+
+    Two or three sentences answering the aim directly. No new information.
+  </Step>
+</Steps>
+
+<Callout type="engineering">
+  **The discussion is where the marks are, and it is the section students write last and
+  shortest.**
+
+  A discussion that says "the results agree with theory, small errors were due to
+  instrument error and human error" is worth almost nothing. It is the sentence everybody
+  writes, and markers read it as "I did not think about this".
+
+  A good discussion does four specific things:
+
+  1. **Quantifies** the disagreement — "measured regulation was 12% higher than predicted"
+     rather than "there was some error".
+  2. **Attributes** it to a named mechanism, with an argument — "the approximate formula
+     neglects the quadrature term, which grows with load angle, and the discrepancy indeed
+     grows with current".
+  3. **Tests** the attribution where possible — "recomputing with the exact phasor
+     expression reduces the gap to 1.8%, supporting this explanation".
+  4. **States** what remains unexplained. Honesty about a residual you cannot account for
+     is worth more than a confident wrong story.
+
+  Point 3 is the one that separates a good report from an average one. Anyone can name a
+  possible cause; showing that the cause quantitatively accounts for what you saw is
+  engineering.
+</Callout>
+
+### Graphs
+
+<Compare
+  headings={['Rule', 'Why']}
+  rows={[
+    { option: 'Label both axes with quantity AND unit', when: 'A number with no unit is not a measurement', recommended: true },
+    { option: 'Markers for measured points, lines for theory', when: 'A line through measured points claims you measured the gaps' },
+    { option: 'Error bars where uncertainty is significant', when: 'It shows whether a deviation is real or within noise' },
+    { option: 'Caption states the finding, not the contents', when: '"Receiving voltage falls with inductive load" beats "Graph of V against I"' },
+    { option: 'Do not force the origin', when: 'Extrapolating to a point you did not measure is an assumption' },
+    { option: 'One message per figure', when: 'Six overlaid curves communicate nothing' },
+  ]}
+/>
+
+The Matplotlib module of the Python track covers this properly — its project is exactly
+this distinction, between a figure for exploring and a figure for a reader.
+
+## The viva
+
+A viva examines whether you understood what you did, and it has a recognisable structure.
+Examiners work outward.
+
+<Compare
+  headings={['Stage', 'Typical question', 'What is being tested']}
+  rows={[
+    { option: 'Definitions', when: '"What is voltage regulation?"', cost: 'Did you learn the vocabulary?', recommended: false },
+    { option: 'Procedure', when: '"Why did you keep V_S constant?"', cost: 'Did you understand what you were doing, or follow steps?' },
+    { option: 'Analysis', when: '"Why is your result 12% off?"', cost: 'Can you reason about your own data?' },
+    { option: 'Application', when: '"Where would a utility use this?"', cost: 'Do you see past the bench?' },
+    { option: 'Extension', when: '"What if the load were a constant-power load?"', cost: 'Can you apply it to something you have not been taught?' },
+  ]}
+/>
+
+<Callout type="tip" title="The question behind the question">
+  Examiners rarely want the fact they asked for. They want to see whether you can get to it.
+
+  *"Why did you use a true-RMS meter?"* is not really about your meter. It is asking whether
+  you know that an average-responding meter assumes a sinusoid, and whether you understand
+  when that assumption breaks.
+
+  So answer the question, then add the reasoning in one sentence. That single extra sentence
+  is usually what distinguishes a confident answer from a memorised one.
+</Callout>
+
+### Answering well
+
+- **Answer the question asked.** Not the adjacent one you revised.
+- **Say "I don't know" when you don't.** Then reason aloud toward it. An examiner would much
+  rather watch you think than listen to a confident fabrication — and they will always
+  detect the fabrication.
+- **Use your own data.** "In my measurements the capacitive case gave negative regulation,
+  which is what the sign of the reactive term predicts" is far stronger than a general
+  statement.
+- **Own the anomalies.** If a result was odd, say so and offer your best explanation. Trying
+  to hide it invites exactly the questions you least want.
+- **Draw.** Ask for paper. A phasor diagram or a sketch of a curve answers more clearly than
+  a paragraph, and it shows you are thinking in the right representation.
+
+<Hazard title="Never present data you did not measure" level="caution">
+  Fabricated or adjusted results are academic misconduct, and the consequences run from a
+  zero to expulsion.
+
+  They are also easier to detect than students imagine. Real measurements have
+  characteristic scatter; invented ones are too smooth, too linear, or agree with theory
+  more closely than the instruments could support. Markers who have seen hundreds of these
+  recognise the pattern quickly.
+
+  A result that disagrees with theory, reported honestly and explained thoughtfully, scores
+  better than a fabricated one that agrees — and it is the only version you can defend when
+  someone asks how you got it.
+</Hazard>
+
+## How marks are usually distributed
+
+Weightings vary, but the shape is consistent:
+
+<Compare
+  headings={['Component', 'Roughly', 'How to lose it']}
+  rows={[
+    { option: 'Pre-lab preparation', when: '10–15%', cost: 'Arriving without having read the experiment' },
+    { option: 'Conduct and technique', when: '15–20%', cost: 'Unsafe practice, disorganised wiring, needing to be told every step' },
+    { option: 'Observations and record', when: '15–20%', cost: 'Untidy, unsigned, missing units, no conditions recorded' },
+    { option: 'Calculations and graphs', when: '20–25%', cost: 'Arithmetic slips, unlabelled axes, no uncertainty' },
+    { option: 'Discussion', when: '20–25%', cost: '"Errors were due to human error"', recommended: false },
+    { option: 'Viva', when: '15–20%', cost: 'Being unable to explain your own numbers' },
+  ]}
+/>
+
+<Callout type="tip" title="Two of these are nearly free">
+  **Pre-lab preparation** and the **record book** together are around a third of the mark,
+  and neither requires cleverness — only turning up prepared and writing carefully.
+
+  Students routinely concentrate on the calculations, which are the part most likely to be
+  right anyway, and neglect the two components that are entirely within their control.
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      q: 'Why record raw readings rather than calculated values?',
+      options: [
+        'It is faster',
+        'Derived quantities can always be recomputed from raw data, but raw data cannot be recovered from a calculation — especially if the formula was wrong',
+        'Calculations belong in the appendix',
+        'It does not matter',
+      ],
+      answer: 1,
+      explain:
+        'If you write 4.2% regulation instead of the two voltages, and later realise you should have used the measured V_S rather than the nominal one, the information is simply gone.',
+    },
+    {
+      q: 'What makes a discussion section good?',
+      options: [
+        'Stating that results agreed with theory',
+        'Quantifying the disagreement, attributing it to a named mechanism, testing that attribution, and admitting what remains unexplained',
+        'Listing all possible sources of error',
+        'Keeping it brief',
+      ],
+      answer: 1,
+      explain:
+        'Anyone can name a possible cause. Showing that the cause quantitatively accounts for what you saw — recomputing with the exact expression and finding the gap closes — is what separates a good report from an average one.',
+    },
+    {
+      q: 'You are asked a viva question you cannot answer. What is the best response?',
+      options: [
+        'Guess confidently',
+        'Say you do not know, then reason aloud toward it — examiners would rather watch you think than hear a fabrication they will detect',
+        'Change the subject to something you do know',
+        'Stay silent',
+      ],
+      answer: 1,
+      explain:
+        'A viva tests reasoning, not recall. Working toward an answer out loud demonstrates exactly what is being examined; a confident fabrication demonstrates the opposite and is always noticed.',
+    },
+  ]}
+/>
+
+<KeyIdea>
+  Record **raw** readings in ink, at the bench, signed before you leave — everything derived
+  can be recomputed, nothing raw can be recovered. Then put your effort into the
+  **discussion**, because "errors were due to human error" is the sentence every marker has
+  read a thousand times, and quantifying a disagreement and testing your explanation of it
+  is what the marks are actually for.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'book',
+      title: 'Writing for Science and Engineering: Papers, Presentations and Reports',
+      by: 'Heather Silyn-Roberts',
+      note: 'Practical and short. The chapter on results-versus-discussion is the useful one here.',
+    },
+    {
+      kind: 'book',
+      title: 'An Introduction to Error Analysis',
+      by: 'John R. Taylor',
+      note: 'For the uncertainty that belongs in your calculations section.',
+    },
+    {
+      kind: 'book',
+      title: 'The Visual Display of Quantitative Information',
+      by: 'Edward R. Tufte',
+      note: 'On graphs. Not an engineering book, and better on the subject than any engineering book.',
+    },
+  ]}
+/>
