@@ -1,0 +1,331 @@
+---
+title: Three-Phase Induction Motor
+shortTitle: Induction motor
+category: machine
+tagline: Draws six times its rated current every time you start it, and that is normal
+description: The workhorse of industry, and a protection problem — because its normal starting current is indistinguishable in magnitude from a fault, and lasts for seconds.
+icon: motor
+order: 13
+difficulty: intermediate
+estimatedMinutes: 35
+specs:
+  - label: Rating
+    value: '0.75–5 kW on a teaching bench'
+    note: MECHANICAL shaft power
+  - label: Voltage
+    value: '415 V, delta or star connected'
+  - label: Full load current
+    value: 'From the nameplate — the number every protection setting starts from'
+  - label: Starting current (DOL)
+    value: '5–7 × full load'
+    note: 'Sustained for 2–10 s depending on inertia and load'
+  - label: Full load slip
+    value: '3–5%'
+  - label: Locked rotor time
+    value: '10–20 s cold, less when hot'
+    note: The thermal limit the protection must respect
+  - label: Insulation class
+    value: 'F, usually with class B rise'
+hazards:
+  - Rotating shaft — tie back hair, no loose clothing
+  - High starting current
+  - Terminals live at 415 V
+tags: ['instrument', 'machine', 'induction-motor', 'starting', 'protection']
+---
+
+Around two-thirds of all industrial electricity goes through induction motors. They are
+cheap, rugged, have no brushes, and start by themselves.
+
+They also draw six times their rated current for several seconds every time they start, and
+that single fact makes protecting them harder than protecting almost anything else.
+
+## How it turns
+
+Three windings displaced 120° in space, fed by currents displaced 120° in time, produce a
+magnetic field that **rotates** at synchronous speed:
+
+$$
+N_s = \frac{120 f}{P}
+$$
+
+The rotating field induces currents in the rotor bars — hence *induction* — and those
+currents, in that field, produce torque.
+
+<Callout type="engineering">
+  The rotor **must** run slower than the field. If it ever caught up, there would be no
+  relative motion, no changing flux through the rotor bars, no induced current and therefore
+  no torque.
+
+  So the machine settles at a speed where the slip generates exactly the rotor current
+  needed for the load torque:
+
+  $$s = \frac{N_s - N}{N_s}$$
+
+  This self-regulation is the whole elegance of the machine. Load it harder and it slows
+  slightly, slip rises, rotor current rises, torque rises to match. No controller, no
+  feedback loop, no brushes — the physics closes the loop.
+</Callout>
+
+## Why starting current is so large
+
+At the instant of switching on, the rotor is stationary. Slip is 1, so the rotor sees the
+full supply frequency, and the machine looks electrically like a **short-circuited
+transformer** — the rotor is a shorted secondary.
+
+The only thing limiting the current is the leakage impedance, which is small. Hence five to
+seven times full-load current.
+
+<Compare
+  headings={['Condition', 'Slip', 'Rotor frequency', 'Current']}
+  rows={[
+    { option: 'Starting / locked rotor', when: 's = 1', cost: '50 Hz', recommended: false },
+    { option: 'Accelerating', when: 'falling', cost: 'falling', recommended: false },
+    { option: 'Full load', when: 's ≈ 0.04', cost: '2 Hz', recommended: false },
+    { option: 'No load', when: 's ≈ 0.005', cost: '0.25 Hz', recommended: false },
+  ]}
+/>
+
+<Callout type="warning" title="Starting current stays high nearly to full speed">
+  A common misconception is that the current tapers off smoothly as the motor accelerates.
+
+  It does not. Current remains close to its starting value until the machine is at roughly
+  80–90% of synchronous speed, then falls sharply in the last part of the run-up.
+
+  So the protection cannot rely on the current decaying — it must ride out a near-constant
+  five-to-seven times overload for the full acceleration time, which on a high-inertia load
+  can be ten seconds or more.
+</Callout>
+
+## The protection problem
+
+<Compare
+  headings={['Condition', 'Current', 'Should the relay trip?']}
+  rows={[
+    { option: 'Normal running', when: '1.0 × FLC', cost: 'No' },
+    { option: 'Starting', when: '6 × FLC for 2–10 s', cost: 'NO — this is normal', recommended: true },
+    { option: 'Locked rotor (stalled)', when: '6 × FLC, indefinitely', cost: 'YES, within the locked-rotor withstand time' },
+    { option: 'Sustained overload', when: '1.2 × FLC', cost: 'Yes, eventually' },
+    { option: 'Short circuit', when: '20 × FLC', cost: 'Yes, instantly' },
+  ]}
+/>
+
+<Callout type="engineering">
+  Look at rows two and three. **The current is identical.** Six times full load in both
+  cases, and the relay must ride through one and trip on the other.
+
+  The only thing distinguishing them is **duration** — a start ends, a stall does not.
+
+  That is why motor protection is fundamentally about time rather than magnitude, and why a
+  plain instantaneous overcurrent element cannot protect a motor. The relay must:
+
+  - tolerate 6× FLC for longer than the starting time,
+  - trip at 6× FLC before the locked-rotor withstand time expires.
+
+  Those two constraints define a window, and if the starting time approaches the
+  locked-rotor withstand time — which happens on high-inertia loads — the window closes and
+  simple overcurrent protection cannot do the job. Then you need a speed switch, or a relay
+  that measures the motor's thermal state directly.
+</Callout>
+
+## The thermal replica
+
+Modern motor protection relays do not just measure current. They **model the heating**:
+
+$$
+\frac{\mathrm{d}\theta}{\mathrm{d}t} = \frac{I^2}{I_{\text{FLC}}^2} - \frac{\theta}{\tau}
+$$
+
+a first-order thermal model where $\theta$ is the modelled temperature rise and $\tau$ the
+thermal time constant. The relay integrates heating and allows for cooling between events.
+
+<Callout type="tip" title="This is why cold and hot curves differ">
+  A motor starting from cold has its full thermal capacity available. One that has just run
+  at full load is already partly heated, so less margin remains and the allowable
+  locked-rotor time is shorter.
+
+  Nameplate and relay data therefore quote **cold** and **hot** withstand times separately,
+  and a thermal replica relay knows which state the motor is in because it has been
+  integrating all along.
+
+  It also explains the rule limiting consecutive starts — typically two from cold, one from
+  hot. Each start dumps a large amount of heat into the rotor, and the rotor has very little
+  thermal mass.
+</Callout>
+
+## Single-phasing
+
+One fuse blows, or one phase is lost. The motor keeps running on two phases — and this is
+where the real damage happens.
+
+<Hazard title="Single-phasing can destroy a motor without tripping overcurrent protection">
+  When a phase is lost, the machine keeps turning but draws substantially more current in
+  the remaining phases. On a lightly loaded motor that increased current may still sit
+  **within** the relay's setting, so nothing operates.
+
+  Meanwhile the rotor is being heated far harder than the line current suggests.
+</Hazard>
+
+<Callout type="engineering">
+  The mechanism is worth understanding properly, because it explains why a separate
+  protection function exists.
+
+  Losing a phase creates a large **negative-sequence** component. And an induction motor's
+  negative-sequence impedance is approximately its **locked-rotor** impedance — very small,
+  around 1/6 of the positive-sequence impedance.
+
+  So a modest negative-sequence voltage drives a **large** negative-sequence current.
+
+  Worse, the negative-sequence field rotates *backwards* relative to the rotor, so the rotor
+  sees it at a slip of $(2 - s)$ — nearly **twice supply frequency**. At 100 Hz the skin
+  effect in the rotor bars raises their effective resistance considerably, so the heating
+  per ampere is far greater than for positive-sequence current.
+
+  Combined, negative-sequence current heats the rotor roughly **five to six times** as
+  effectively as the same positive-sequence current.
+
+  This is why dedicated **negative-sequence protection (ANSI 46)** exists, and why relying on
+  overcurrent alone to catch single-phasing is a well-documented way to lose motors.
+</Callout>
+
+## Starting methods
+
+<Compare
+  headings={['Method', 'Starting current', 'Starting torque', 'Note']}
+  rows={[
+    { option: 'Direct on line (DOL)', when: '6 × FLC', cost: '100%', recommended: true },
+    { option: 'Star-delta', when: '2 × FLC', cost: '33%', recommended: false },
+    { option: 'Autotransformer', when: 'Adjustable', cost: 'Proportional to voltage²' },
+    { option: 'Soft starter', when: 'Adjustable, smooth', cost: 'Reduced' },
+    { option: 'Variable frequency drive', when: '≈ 1 × FLC', cost: 'Full torque available' },
+  ]}
+/>
+
+<Callout type="warning" title="Star-delta cuts current to a third — and torque to a third too">
+  Both scale with the square of the applied phase voltage, and star gives $1/\sqrt{3}$ of
+  the delta phase voltage, so both fall to one third.
+
+  That is a genuine constraint: if the load needs more than a third of full starting torque
+  to break away, the motor will not accelerate in star at all, and the transition to delta
+  then occurs at low speed and draws almost the full DOL current anyway.
+
+  You do not get reduced current for free. You trade torque for it.
+</Callout>
+
+## On the bench
+
+<Checklist
+  id="motor-check"
+  title="Before energising a motor"
+  tone="safety"
+  items={[
+    'Hair tied back, no loose clothing, no dangling leads near the shaft',
+    'Shaft guard in place, or the coupling clear and visible',
+    'Motor mechanically secure — it will try to move on starting',
+    'Phase sequence checked if the direction of rotation matters',
+    'Nameplate recorded: FLC, rated speed, connection, insulation class',
+    'Synchronous speed and full-load slip computed from the nameplate',
+    'Everyone stands clear of the shaft before starting',
+  ]}
+/>
+
+<Callout type="tip" title="Listen to it">
+  A healthy induction motor has a characteristic hum that settles within a second or two of
+  reaching speed.
+
+  A **growl** or a heavy 100 Hz beat usually means single-phasing or serious unbalance. A
+  rising and falling whine can mean a broken rotor bar. A rhythmic scraping means bearings.
+
+  This is genuinely diagnostic, and it is knowledge that only comes from standing next to
+  machines. Pay attention to what a good one sounds like so you notice when one is not.
+</Callout>
+
+## Viva preparation
+
+<Viva band="definition">
+  <Q q="Why must an induction motor rotor run slower than the stator field?">
+    Because torque requires relative motion. If the rotor turned at synchronous speed there
+    would be no changing flux through the rotor bars, no induced EMF, no rotor current and no
+    torque.
+
+    The machine settles at the slip that produces exactly the rotor current needed for the
+    load torque — a self-regulating loop closed by the physics, with no controller.
+  </Q>
+
+  <Q q="Why is starting current five to seven times full load current?">
+    At standstill the slip is 1, so the rotor sees full supply frequency and the machine
+    looks like a short-circuited transformer — the rotor is a shorted secondary.
+
+    The current is limited only by the leakage impedance, which is small.
+  </Q>
+</Viva>
+
+<Viva band="analysis">
+  <Q q="A starting motor and a stalled motor draw the same current. How does the protection distinguish them?">
+    By duration. The magnitudes are identical — around six times full load — so the only
+    difference is that a start ends and a stall does not.
+
+    The relay must tolerate 6× FLC for longer than the starting time and trip on it before
+    the locked-rotor withstand time expires. Those two constraints define a window, and on a
+    high-inertia load where starting time approaches withstand time, that window can close —
+    which then requires a speed switch or a thermal replica relay rather than plain
+    overcurrent.
+  </Q>
+
+  <Q q="Why is single-phasing so damaging, and why might overcurrent protection miss it?">
+    Losing a phase produces a large negative-sequence component. The motor's negative-sequence
+    impedance is roughly its locked-rotor impedance — about a sixth of positive sequence — so
+    a modest negative-sequence voltage drives a large current.
+
+    That current's field rotates backwards relative to the rotor, so the rotor sees it at
+    nearly twice supply frequency, where skin effect raises the bar resistance. The heating
+    per ampere is five to six times that of positive-sequence current.
+
+    On a lightly loaded motor the increased line current may still be within the overcurrent
+    setting, so nothing trips while the rotor cooks. This is why negative-sequence protection
+    (ANSI 46) exists as a separate function.
+  </Q>
+
+  <Q q="Star-delta starting reduces starting current to a third. What is the cost?">
+    Starting torque also falls to a third, since both scale with the square of applied phase
+    voltage and star gives 1/√3 of the delta phase voltage.
+
+    If the load requires more than a third of full starting torque to break away, the motor
+    will not accelerate in star at all, and the transition to delta then happens at low speed
+    drawing nearly full DOL current anyway.
+  </Q>
+</Viva>
+
+<KeyIdea>
+  A starting motor and a stalled motor draw the **same current** — six times full load — so
+  motor protection is about time, not magnitude. And single-phasing heats the rotor five to
+  six times harder per ampere than normal current, while the line current may stay within
+  the overcurrent setting, which is why negative-sequence protection is a separate function.
+</KeyIdea>
+
+## Further reading
+
+<ResourceList
+  items={[
+    {
+      kind: 'book',
+      title: 'Electric Machinery',
+      by: 'A. E. Fitzgerald, Charles Kingsley Jr. and Stephen D. Umans',
+      note: 'The standard treatment of induction machine theory and the equivalent circuit.',
+    },
+    {
+      kind: 'standard',
+      title: 'IEC 60034-1 — Rotating electrical machines: rating and performance',
+    },
+    {
+      kind: 'standard',
+      title: 'IEEE Std 620 — Guide for the presentation of thermal limit curves for squirrel cage induction machines',
+      note: 'Where cold and hot withstand curves come from, and how to read them.',
+    },
+    {
+      kind: 'book',
+      title: 'Network Protection and Automation Guide',
+      by: 'Alstom / GE Grid Solutions',
+      note: 'The motor protection chapter — thermal replica, negative sequence, and stall detection.',
+    },
+  ]}
+/>
